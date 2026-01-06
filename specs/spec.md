@@ -48,7 +48,7 @@ Production
 #### 2.1 Invocation
 
 ```bash
-image-reviewer --prompt "A watercolor cat" [--out /path/to/file.png]
+textbrush --prompt "A watercolor cat" [--out /path/to/file.png]
 ```
 
 Optional:
@@ -60,6 +60,25 @@ Optional:
 * `--verbose`
 
 CLI arguments override config file values.
+
+#### 2.1.1 CLI Arguments (Implemented)
+
+**Required:**
+* `--prompt TEXT` - Text prompt for image generation (must be non-empty)
+
+**Optional:**
+* `--out PATH` - Output file path (default: auto-generated in configured directory)
+* `--config PATH` - Config file path (default: `~/.config/textbrush/config.toml`)
+* `--seed INT` - Random seed for reproducibility (must be non-negative)
+* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, or `9:16`
+* `--format CHOICE` - Output format: `png` or `jpg`
+* `--verbose` - Enable debug logging (overrides config `logging.verbosity` to `debug`)
+
+**Validation:**
+* Prompt cannot be empty or whitespace-only
+* Seed must be non-negative integer
+* Format must be valid choice (png or jpg)
+* Aspect ratio must be valid choice if provided
 
 #### 2.2 Lifecycle
 
@@ -141,6 +160,36 @@ CLI arguments override config file values.
 * Tauri app spawns Python backend on startup
 * Backend terminates when UI exits
 * Abort immediately stops inference
+
+#### 5.3 Implemented Components (Increment 1)
+
+**Python Package Structure:**
+* Package: `textbrush` (Python >=3.11)
+* Entry point: `textbrush` CLI command
+* Core modules:
+  * `textbrush.cli` - Command-line argument parsing and application entry
+  * `textbrush.config` - TOML configuration loading with environment variable support
+  * `textbrush.paths` - XDG-compliant path constants
+  * `textbrush.model.weights` - HuggingFace model cache discovery and validation
+
+**Configuration System:**
+* TOML-based configuration at `~/.config/textbrush/config.toml`
+* Configuration priority: CLI arguments > environment variables > config file > defaults
+* Environment variables: `TEXTBRUSH_*` prefix (e.g., `TEXTBRUSH_OUTPUT_FORMAT`)
+* Auto-creates default config on first run
+* Sections: output, model, huggingface, inference, logging
+
+**Model Weight Management:**
+* Automatic discovery of FLUX.1 schnell in HuggingFace cache
+* Respects `HF_HOME` and `HF_HUB_CACHE` environment variables
+* Support for custom model directories via config
+* Model availability checking and validation
+* Integration with huggingface_hub for cache management
+
+**Tauri Shell:**
+* Minimal Tauri v2 project structure in `src-tauri/`
+* Compiles and displays empty window (foundation for UI development)
+* Configured for sidecar process integration (future increments)
 
 ---
 
@@ -237,16 +286,53 @@ Stable and scriptable from editors (e.g. Emacs).
 
 * XDG-compliant:
 
-  * `~/.config/image-reviewer/config.toml`
+  * `~/.config/textbrush/config.toml`
 
 #### 10.3 Configurable Fields
 
 * Default output directory
+* Output format (png | jpg)
 * Model directories
 * Buffer size (default: 8)
 * Hugging Face token
-* Inference backend selection (TBD)
-* Logging verbosity
+* Inference backend selection (default: flux)
+* Logging verbosity (debug | info | warning | error)
+
+#### 10.4 Configuration Priority (Implemented)
+
+Configuration values are resolved in the following priority order:
+
+1. **CLI arguments** (highest priority) - e.g., `--format png`
+2. **Environment variables** - e.g., `TEXTBRUSH_OUTPUT_FORMAT=png`
+3. **Config file** - `~/.config/textbrush/config.toml`
+4. **Defaults** (lowest priority)
+
+Environment variables use the `TEXTBRUSH_` prefix followed by section and key:
+* `TEXTBRUSH_OUTPUT_FORMAT` overrides `[output].format`
+* `TEXTBRUSH_LOGGING_VERBOSITY` overrides `[logging].verbosity`
+
+#### 10.5 Config File Schema (Implemented)
+
+```toml
+[output]
+directory = "~/Pictures/textbrush"
+format = "png"
+
+[model]
+directories = []
+buffer_size = 8
+
+[huggingface]
+token = ""
+
+[inference]
+backend = "flux"
+
+[logging]
+verbosity = "info"
+```
+
+The config file is automatically created with defaults on first run if it does not exist.
 
 ---
 

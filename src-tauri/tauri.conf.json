@@ -1,0 +1,27 @@
+{
+  "productName": "Textbrush",
+  "version": "0.1.0",
+  "identifier": "com.textbrush.app",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "../"
+  },
+  "bundle": {
+    "active": false
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Textbrush",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
