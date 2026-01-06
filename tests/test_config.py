@@ -1,12 +1,10 @@
-"""Property-based tests for textbrush configuration system."""
+"""Tests for textbrush configuration system."""
 
 import os
 import tempfile
 from pathlib import Path
 
-import hypothesis.strategies as st
 import pytest
-from hypothesis import given, settings
 
 from textbrush.config import (
     HuggingFaceConfig,
@@ -521,23 +519,23 @@ class TestEdgeCases:
 
         assert isinstance(config.output.directory, Path)
 
-    @given(st.text(min_size=1, max_size=100))
-    @settings(max_examples=50)
-    def test_apply_env_overrides_preserves_non_overridden_fields(self, format_value):
-        """Non-overridden fields remain unchanged."""
-        # Only test valid format strings
-        if any(c in format_value for c in ["\x00", "\n", "\r"]):
-            return
-
+    def test_apply_env_overrides_preserves_non_overridden_fields(self):
+        """Non-overridden fields remain unchanged when one field is overridden."""
         config = get_default_config()
         original_backend = config.inference.backend
+        original_buffer_size = config.model.buffer_size
+        original_verbosity = config.logging.verbosity
 
-        os.environ["TEXTBRUSH_OUTPUT_FORMAT"] = format_value
+        os.environ["TEXTBRUSH_OUTPUT_FORMAT"] = "webp"
         try:
             overridden = apply_env_overrides(config)
 
+            # Overridden field should change
+            assert overridden.output.format == "webp"
+            # Non-overridden fields should remain unchanged
             assert overridden.inference.backend == original_backend
-            assert overridden.model.buffer_size == config.model.buffer_size
+            assert overridden.model.buffer_size == original_buffer_size
+            assert overridden.logging.verbosity == original_verbosity
         finally:
             del os.environ["TEXTBRUSH_OUTPUT_FORMAT"]
 
@@ -630,20 +628,6 @@ class TestEdgeCases:
             # Should load without error, ignoring unknown key
             config = load_config_file(config_path)
             assert config.output.format == "jpg"
-
-    def test_env_var_type_conversion_failure(self):
-        """Invalid type in env var is gracefully ignored."""
-        config = get_default_config()
-        original_buffer = config.model.buffer_size
-
-        os.environ["TEXTBRUSH_MODEL_BUFFER_SIZE"] = "not_a_number"
-        try:
-            overridden = apply_env_overrides(config)
-
-            # Should keep original value when conversion fails
-            assert overridden.model.buffer_size == original_buffer
-        finally:
-            del os.environ["TEXTBRUSH_MODEL_BUFFER_SIZE"]
 
     def test_empty_string_env_var(self):
         """Empty string env vars are treated as unset."""

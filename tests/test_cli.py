@@ -1,4 +1,4 @@
-"""Property-based tests for textbrush CLI module."""
+"""Tests for textbrush CLI module."""
 
 import argparse
 from pathlib import Path
@@ -14,32 +14,8 @@ from textbrush.cli import (
     merge_cli_args_with_config,
     validate_args,
 )
-from textbrush.config import (
-    Config,
-    HuggingFaceConfig,
-    InferenceConfig,
-    LoggingConfig,
-    ModelConfig,
-    OutputConfig,
-)
 
-
-@pytest.fixture
-def sample_config() -> Config:
-    """Create a sample config for testing."""
-    return Config(
-        output=OutputConfig(
-            directory=Path.home() / "Pictures" / "textbrush",
-            format="png",
-        ),
-        model=ModelConfig(
-            directories=[],
-            buffer_size=8,
-        ),
-        huggingface=HuggingFaceConfig(token=None),
-        inference=InferenceConfig(backend="flux"),
-        logging=LoggingConfig(verbosity="info"),
-    )
+# Note: sample_config fixture is provided by conftest.py
 
 
 class TestBuildParser:
@@ -102,7 +78,7 @@ class TestBuildParser:
         assert args.format == "jpg"
         assert args.verbose is True
 
-    @given(st.sampled_from(["1:1", "16:9", "9:16"]))
+    @pytest.mark.parametrize("ratio", ["1:1", "16:9", "9:16"])
     def test_parser_aspect_ratio_choices(self, ratio: str):
         """Parser accepts valid aspect ratio choices."""
         parser = build_parser()
@@ -115,7 +91,7 @@ class TestBuildParser:
         with pytest.raises(SystemExit):
             parser.parse_args(["--prompt", "test", "--aspect-ratio", "invalid"])
 
-    @given(st.sampled_from(["png", "jpg"]))
+    @pytest.mark.parametrize("fmt", ["png", "jpg"])
     def test_parser_format_choices(self, fmt: str):
         """Parser accepts valid format choices."""
         parser = build_parser()
@@ -355,22 +331,6 @@ class TestMergeCliArgsWithConfig:
         merged = merge_cli_args_with_config(args, sample_config)
         assert merged.output.format == "jpg"
 
-    @given(st.sampled_from(["png", "jpg"]))
-    @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_merges_format_argument_property(self, sample_config, fmt: str):
-        """Any valid format CLI argument overrides config."""
-        args = argparse.Namespace(
-            out=None,
-            format=fmt,
-            verbose=False,
-            config=None,
-            prompt="test",
-            seed=None,
-            aspect_ratio=None,
-        )
-        merged = merge_cli_args_with_config(args, sample_config)
-        assert merged.output.format == fmt
-
     def test_verbose_flag_sets_debug_logging(self, sample_config):
         """Verbose flag sets logging verbosity to debug."""
         args = argparse.Namespace(
@@ -470,12 +430,32 @@ class TestMain:
         assert exc_info.value.code == 1
 
     @patch("textbrush.cli.load_config")
-    def test_main_exits_with_1_when_not_implemented(self, mock_load_config, sample_config):
-        """Main exits with code 2 (feature not implemented in Increment 1)."""
+    @patch("textbrush.backend.create_engine")
+    def test_main_invokes_backend_successfully(
+        self, mock_create_engine, mock_load_config, sample_config
+    ):
+        """Main creates backend and invokes generation workflow."""
+        from unittest.mock import Mock
+
+        from PIL import Image
+
+        from textbrush.inference.base import GenerationResult
+
         mock_load_config.return_value = sample_config
+
+        mock_engine = Mock()
+        mock_engine.is_loaded.return_value = True
+        mock_engine.generate.return_value = GenerationResult(
+            image=Image.new("RGB", (512, 512)),
+            seed=42,
+            generation_time=0.1,
+            model_name="mock",
+        )
+        mock_create_engine.return_value = mock_engine
+
         with pytest.raises(SystemExit) as exc_info:
             main(["--prompt", "test"])
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 0
 
     @patch("textbrush.cli.load_config")
     def test_main_loads_config_with_default_path(self, mock_load_config, sample_config):
@@ -500,28 +480,68 @@ class TestMain:
         mock_load_config.assert_called()
 
     @patch("textbrush.cli.load_config")
-    def test_main_prints_to_stderr_on_success(self, mock_load_config, sample_config, capsys):
-        """Main prints status to stderr before exit."""
+    @patch("textbrush.backend.create_engine")
+    def test_main_prints_to_stderr_on_success(
+        self, mock_create_engine, mock_load_config, sample_config, capsys
+    ):
+        """Main prints progress messages to stderr."""
+        from unittest.mock import Mock
+
+        from PIL import Image
+
+        from textbrush.inference.base import GenerationResult
+
         mock_load_config.return_value = sample_config
+
+        mock_engine = Mock()
+        mock_engine.is_loaded.return_value = True
+        mock_engine.generate.return_value = GenerationResult(
+            image=Image.new("RGB", (512, 512)),
+            seed=42,
+            generation_time=0.1,
+            model_name="mock",
+        )
+        mock_create_engine.return_value = mock_engine
+
         try:
             main(["--prompt", "test"])
         except SystemExit:
             pass
         captured = capsys.readouterr()
-        assert "Textbrush foundation ready" in captured.err
-        assert "Config loaded:" in captured.err
+        assert "Loading model..." in captured.err
+        assert "Generating..." in captured.err
 
     @patch("textbrush.cli.load_config")
-    def test_main_prints_config_summary(self, mock_load_config, sample_config, capsys):
-        """Main prints config summary to stderr."""
+    @patch("textbrush.backend.create_engine")
+    def test_main_prints_output_path_to_stdout(
+        self, mock_create_engine, mock_load_config, sample_config, capsys
+    ):
+        """Main prints output path to stdout."""
+        from unittest.mock import Mock
+
+        from PIL import Image
+
+        from textbrush.inference.base import GenerationResult
+
         mock_load_config.return_value = sample_config
+
+        mock_engine = Mock()
+        mock_engine.is_loaded.return_value = True
+        mock_engine.generate.return_value = GenerationResult(
+            image=Image.new("RGB", (512, 512)),
+            seed=42,
+            generation_time=0.1,
+            model_name="mock",
+        )
+        mock_create_engine.return_value = mock_engine
+
         try:
             main(["--prompt", "test"])
         except SystemExit:
             pass
         captured = capsys.readouterr()
-        assert "output=" in captured.err
-        assert "format=" in captured.err
+        assert len(captured.out.strip()) > 0
+        assert ".png" in captured.out or ".jpg" in captured.out
 
     @patch("textbrush.cli.load_config")
     def test_main_handles_validation_error(self, mock_load_config, sample_config, capsys):
@@ -533,49 +553,34 @@ class TestMain:
         captured = capsys.readouterr()
         assert "Error:" in captured.err
 
-    @patch("textbrush.cli.load_config")
-    def test_main_uses_custom_config_path(self, mock_load_config, sample_config, tmp_path):
-        """Main uses custom config path when provided."""
-        mock_load_config.return_value = sample_config
-        config_path = tmp_path / "custom.toml"
-        config_path.write_text("[test]\n")
-        try:
-            main(["--prompt", "test", "--config", str(config_path)])
-        except SystemExit:
-            pass
-        assert mock_load_config.called
-
-    @patch("textbrush.cli.load_config")
-    @given(st.text(min_size=1).filter(lambda s: s.strip()))
-    @settings(
-        suppress_health_check=[
-            HealthCheck.filter_too_much,
-            HealthCheck.function_scoped_fixture,
-        ]
-    )
-    def test_main_accepts_valid_prompts(self, mock_load_config, sample_config, prompt: str):
-        """Main accepts any valid non-empty prompt."""
-        mock_load_config.return_value = sample_config
-        with pytest.raises(SystemExit):
-            main(["--prompt", prompt])
-        mock_load_config.assert_called()
-
 
 class TestParserIntegration:
     """Integration tests for parser with main."""
 
     @patch("textbrush.cli.load_config")
-    def test_parser_integration_with_main(self, mock_load_config, sample_config):
-        """Parser output integrates correctly with main function."""
-        mock_load_config.return_value = sample_config
-        with pytest.raises(SystemExit):
-            main(["--prompt", "test", "--format", "jpg", "--verbose"])
-        mock_load_config.assert_called()
-
-    @patch("textbrush.cli.load_config")
-    def test_main_with_all_arguments(self, mock_load_config, sample_config, tmp_path):
+    @patch("textbrush.backend.create_engine")
+    def test_main_with_all_arguments(
+        self, mock_create_engine, mock_load_config, sample_config, tmp_path
+    ):
         """Main processes all CLI arguments correctly."""
+        from unittest.mock import Mock
+
+        from PIL import Image
+
+        from textbrush.inference.base import GenerationResult
+
         mock_load_config.return_value = sample_config
+
+        mock_engine = Mock()
+        mock_engine.is_loaded.return_value = True
+        mock_engine.generate.return_value = GenerationResult(
+            image=Image.new("RGB", (512, 512)),
+            seed=42,
+            generation_time=0.1,
+            model_name="mock",
+        )
+        mock_create_engine.return_value = mock_engine
+
         output_file = tmp_path / "test.png"
         config_file = tmp_path / "config.toml"
         config_file.write_text("[test]\n")

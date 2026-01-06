@@ -5,11 +5,13 @@ Text-to-image generation tool with customizable workflows and local model infere
 ## Features
 
 - **Command-line interface** for text-to-image generation with FLUX.1 schnell model
+- **Background image generation** with 8-image FIFO buffer for smooth workflows
 - **Flexible configuration** via CLI arguments, environment variables, or TOML config file
 - **Local model management** with automatic HuggingFace cache discovery
+- **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends
 - **XDG-compliant** configuration directory (~/.config/textbrush/)
 - **Reproducible results** via seed parameter for deterministic generation
-- **Desktop UI** (Tauri-based) for image review workflow
+- **Desktop UI** (Tauri-based) for image review workflow (in development)
 
 ## Installation
 
@@ -24,23 +26,26 @@ uv sync
 Generate an image from a text prompt:
 
 ```bash
-uv run textbrush --prompt "a watercolor painting of a cat"
+uv run textbrush generate "a watercolor painting of a cat"
 ```
 
 ### Configuration Options
 
 ```bash
 # Specify output location
-uv run textbrush --prompt "sunset over mountains" --out ~/Desktop/sunset.png
+uv run textbrush generate "sunset over mountains" --output ~/Desktop/sunset.png
 
 # Set format and seed for reproducibility
-uv run textbrush --prompt "abstract art" --format jpg --seed 42
+uv run textbrush generate "abstract art" --format jpg --seed 42
+
+# Specify aspect ratio
+uv run textbrush generate "portrait" --aspect-ratio 9:16
 
 # Use custom config file
-uv run textbrush --prompt "portrait" --config ./project-config.toml
+uv run textbrush --config ./project-config.toml generate "portrait"
 
 # Enable verbose logging
-uv run textbrush --prompt "landscape" --verbose
+uv run textbrush --verbose generate "landscape"
 ```
 
 ### Configuration File

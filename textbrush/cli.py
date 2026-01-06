@@ -258,14 +258,18 @@ def main(argv: List[str] | None = None) -> None:
         - None (side effects: print to stdout, sys.exit with code)
 
       Invariants:
-        - Exit code 0 + stdout path on success (per spec 9.1)
-        - Exit code non-zero + empty stdout on failure
+        - Exit code 0 + stdout path on success
+        - Exit code 1 + empty stdout on failure
         - Prompt is required (validation failure if missing)
+        - Progress messages go to stderr
+        - Final output path goes to stdout
+        - backend.shutdown() always called (even on error)
 
       Properties:
         - Configuration priority: CLI args > env vars > config file > defaults
         - Error handling: user-facing error messages on stderr
         - Output: success prints path to stdout, nothing else
+        - Cleanup: backend shutdown guaranteed via finally block
 
       Algorithm:
         1. Build argument parser via build_parser()
@@ -277,22 +281,26 @@ def main(argv: List[str] | None = None) -> None:
            a. Load config from file + env via config.load_config()
            b. Merge CLI args via merge_cli_args_with_config()
         5. Validate arguments via validate_args()
-        6. Placeholder implementation for Increment 1:
-           a. Print "Textbrush foundation ready" to stderr
-           b. Print "Config loaded: [config summary]" to stderr
-           c. Exit with code 1 (feature not implemented)
-        7. Error handling:
+        6. Create TextbrushBackend with config
+        7. Initialize backend (load model, print "Loading model..." to stderr)
+        8. Start generation with prompt, seed, aspect_ratio
+        9. Print "Generating..." to stderr
+        10. Get next image from buffer (blocks until ready)
+        11. Determine output path (use args.out or generate automatically)
+        12. Accept and save current image
+        13. Print output path to stdout
+        14. Shutdown backend in finally block
+        15. Exit with code 0 on success
+        16. Error handling:
            - Catch exceptions and print to stderr
-           - Exit with non-zero code on any error
+           - Call backend.shutdown() in finally
+           - Exit with code 1 on any error
            - Never print to stdout on error
-
-      Note for Increment 1:
-        This is a foundation stub. Actual image generation will be
-        implemented in Increment 2. For now, validate configuration
-        loading and CLI arg parsing work correctly, then exit with
-        "not implemented" message.
     """
+    from .backend import TextbrushBackend
+
     parser = build_parser()
+    backend = None
 
     try:
         args = parser.parse_args(argv)
@@ -302,16 +310,37 @@ def main(argv: List[str] | None = None) -> None:
         config = load_config(config_path)
         config = merge_cli_args_with_config(args, config)
 
-        print(
-            "Textbrush foundation ready",
-            file=sys.stderr,
-        )
-        print(
-            f"Config loaded: output={config.output.directory}, format={config.output.format}",
-            file=sys.stderr,
+        backend = TextbrushBackend(config)
+
+        print("Loading model...", file=sys.stderr)
+        backend.initialize()
+
+        print("Generating...", file=sys.stderr)
+        backend.start_generation(
+            prompt=args.prompt,
+            seed=args.seed,
+            aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
         )
 
-        sys.exit(2)
+        import time
+
+        timeout = 30.0
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if backend.buffer.peek() is not None:
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("No image generated within timeout")
+
+        if args.out is not None:
+            output_path = backend.accept_current(args.out)
+        else:
+            output_path = backend.accept_current()
+
+        print(str(output_path), file=sys.stdout)
+
+        sys.exit(0)
 
     except (ValueError, SystemExit) as e:
         if isinstance(e, SystemExit):
@@ -321,3 +350,6 @@ def main(argv: List[str] | None = None) -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if backend is not None:
+            backend.shutdown()

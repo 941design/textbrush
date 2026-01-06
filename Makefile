@@ -25,8 +25,11 @@ download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
 dev:  ## Run textbrush CLI with --help
 	uv run textbrush --help
 
-test:  ## Run test suite with pytest
-	uv run pytest tests
+test:  ## Run test suite with pytest (excludes slow/integration tests)
+	uv run pytest tests --ignore=tests/test_buffer_stress.py -m "not slow and not integration" -v
+
+test-all:  ## Run full test suite including slow/integration tests
+	uv run pytest tests -v
 
 lint:  ## Check code quality with ruff
 	uv run ruff check textbrush tests

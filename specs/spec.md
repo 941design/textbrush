@@ -191,6 +191,53 @@ CLI arguments override config file values.
 * Compiles and displays empty window (foundation for UI development)
 * Configured for sidecar process integration (future increments)
 
+#### 5.4 Implemented Components (Increment 2)
+
+**Inference Engine:**
+* `textbrush.inference.base` - Abstract InferenceEngine interface and data classes:
+  * `GenerationOptions` - Immutable generation parameters (seed, steps, aspect_ratio)
+  * `GenerationResult` - Generation output with image, seed, timing
+  * `InferenceEngine` - Abstract base for all inference backends
+* `textbrush.inference.flux` - FLUX.1 schnell implementation:
+  * Hardware auto-detection (CUDA > MPS > CPU priority)
+  * BFloat16 precision for optimal performance
+  * Seed-based deterministic generation
+  * Dimension resolution from aspect ratio presets
+* `textbrush.inference.factory` - Engine factory for backend selection
+
+**Image Buffer System:**
+* `textbrush.buffer.BufferedImage` - Image container with metadata:
+  * Context manager support for resource cleanup
+  * Temporary file cleanup mechanism
+* `textbrush.buffer.ImageBuffer` - Thread-safe FIFO buffer:
+  * Configurable max size (default 8)
+  * Blocking put/get with timeout support
+  * Grace period shutdown for clean termination
+  * Clear operation with resource cleanup
+
+**Background Worker:**
+* `textbrush.worker.GenerationWorker` - Background image generation:
+  * Thread-safe operation with stop event
+  * Error capture via thread-safe error queue
+  * Immutable options progression (seed increment via dataclass replace)
+  * Graceful shutdown support
+
+**Backend Coordinator:**
+* `textbrush.backend.TextbrushBackend` - High-level orchestration:
+  * Model initialization and lifecycle management
+  * Generation start/stop control
+  * Image retrieval with timeout support
+  * Accept/skip/abort workflow actions
+  * Error checking and propagation to main thread
+  * Output path generation
+
+**CLI Integration:**
+* `textbrush generate` command fully functional:
+  * Invokes backend workflow end-to-end
+  * Progress messages to stderr
+  * Output path to stdout on success
+  * Proper cleanup in finally block
+
 ---
 
 ### 6. Local Model Management
@@ -227,16 +274,20 @@ On startup:
 
 ### 7. Inference Engine
 
-* Inference backend is **pluggable**
-* Reference implementation: **TBD**
+* Inference backend is **pluggable** via abstract `InferenceEngine` interface
+* Reference implementation: **FLUX.1 schnell** via `FluxInferenceEngine`
 * Engine abstraction:
-
-  * `generate(prompt, options) -> image`
-* Hardware selection:
-
-  * CUDA (Linux)
-  * Apple MPS (macOS)
-  * CPU fallback (best-effort, warned)
+  * `load()` - Initialize model and load weights to device
+  * `unload()` - Release model resources
+  * `generate(prompt, options) -> GenerationResult`
+* Hardware selection (automatic detection with priority):
+  * CUDA (Linux/Windows with NVIDIA GPU)
+  * Apple MPS (macOS with Apple Silicon)
+  * CPU fallback (significantly slower, warned)
+* Generation options:
+  * `seed` - Deterministic generation (auto-incremented if None)
+  * `steps` - Inference steps (default: 4 for schnell)
+  * `aspect_ratio` - Image dimensions ("1:1", "16:9", "9:16")
 
 ---
 

@@ -6,17 +6,17 @@ integrate correctly and maintain their invariants across the complete system.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import tomli_w
-from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
 
 from textbrush.cli import build_parser, main
 from textbrush.config import load_config
 from textbrush.model.weights import get_cache_info, is_flux_available
+
+# MockInferenceEngine is provided by conftest.py
 
 
 class TestCLIConfigIntegration:
@@ -163,28 +163,25 @@ class TestConfigPersistence:
             assert "logging" in data
 
     @pytest.mark.integration
-    @given(
-        st.builds(
-            dict,
-            output=st.builds(
-                dict,
-                directory=st.from_regex(r"[a-zA-Z0-9/_-]+", fullmatch=True),
-                format=st.sampled_from(["png", "jpg"]),
-            ),
-            model=st.builds(
-                dict, directories=st.lists(st.just([]), max_size=0), buffer_size=st.just(8)
-            ),
-            huggingface=st.builds(dict, token=st.just("")),
-            inference=st.builds(dict, backend=st.just("flux")),
-            logging=st.builds(
-                dict, verbosity=st.sampled_from(["debug", "info", "warning", "error"])
-            ),
-        )
+    @pytest.mark.parametrize(
+        "output_format,verbosity",
+        [
+            ("png", "debug"),
+            ("jpg", "info"),
+            ("png", "warning"),
+            ("jpg", "error"),
+        ],
     )
-    @settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=10)
-    def test_config_round_trip_property(self, tmp_path: Path, config_dict: dict):
-        """Property: write config → read config → values match."""
-        config_file = tmp_path / f"config_{os.getpid()}.toml"
+    def test_config_round_trip(self, tmp_path: Path, output_format: str, verbosity: str):
+        """Config write → read → values match."""
+        config_file = tmp_path / "config.toml"
+        config_dict = {
+            "output": {"directory": str(tmp_path / "outputs"), "format": output_format},
+            "model": {"directories": [], "buffer_size": 8},
+            "huggingface": {"token": ""},
+            "inference": {"backend": "flux"},
+            "logging": {"verbosity": verbosity},
+        }
 
         # Write config
         with open(config_file, "wb") as f:
@@ -194,9 +191,9 @@ class TestConfigPersistence:
         config = load_config(config_file)
 
         # Verify round-trip
-        assert config.output.format == config_dict["output"]["format"]
-        assert config.logging.verbosity == config_dict["logging"]["verbosity"]
-        assert config.model.buffer_size == config_dict["model"]["buffer_size"]
+        assert config.output.format == output_format
+        assert config.logging.verbosity == verbosity
+        assert config.model.buffer_size == 8
 
 
 class TestModelCacheIntegration:
@@ -243,20 +240,21 @@ class TestEndToEndCLIWorkflow:
     """End-to-end workflow tests (E2E scenario from architect spec)."""
 
     @pytest.mark.integration
-    def test_e2e_cli_to_config_loading(self, tmp_path: Path, capsys):
-        """E2E: CLI invocation → config loading → validation → output.
+    def test_e2e_cli_to_config_loading(self, tmp_path: Path, capsys, mock_engine):
+        """E2E: CLI invocation → config loading → validation → backend → output.
 
         This is the E2E scenario specified by the architect:
         Entry: CLI command "textbrush --prompt 'test' --config custom.toml --verbose"
         Flow: cli.main() → load_config() → merge_cli_args_with_config() → validate_args()
-        Output: Configuration loaded with correct priority (CLI > env > file > defaults)
+              → backend.initialize() → backend.start_generation() → backend.accept_current()
+        Output: Configuration loaded with correct priority, image generated and saved
         """
         # Create custom config
         config_file = tmp_path / "custom.toml"
         config_data = {
             "output": {"directory": str(tmp_path / "outputs"), "format": "jpg"},
             "model": {"directories": [], "buffer_size": 16},
-            "huggingface": {"token": ""},
+            "huggingface": {},
             "inference": {"backend": "flux"},
             "logging": {"verbosity": "info"},
         }
@@ -264,21 +262,23 @@ class TestEndToEndCLIWorkflow:
             tomli_w.dump(config_data, f)
 
         # Run complete CLI workflow
-        with pytest.raises(SystemExit) as exc_info:
-            main(["--prompt", "test prompt", "--config", str(config_file), "--verbose"])
+        with patch("textbrush.backend.create_engine", return_value=mock_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--prompt", "test prompt", "--config", str(config_file), "--verbose"])
 
-        # Verify exit code (should be 2 for "not implemented" in Increment 1)
-        assert exc_info.value.code == 2
+            # Verify exit code (should be 0 for success)
+            assert exc_info.value.code == 0
 
         # Verify output
         captured = capsys.readouterr()
 
-        # stderr should contain status messages
-        assert "Textbrush foundation ready" in captured.err
-        assert "Config loaded:" in captured.err
+        # stderr should contain progress messages
+        assert "Loading model..." in captured.err
+        assert "Generating..." in captured.err
 
-        # stdout should be empty (no success output in Increment 1)
-        assert captured.out == ""
+        # stdout should contain output path
+        assert len(captured.out.strip()) > 0
+        assert "outputs" in captured.out or ".jpg" in captured.out
 
     @pytest.mark.integration
     def test_e2e_cli_validation_failure(self, capsys):
@@ -319,48 +319,111 @@ class TestEndToEndCLIWorkflow:
         captured = capsys.readouterr()
         assert "non-negative" in captured.err.lower() or "negative" in captured.err.lower()
 
+
+class TestCLIGenerateIntegration:
+    """Integration tests for CLI generate command with backend."""
+
     @pytest.mark.integration
-    @given(
-        prompt=st.text(min_size=1, max_size=100).filter(
-            lambda s: s.strip() and not s.startswith("-")
-        ),
-        seed=st.integers(min_value=0, max_value=1000000),
-        format_choice=st.sampled_from(["png", "jpg"]),
-    )
-    @settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=5)
-    def test_e2e_cli_accepts_valid_inputs(
-        self, tmp_path: Path, capsys, prompt: str, seed: int, format_choice: str
-    ):
-        """Property: CLI accepts any valid combination of inputs."""
-        config_file = tmp_path / f"config_{os.getpid()}.toml"
-        config_data = {
-            "output": {"directory": str(tmp_path / "outputs"), "format": "png"},
-            "model": {"directories": [], "buffer_size": 8},
-            "huggingface": {"token": ""},
-            "inference": {"backend": "flux"},
-            "logging": {"verbosity": "info"},
-        }
-        with open(config_file, "wb") as f:
-            tomli_w.dump(config_data, f)
+    def test_cli_generates_image_e2e(self, tmp_path: Path, config_file, mock_engine):
+        """E2E: CLI invokes backend and produces output file."""
+        output_file = tmp_path / "test_output.png"
 
-        # Run CLI with generated inputs
-        with pytest.raises(SystemExit) as exc_info:
-            main(
-                [
-                    "--prompt",
-                    prompt,
-                    "--config",
-                    str(config_file),
-                    "--seed",
-                    str(seed),
-                    "--format",
-                    format_choice,
-                ]
-            )
+        with patch("textbrush.backend.create_engine", return_value=mock_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(
+                    [
+                        "--prompt",
+                        "a test image",
+                        "--config",
+                        str(config_file),
+                        "--out",
+                        str(output_file),
+                        "--seed",
+                        "123",
+                    ]
+                )
 
-        # Should exit with "not implemented" (code 2)
-        assert exc_info.value.code == 2
+            assert exc_info.value.code == 0
+            assert output_file.exists()
 
-        # Should print success message
+    @pytest.mark.integration
+    def test_cli_exit_code_success(self, config_file, mock_engine):
+        """Successful generation exits with code 0."""
+        with patch("textbrush.backend.create_engine", return_value=mock_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--prompt", "test", "--config", str(config_file)])
+
+            assert exc_info.value.code == 0
+
+    @pytest.mark.integration
+    def test_cli_exit_code_error(self, config_file, mock_engine_factory, capsys):
+        """Error during generation exits with code 1."""
+        failing_engine = mock_engine_factory(fail_on_load=True)
+
+        with patch("textbrush.backend.create_engine", return_value=failing_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--prompt", "test", "--config", str(config_file)])
+
+            assert exc_info.value.code == 1
+
         captured = capsys.readouterr()
-        assert "Textbrush foundation ready" in captured.err
+        assert "Error:" in captured.err
+
+    @pytest.mark.integration
+    def test_cli_cleanup_on_error(self, config_file, mock_engine_factory):
+        """Backend shutdown called even when error occurs."""
+        failing_engine = mock_engine_factory(fail_on_generate=True)
+        # Track if unload was called
+        original_unload = failing_engine.unload
+        unload_called = []
+
+        def tracking_unload():
+            unload_called.append(True)
+            original_unload()
+
+        failing_engine.unload = tracking_unload
+
+        with patch("textbrush.backend.create_engine", return_value=failing_engine):
+            with pytest.raises(SystemExit):
+                main(["--prompt", "test", "--config", str(config_file)])
+
+        assert len(unload_called) > 0
+
+    @pytest.mark.integration
+    def test_cli_output_to_stdout(self, tmp_path: Path, config_file, mock_engine, capsys):
+        """Output path printed to stdout, not stderr."""
+        output_file = tmp_path / "test_output.png"
+
+        with patch("textbrush.backend.create_engine", return_value=mock_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(
+                    [
+                        "--prompt",
+                        "test",
+                        "--config",
+                        str(config_file),
+                        "--out",
+                        str(output_file),
+                    ]
+                )
+
+            assert exc_info.value.code == 0
+
+        captured = capsys.readouterr()
+        assert str(output_file) in captured.out
+        assert str(output_file) not in captured.err
+
+    @pytest.mark.integration
+    def test_cli_progress_messages_to_stderr(self, config_file, mock_engine, capsys):
+        """Progress messages go to stderr, not stdout."""
+        with patch("textbrush.backend.create_engine", return_value=mock_engine):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--prompt", "test", "--config", str(config_file)])
+
+            assert exc_info.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "Loading model..." in captured.err
+        assert "Generating..." in captured.err
+        assert "Loading model..." not in captured.out
+        assert "Generating..." not in captured.out

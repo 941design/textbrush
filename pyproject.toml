@@ -8,6 +8,13 @@ requires-python = ">=3.11"
 dependencies = [
   "huggingface-hub>=0.20.0,<1.0.0",
   "tomli_w>=1.0.0,<2.0.0",
+  "torch>=2.0.0,<3.0.0",
+  "diffusers>=0.25.0,<1.0.0",
+  "transformers>=4.36.0,<5.0.0",
+  "accelerate>=0.25.0,<1.0.0",
+  "safetensors>=0.4.0,<1.0.0",
+  "Pillow>=10.0.0,<11.0.0",
+  "sentencepiece>=0.1.99,<1.0.0",
 ]
 
 [project.scripts]
@@ -26,16 +33,24 @@ dev = [
     "hypothesis>=6.148.7,<7.0.0",
     "pytest>=9.0.2,<10.0.0",
     "ruff>=0.1.0,<1.0.0",
+    "scikit-image>=0.26.0",
 ]
 
 [tool.pytest.ini_options]
 markers = [
     "integration: marks integration tests that test multiple components together",
+    "slow: marks tests as slow (model loading, generation)",
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+filterwarnings = [
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+    "ignore:User provided device_type of 'cuda', but CUDA is not available:UserWarning",
+]
 
 [tool.ruff]
 line-length = 100
