@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tauri IPC Integration**: Complete communication layer between Tauri desktop shell and Python backend
+  - Stdio-based JSON protocol for cross-process communication
+  - `IPCServer` with thread-safe message sending and dispatch
+  - `MessageHandler` coordinating backend operations via IPC commands
+  - Message types: INIT, SKIP, ACCEPT, ABORT, STATUS (commands) and READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED (events)
+  - Base64 image encoding for JSON transport
+  - Thread-safe image delivery with proper synchronization
+  - Worker error propagation to UI via fatal error events
+  - Graceful shutdown with resource cleanup
+  - Rust sidecar management for spawning/killing Python process
+  - Tauri commands: init_generation, skip_image, accept_image, abort_generation
+  - Minimal test UI with keyboard shortcuts (Space/Enter/Escape)
 - **Inference Backend**: Complete image generation backend with FLUX.1 integration
   - `FluxInferenceEngine` with FLUX.1 schnell model support
   - Hardware auto-detection (CUDA > MPS > CPU)

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Textbrush</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: 500;
+        }
+        #image-container {
+            margin-bottom: 20px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 10px;
+            background: #222;
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #image {
+            max-width: 100%;
+            max-height: 512px;
+            border-radius: 4px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        #skip {
+            background: #444;
+            color: white;
+        }
+        #accept {
+            background: #2ea44f;
+            color: white;
+        }
+        #abort {
+            background: #cf222e;
+            color: white;
+        }
+        #status {
+            font-family: "SF Mono", Monaco, Consolas, monospace;
+            font-size: 13px;
+            padding: 12px;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 4px;
+            line-height: 1.6;
+        }
+        .placeholder {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Textbrush Test UI</h1>
+    <div id="image-container">
+        <img id="image" src="" alt="" style="display: none;" />
+        <div class="placeholder">Waiting for image...</div>
+    </div>
+    <div class="controls">
+        <button id="skip">Skip (Space)</button>
+        <button id="accept">Accept (Enter)</button>
+        <button id="abort">Abort (Esc)</button>
+    </div>
+    <div id="status">Status: Initializing...</div>
+
+    <script type="module" src="/main.js"></script>
+</body>
+</html>

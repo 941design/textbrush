@@ -11,7 +11,8 @@ Text-to-image generation tool with customizable workflows and local model infere
 - **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends
 - **XDG-compliant** configuration directory (~/.config/textbrush/)
 - **Reproducible results** via seed parameter for deterministic generation
-- **Desktop UI** (Tauri-based) for image review workflow (in development)
+- **Desktop UI** (Tauri-based) with stdio IPC protocol for seamless image review workflow
+- **IPC Protocol** for Tauri-Python communication with thread-safe message delivery
 
 ## Installation
 

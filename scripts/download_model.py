@@ -21,7 +21,7 @@ def main() -> None:
     print()
     print("Downloading FLUX.1 Schnell model...")
     print(f"Cache location: {cache_info['cache_dir']}")
-    if cache_info['custom_location']:
+    if cache_info["custom_location"]:
         print(f"(customized via {cache_info['env_var']})")
     print()
     print("This will download approximately 23 GB of model weights.")
