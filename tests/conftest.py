@@ -44,15 +44,13 @@ def pytest_collection_modifyitems(config, items):
     if worker_id is not None and run_slow:
         # Running in parallel with --run-slow is not allowed
         pytest.exit(
-            "ERROR: Slow tests cannot run in parallel. "
-            "Remove -n option when using --run-slow.",
+            "ERROR: Slow tests cannot run in parallel. Remove -n option when using --run-slow.",
             returncode=1,
         )
 
     if not run_slow:
         skip_slow = pytest.mark.skip(
-            reason="Skipped by default (requires model, memory intensive). "
-            "Use --run-slow to run."
+            reason="Skipped by default (requires model, memory intensive). Use --run-slow to run."
         )
         for item in items:
             if "slow" in item.keywords or "integration" in item.keywords:

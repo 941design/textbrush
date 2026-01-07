@@ -65,6 +65,7 @@ function allElementsPresent() {
 
 // Initialize Application
 async function init() {
+  console.log('Textbrush UI initializing...');
   try {
     // Cache all DOM elements
     cacheElements();
@@ -77,8 +78,10 @@ async function init() {
       throw new Error(`Missing DOM elements: ${missing.join(', ')}`);
     }
 
+    console.log('DOM elements cached, getting launch args...');
     // Get launch arguments from invoke call
     const launchArgs = await invoke('get_launch_args');
+    console.log('Launch args received:', launchArgs);
     state.prompt = launchArgs.prompt || '';
     state.bufferMax = launchArgs.buffer_max || 8;
 
@@ -111,8 +114,10 @@ async function init() {
 
 // Message Event Listener
 function setupMessageListener() {
+  console.log('Setting up sidecar message listener...');
   listen('sidecar-message', (event) => {
     const msg = event.payload;
+    console.log('Received sidecar message:', msg.type, msg);
     handleMessage(msg);
   }).catch(err => {
     console.error('Failed to setup message listener:', err);
@@ -171,6 +176,8 @@ function handleImageReady(payload) {
 
   displayImage(payload);
   updateBufferDisplay();
+  // Always hide loading overlay when we have an image to display
+  showLoading(false);
   enableAcceptButton();
 }
 
@@ -219,7 +226,9 @@ function handleError(payload) {
 
 // Display Image with Transitions
 async function displayImage(payload) {
+  console.log('displayImage called, seed:', payload.seed, 'data length:', payload.image_data?.length);
   if (state.isTransitioning) {
+    console.log('Skipping - already transitioning');
     return;
   }
 
@@ -247,6 +256,7 @@ async function displayImage(payload) {
 
     // Update image source using blob URL
     if (elements.currentImage && payload.image_data) {
+      console.log('Creating blob from base64 data...');
       const binaryString = atob(payload.image_data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -254,7 +264,13 @@ async function displayImage(payload) {
       }
       const blob = new Blob([bytes], { type: 'image/png' });
       state.currentBlobUrl = URL.createObjectURL(blob);
+      console.log('Setting image src to blob URL:', state.currentBlobUrl);
       elements.currentImage.src = state.currentBlobUrl;
+    } else {
+      console.warn('Cannot display image - missing element or data:', {
+        hasElement: !!elements.currentImage,
+        hasData: !!payload.image_data
+      });
     }
 
     // Fade in new image

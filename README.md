@@ -28,7 +28,7 @@ uv sync
 Generate an image from a text prompt:
 
 ```bash
-uv run textbrush generate "a watercolor painting of a cat"
+uv run textbrush --prompt "a watercolor painting of a cat"
 ```
 
 ### Desktop UI Workflow
@@ -60,23 +60,44 @@ The UI provides:
 - **Memory efficiency**: Uses blob URLs instead of base64 encoding for large images
 - **Exit contracts**: Predictable stdout/exit-code behavior for scripting integration
 
+### Headless Mode (for CI/Testing)
+
+Run textbrush without GUI for automated workflows:
+
+```bash
+# Accept first generated image (for CI pipelines)
+uv run textbrush "test image" --headless --auto-accept --out output.png
+
+# Abort immediately (for testing error paths)
+uv run textbrush "test" --headless --auto-abort
+
+# Exit codes:
+# 0: Image accepted successfully (path printed to stdout)
+# 1: Aborted or error (empty stdout)
+```
+
+Headless mode is designed for:
+- **CI/CD pipelines**: Automated image generation without UI
+- **Integration testing**: End-to-end workflow verification
+- **Scripted workflows**: Batch processing with predictable exit codes
+
 ### Configuration Options
 
 ```bash
 # Specify output location
-uv run textbrush generate "sunset over mountains" --output ~/Desktop/sunset.png
+uv run textbrush --prompt "sunset over mountains" --output ~/Desktop/sunset.png
 
 # Set format and seed for reproducibility
-uv run textbrush generate "abstract art" --format jpg --seed 42
+uv run textbrush --prompt "abstract art" --format jpg --seed 42
 
 # Specify aspect ratio
-uv run textbrush generate "portrait" --aspect-ratio 9:16
+uv run textbrush --prompt "portrait" --aspect-ratio 9:16
 
 # Use custom config file
-uv run textbrush --config ./project-config.toml generate "portrait"
+uv run textbrush --config ./project-config.toml --prompt "portrait"
 
 # Enable verbose logging
-uv run textbrush --verbose generate "landscape"
+uv run textbrush --verbose --prompt "landscape"
 ```
 
 ### Configuration File

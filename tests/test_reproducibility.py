@@ -238,9 +238,7 @@ class TestRealFluxReproducibility:
     Do NOT use -n (parallel) with these tests.
     """
 
-    def test_same_hardware_determinism(
-        self, flux_engine_session: FluxInferenceEngine
-    ) -> None:
+    def test_same_hardware_determinism(self, flux_engine_session: FluxInferenceEngine) -> None:
         """Same seed on same hardware produces identical images."""
         prompt = "a red cube on a blue surface"
         seed = 42

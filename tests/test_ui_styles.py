@@ -115,7 +115,7 @@ def resolve_imports(content: str, base_path: Path) -> str:
     def replace_import(match: re.Match) -> str:
         import_path = match.group(1)
         # Resolve relative path
-        if import_path.startswith('./'):
+        if import_path.startswith("./"):
             import_path = import_path[2:]
         full_path = base_path / import_path
         if full_path.exists():

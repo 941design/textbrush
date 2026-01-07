@@ -8,7 +8,14 @@
     "frontendDist": "../src-tauri/ui"
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [],
+    "macOS": {
+      "entitlements": null,
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
+    }
   },
   "app": {
     "withGlobalTauri": true,

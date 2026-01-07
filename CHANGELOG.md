@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Headless Mode**: CLI operation without UI for CI/CD and automated testing
+  - `--headless` flag for non-interactive operation
+  - `--auto-accept` to accept first generated image and exit with code 0
+  - `--auto-abort` to abort immediately and exit with code 1
+  - Predictable exit codes and stdout behavior for scripting
+  - 120-second timeout for image generation in headless mode
+- **CI/CD Pipeline**: GitHub Actions workflows for automated testing and builds
+  - CI workflow: lint, test Python, test Rust, multi-platform builds
+  - Release workflow: automated binary packaging for macOS (ARM64/x64) and Linux
+  - Matrix builds for macos-latest, macos-13, ubuntu-latest
+  - Artifact uploads with SHA256 checksums
+- **Tauri Bundling**: macOS app bundle configuration with ad-hoc signing
+  - Bundle targets: .app and .dmg for macOS distribution
+  - Ad-hoc code signing (signingIdentity: "-") for local builds
+  - Minimum system version: macOS 10.15
+- **E2E Integration Tests**: End-to-end test suite for full CLI workflows
+  - Subprocess-based tests for CLI argument validation
+  - Headless accept/abort workflow verification
+  - Seed determinism testing with file hash comparison
+  - Exit code contract verification
 - **Desktop UI Implementation**: Complete slideshow review interface for generated images
   - Minimal dark-themed UI with centered image display
   - Real-time buffer status indicator (visual dots + count showing generation progress)

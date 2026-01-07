@@ -107,13 +107,18 @@ class MessageHandler:
         from textbrush.ipc.protocol import InitCommand
 
         cmd = InitCommand(**payload)
+        logger.info(f"INIT received: prompt='{cmd.prompt[:50]}...', seed={cmd.seed}")
         self.backend = TextbrushBackend(self.config)
+        logger.info("Backend created, starting init thread")
 
         def on_ready():
+            logger.info("Backend ready, sending READY event")
             server.send(Message(MessageType.READY))
+            logger.info(f"Starting generation: prompt='{cmd.prompt[:50]}...', seed={cmd.seed}")
             self.backend.start_generation(
                 prompt=cmd.prompt, seed=cmd.seed, aspect_ratio=cmd.aspect_ratio
             )
+            logger.info("Starting image delivery")
             self._start_image_delivery(server, cmd.output_path)
 
         threading.Thread(target=self._init_backend, args=(on_ready, server), daemon=True).start()
@@ -210,6 +215,7 @@ class MessageHandler:
 
         try:
             path = self.backend.accept_current(self._output_path)
+            logger.info(f"Image saved: {path.absolute()}")
             server.send(
                 Message(
                     MessageType.ACCEPTED,
@@ -345,10 +351,14 @@ class MessageHandler:
         self._output_path = Path(output_path) if output_path else None
 
         def deliver_loop():
+            logger.info("Image delivery loop started")
             while True:
                 try:
-                    buffered = self.backend.get_next_image()
+                    logger.debug("Waiting for next image from buffer...")
+                    # Use None timeout to wait indefinitely - FLUX can take 60+ seconds per image
+                    buffered = self.backend.get_next_image(timeout=None)
                     if buffered is None:
+                        logger.info("No more images, delivery loop ending")
                         break
 
                     # Check for worker errors during generation
@@ -367,6 +377,8 @@ class MessageHandler:
 
                     with self._state_lock:
                         self._current_image = buffered
+
+                    logger.info(f"Image ready: seed={buffered.seed}")
 
                     buffer = io.BytesIO()
                     buffered.image.save(buffer, format="PNG")
@@ -479,10 +491,12 @@ class MessageHandler:
         from textbrush.ipc.protocol import ErrorEvent
 
         try:
+            logger.info("Initializing backend (loading model)...")
             self.backend.initialize()
+            logger.info("Backend initialized successfully")
             on_ready()
         except Exception as e:
-            logger.error(f"Backend init failed: {e}")
+            logger.error(f"Backend init failed: {e}", exc_info=True)
             server.send(
                 Message(
                     MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(e), fatal=True))

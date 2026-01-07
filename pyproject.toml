@@ -41,6 +41,7 @@ dev = [
 markers = [
     "integration: marks integration tests that test multiple components together",
     "slow: marks tests as slow (model loading, generation)",
+    "e2e_smoke: marks critical E2E tests for CI smoke testing",
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

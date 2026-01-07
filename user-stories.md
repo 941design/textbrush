@@ -304,3 +304,77 @@ Complete slideshow review interface for generated images with real-time buffer v
 - Full workflow integration tests
 - Error handling tests
 - Cleanup verification tests
+
+---
+
+## Epic: CI/CD and Production Readiness
+
+Headless mode for automated testing, end-to-end test coverage, and CI/CD pipeline for reliable releases.
+
+### [Implemented] Story 5.1: Headless Mode
+
+**As a** Developer
+**I want** headless CLI operation without UI
+**So that** I can integrate textbrush into CI/CD pipelines and automated testing workflows
+
+**Acceptance Criteria:**
+- `--headless` flag disables UI launch
+- `--auto-accept` automatically accepts first generated image and exits 0
+- `--auto-abort` immediately exits with code 1
+- Predictable exit codes (0 for success, 1 for failure/abort)
+- Machine-readable stdout (only output path on accept)
+- Progress messages to stderr for monitoring
+- 120-second timeout for image generation
+
+**Test Coverage:**
+- Subprocess-based CLI execution tests
+- Headless accept workflow verification
+- Headless abort workflow verification
+- Exit code contract validation
+- Timeout behavior tests
+
+---
+
+### [Implemented] Story 5.2: End-to-End Test Suite
+
+**As a** Developer
+**I want** comprehensive E2E tests covering full CLI workflows
+**So that** I can detect integration issues and regressions before release
+
+**Acceptance Criteria:**
+- E2E test suite using subprocess execution
+- Seed determinism verification with file hash comparison
+- Exit code contract tests for all modes
+- Headless workflow tests (accept/abort)
+- Timeout behavior verification
+- CI smoke test integration
+
+**Test Coverage:**
+- CLI argument validation tests
+- Headless accept/abort workflow tests
+- Seed determinism with SHA256 hash comparison
+- Exit code contract verification across modes
+- Integration with GitHub Actions CI
+
+---
+
+### [Implemented] Story 5.3: CI/CD Pipeline
+
+**As a** Developer
+**I want** automated testing and release workflows
+**So that** I can ensure code quality and deliver reliable builds
+
+**Acceptance Criteria:**
+- GitHub Actions CI workflow with multi-platform builds
+- Python test suite execution (pytest)
+- Rust test suite execution (cargo test)
+- Linting and formatting checks
+- E2E smoke test execution
+- Automated release workflow with binary packaging
+- Artifact generation with SHA256 checksums
+
+**Test Coverage:**
+- CI workflow tests on macOS (ARM64/x64) and Linux
+- Release workflow for tagged versions
+- Artifact upload and checksum generation
+- E2E smoke tests running in CI environment

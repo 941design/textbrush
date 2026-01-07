@@ -33,9 +33,11 @@ run-debug:  ## Run Tauri application with debug logging
 
 test:  ## Run test suite with pytest (excludes slow/integration tests)
 	uv run pytest tests --ignore=tests/test_buffer_stress.py -m "not slow and not integration" -v
+	cd src-tauri && cargo check
 
 test-all:  ## Run full test suite including slow/integration tests
 	uv run pytest tests -v
+	cd src-tauri && cargo check
 
 lint:  ## Check code quality with ruff
 	uv run ruff check textbrush tests

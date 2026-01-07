@@ -58,6 +58,9 @@ Optional:
 * `--aspect-ratio 1:1|16:9|9:16`
 * `--format png|jpg`
 * `--verbose`
+* `--headless` - Run without UI (for CI/CD)
+* `--auto-accept` - Auto-accept first image in headless mode
+* `--auto-abort` - Auto-abort in headless mode
 
 CLI arguments override config file values.
 
@@ -73,6 +76,9 @@ CLI arguments override config file values.
 * `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, or `9:16`
 * `--format CHOICE` - Output format: `png` or `jpg`
 * `--verbose` - Enable debug logging (overrides config `logging.verbosity` to `debug`)
+* `--headless` - Run without UI (for CI/CD and automated testing)
+* `--auto-accept` - Auto-accept first generated image in headless mode (exit 0)
+* `--auto-abort` - Auto-abort immediately in headless mode (exit 1)
 
 **Validation:**
 * Prompt cannot be empty or whitespace-only
@@ -82,6 +88,7 @@ CLI arguments override config file values.
 
 #### 2.2 Lifecycle
 
+**UI Mode (Default):**
 1. Parse CLI + config
 2. Discover local models
 3. Download required model(s) if missing and credentials allow
@@ -89,6 +96,19 @@ CLI arguments override config file values.
 5. Start background image generation
 6. Present slideshow review
 7. Exit on Accept or Abort
+
+**Headless Mode (`--headless`):**
+1. Parse CLI + config
+2. Discover local models
+3. Initialize inference engine
+4. Generate single image (120-second timeout)
+5. Handle based on auto-action flag:
+   * `--auto-accept`: Save image, print path to stdout, exit 0
+   * `--auto-abort`: Exit 1 without saving
+   * Neither: Wait for completion, exit 0 on success, 1 on failure
+6. Clean up and exit
+
+Headless mode is designed for CI/CD pipelines and automated testing, providing predictable exit codes and stdout behavior.
 
 ---
 
@@ -298,6 +318,49 @@ CLI arguments override config file values.
   * Decorations: true
   * Full screen: false
 
+#### 5.7 Implemented Components (Increment 5)
+
+**Headless Mode:**
+* `textbrush.cli.headless` - Non-interactive CLI operation:
+  * `--headless` flag disables UI launch
+  * `--auto-accept` automatically accepts first generated image
+  * `--auto-abort` immediately exits with failure code
+  * 120-second timeout for image generation
+  * Predictable exit codes (0 for success, 1 for failure/abort)
+  * Machine-readable stdout (only output path on accept)
+  * Progress messages to stderr for human monitoring
+
+**E2E Test Suite:**
+* `tests/e2e/test_cli_workflows.py` - End-to-end integration tests:
+  * Subprocess-based CLI invocation tests
+  * Headless mode workflow verification (accept/abort)
+  * Seed determinism testing with SHA256 file hash comparison
+  * Exit code contract validation
+  * Timeout behavior verification
+  * CI smoke test integration
+
+**CI/CD Pipeline:**
+* `.github/workflows/ci.yml` - Continuous integration:
+  * Multi-platform builds (macOS ARM64/x64, Linux)
+  * Python test suite execution (pytest)
+  * Rust test suite execution (cargo test)
+  * Linting and formatting checks
+  * E2E smoke test execution with headless mode
+  * Artifact generation with SHA256 checksums
+
+* `.github/workflows/release.yml` - Release automation:
+  * Tagged release builds
+  * Binary packaging for macOS (.app, .dmg)
+  * Binary packaging for Linux
+  * Automatic artifact uploads to GitHub Releases
+
+**Tauri Bundling:**
+* `src-tauri/tauri.conf.json` - macOS app bundle configuration:
+  * Bundle targets: .app and .dmg
+  * Ad-hoc code signing (signingIdentity: "-")
+  * Minimum system version: macOS 10.15
+  * Version synchronization with Cargo.toml
+
 ---
 
 ### 6. Local Model Management
@@ -477,12 +540,18 @@ The config file is automatically created with defaults on first run if it does n
 
   * Unit tests for buffering, config, model discovery
   * Integration tests with mocked inference backend
+  * Property-based tests for core algorithms
 * UI:
 
   * Automated smoke tests (launch, skip, accept, abort)
 * End-to-end:
 
   * CLI invocation → UI → exit contract tests in CI
+  * Headless mode tests with subprocess execution
+  * Seed determinism verification via file hash comparison
+  * Exit code contract validation
+  * `--auto-accept` and `--auto-abort` workflow tests
+  * CI smoke test execution in GitHub Actions
 
 ---
 

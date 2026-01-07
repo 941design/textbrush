@@ -30,6 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
           · --aspect-ratio (choices: ["1:1", "16:9", "9:16"])
           · --format (choices: ["png", "jpg"])
           · --verbose (flag, default: False)
+          · --headless (flag, default: False)
+          · --auto-accept (flag, default: False)
+          · --auto-abort (flag, default: False)
         - Description includes program purpose
         - Help text is user-friendly
 
@@ -49,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
            - --aspect-ratio with choices validation
            - --format with choices validation
            - --verbose as store_true flag
+           - --headless as store_true flag
+           - --auto-accept as store_true flag
+           - --auto-abort as store_true flag
         4. Return configured parser
     """
     parser = argparse.ArgumentParser(
@@ -104,6 +110,27 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Enable debug logging",
+    )
+
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Run without UI (for testing)",
+    )
+
+    parser.add_argument(
+        "--auto-accept",
+        action="store_true",
+        default=False,
+        help="Accept first image automatically (requires --headless)",
+    )
+
+    parser.add_argument(
+        "--auto-abort",
+        action="store_true",
+        default=False,
+        help="Abort immediately after starting (requires --headless)",
     )
 
     return parser
@@ -264,12 +291,14 @@ def main(argv: List[str] | None = None) -> None:
         - Progress messages go to stderr
         - Final output path goes to stdout
         - backend.shutdown() always called (even on error)
+        - If --headless flag set, delegates to run_headless()
 
       Properties:
         - Configuration priority: CLI args > env vars > config file > defaults
         - Error handling: user-facing error messages on stderr
         - Output: success prints path to stdout, nothing else
         - Cleanup: backend shutdown guaranteed via finally block
+        - Mode selection: headless vs GUI based on --headless flag
 
       Algorithm:
         1. Build argument parser via build_parser()
@@ -281,17 +310,21 @@ def main(argv: List[str] | None = None) -> None:
            a. Load config from file + env via config.load_config()
            b. Merge CLI args via merge_cli_args_with_config()
         5. Validate arguments via validate_args()
-        6. Create TextbrushBackend with config
-        7. Initialize backend (load model, print "Loading model..." to stderr)
-        8. Start generation with prompt, seed, aspect_ratio
-        9. Print "Generating..." to stderr
-        10. Get next image from buffer (blocks until ready)
-        11. Determine output path (use args.out or generate automatically)
-        12. Accept and save current image
-        13. Print output path to stdout
-        14. Shutdown backend in finally block
-        15. Exit with code 0 on success
-        16. Error handling:
+        6. If --headless flag is set:
+           a. Delegate to run_headless() with all parameters
+           b. run_headless() handles everything including exit
+        7. Otherwise (GUI mode):
+           a. Create TextbrushBackend with config
+           b. Initialize backend (load model, print "Loading model..." to stderr)
+           c. Start generation with prompt, seed, aspect_ratio
+           d. Print "Generating..." to stderr
+           e. Get next image from buffer (blocks until ready)
+           f. Determine output path (use args.out or generate automatically)
+           g. Accept and save current image
+           h. Print output path to stdout
+           i. Shutdown backend in finally block
+           j. Exit with code 0 on success
+        8. Error handling:
            - Catch exceptions and print to stderr
            - Call backend.shutdown() in finally
            - Exit with code 1 on any error
@@ -309,6 +342,20 @@ def main(argv: List[str] | None = None) -> None:
         config_path = args.config if args.config is not None else CONFIG_PATH
         config = load_config(config_path)
         config = merge_cli_args_with_config(args, config)
+
+        # Dispatch to headless mode if flag is set
+        if args.headless:
+            run_headless(
+                prompt=args.prompt,
+                out=args.out,
+                config=config,
+                seed=args.seed,
+                aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
+                auto_accept=args.auto_accept,
+                auto_abort=args.auto_abort,
+            )
+            # run_headless() calls sys.exit(), so this line is unreachable
+            return
 
         backend = TextbrushBackend(config)
 
@@ -353,3 +400,133 @@ def main(argv: List[str] | None = None) -> None:
     finally:
         if backend is not None:
             backend.shutdown()
+
+
+def run_headless(
+    prompt: str,
+    out: Path | None,
+    config: Config,
+    seed: int | None,
+    aspect_ratio: str,
+    auto_accept: bool,
+    auto_abort: bool,
+) -> None:
+    """Run textbrush in headless mode without GUI (for CI/testing).
+
+    CONTRACT:
+      Inputs:
+        - prompt: non-empty string, text description for image generation
+        - out: optional Path for output file (None = auto-generate)
+        - config: Config object with all settings
+        - seed: optional integer seed for reproducibility (None = random)
+        - aspect_ratio: string, one of "1:1", "16:9", "9:16"
+        - auto_accept: boolean, if True accept first generated image
+        - auto_abort: boolean, if True abort immediately after starting
+
+      Outputs:
+        - None (side effects: print to stdout/stderr, sys.exit with code)
+
+      Invariants:
+        - Exit code 0 + stdout path if auto_accept and image saved successfully
+        - Exit code 1 + empty stdout if auto_abort or any error
+        - auto_abort takes precedence over auto_accept
+        - Progress messages go to stderr
+        - Final output path goes to stdout (only on accept)
+        - Backend shutdown guaranteed
+
+      Properties:
+        - Deterministic: same inputs produce same behavior
+        - Non-interactive: no UI launched
+        - Exit code contract: 0 on accept, 1 on abort/error
+        - Cleanup: backend always shut down
+
+      Algorithm:
+        1. Create TextbrushBackend with config
+        2. Print "Loading model..." to stderr
+        3. Initialize backend (load model)
+        4. Start generation with prompt, seed, aspect_ratio
+        5. If auto_abort:
+           a. Call backend.abort()
+           b. Shutdown backend
+           c. Exit with code 1 (no stdout)
+        6. If auto_accept:
+           a. Print "Generating..." to stderr
+           b. Wait for first image (timeout 120s):
+              - Poll buffer.peek() with 0.1s sleep intervals
+              - If timeout: raise RuntimeError
+           c. If image available:
+              i. Determine output path (use 'out' or generate)
+              ii. Call backend.accept_current(output_path)
+              iii. Print absolute path to stdout
+              iv. Shutdown backend
+              v. Exit with code 0
+           d. If no image: exit with code 1
+        7. If neither auto_accept nor auto_abort:
+           a. Print error to stderr (invalid usage)
+           b. Exit with code 1
+        8. Error handling:
+           a. Catch exceptions and print to stderr
+           b. Shutdown backend in finally block
+           c. Exit with code 1
+           d. Never print to stdout on error
+
+    IMPLEMENTATION NOTE:
+      This function bypasses the Tauri GUI entirely. It uses the backend
+      directly for pure CLI-based generation, suitable for CI pipelines
+      and automated testing.
+    """
+    import time
+
+    from .backend import TextbrushBackend
+
+    backend = None
+
+    try:
+        backend = TextbrushBackend(config)
+
+        print("Loading model...", file=sys.stderr)
+        backend.initialize()
+
+        backend.start_generation(
+            prompt=prompt,
+            seed=seed,
+            aspect_ratio=aspect_ratio,
+        )
+
+        if auto_abort:
+            backend.abort()
+            backend.shutdown()
+            sys.exit(1)
+
+        if auto_accept:
+            print("Generating...", file=sys.stderr)
+
+            timeout_seconds = 120.0
+            start_time = time.time()
+            while time.time() - start_time < timeout_seconds:
+                if backend.buffer.peek() is not None:
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("No image generated within 120 second timeout")
+
+            output_path = backend.accept_current(out)
+            print(str(output_path.absolute()), file=sys.stdout)
+            backend.shutdown()
+            sys.exit(0)
+
+        print("Error: Headless mode requires --auto-accept or --auto-abort", file=sys.stderr)
+        if backend is not None:
+            backend.shutdown()
+        sys.exit(1)
+
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        if backend is not None:
+            backend.shutdown()
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        if backend is not None:
+            backend.shutdown()
+        sys.exit(1)
