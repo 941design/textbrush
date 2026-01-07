@@ -231,6 +231,12 @@ export async function handleConfigUpdate(promptValue, aspectRatioValue, state) {
             aspect_ratio: aspectRatioValue
         });
         console.log('Configuration updated successfully');
+
+        // Update loading prompt caption
+        const loadingPrompt = document.getElementById('loading-prompt');
+        if (loadingPrompt) {
+            loadingPrompt.textContent = trimmedPrompt;
+        }
     } catch (error) {
         console.error('Configuration update failed:', error);
 

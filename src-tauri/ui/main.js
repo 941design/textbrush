@@ -19,6 +19,10 @@ const state = {
   aspectRatio: '1:1',
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
+  // Navigation history
+  imageHistory: [],       // Array of {image_data, seed, blobUrl}
+  historyIndex: -1,       // Current position in history (-1 = none)
+  waitingForNext: false,  // True when at loading placeholder
 };
 
 // DOM Element References
@@ -29,7 +33,7 @@ const elements = {
   currentImage: null,
   loadingOverlay: null,
   loadingSpinner: null,
-  loadingText: null,
+  loadingPrompt: null,
   statusBar: null,
   promptDisplay: null,
   promptInput: null,
@@ -52,7 +56,7 @@ function cacheElements() {
   elements.currentImage = document.querySelector('.current-image');
   elements.loadingOverlay = document.getElementById('loading-overlay');
   elements.loadingSpinner = document.querySelector('.spinner');
-  elements.loadingText = document.querySelector('.loading-text');
+  elements.loadingPrompt = document.getElementById('loading-prompt');
   elements.statusBar = document.querySelector('.status-bar');
   elements.promptDisplay = document.getElementById('prompt-display');
   elements.promptInput = document.getElementById('prompt-input');
@@ -100,6 +104,11 @@ async function init() {
       elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
     }
 
+    // Set the prompt in the loading caption
+    if (elements.loadingPrompt) {
+      elements.loadingPrompt.textContent = state.prompt || 'waiting...';
+    }
+
     // Initialize config controls
     ConfigControls.initConfigControls(state.prompt, state.aspectRatio, state, elements);
 
@@ -119,8 +128,8 @@ async function init() {
     console.log('Application initialized successfully');
   } catch (error) {
     console.error('Initialization failed:', error);
-    if (elements.loadingText) {
-      elements.loadingText.textContent = `Error: ${error.message}`;
+    if (elements.loadingPrompt) {
+      elements.loadingPrompt.textContent = `Error: ${error.message}`;
     }
   }
 }
@@ -187,6 +196,15 @@ function handleImageReady(payload) {
   state.bufferCount = payload.buffer_count || 0;
   state.bufferMax = payload.buffer_max || 8;
 
+  // Add new image to history
+  state.imageHistory.push({
+    image_data: payload.image_data,
+    seed: payload.seed,
+    blobUrl: null,  // Will be set when displayed
+  });
+  state.historyIndex = state.imageHistory.length - 1;
+  state.waitingForNext = false;
+
   displayImage(payload);
   updateBufferDisplay();
   // Always hide loading overlay when we have an image to display
@@ -238,7 +256,7 @@ function handleError(payload) {
 }
 
 // Display Image with Transitions
-async function displayImage(payload) {
+async function displayImage(payload, historyIdx = null) {
   console.log('displayImage called, seed:', payload.seed, 'data length:', payload.image_data?.length);
   if (state.isTransitioning) {
     console.log('Skipping - already transitioning');
@@ -261,8 +279,8 @@ async function displayImage(payload) {
       await new Promise(resolve => setTimeout(resolve, fadeOutDuration));
     }
 
-    // Revoke previous blob URL to prevent memory leak
-    if (state.currentBlobUrl) {
+    // Revoke previous blob URL to prevent memory leak (only if not in history)
+    if (state.currentBlobUrl && !isHistoryBlobUrl(state.currentBlobUrl)) {
       URL.revokeObjectURL(state.currentBlobUrl);
       state.currentBlobUrl = null;
     }
@@ -277,12 +295,25 @@ async function displayImage(payload) {
       }
       const blob = new Blob([bytes], { type: 'image/png' });
       state.currentBlobUrl = URL.createObjectURL(blob);
+
+      // Store blob URL in history if we have a valid history index
+      const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+      if (idx >= 0 && idx < state.imageHistory.length) {
+        state.imageHistory[idx].blobUrl = state.currentBlobUrl;
+      }
+
       console.log('Setting image src to blob URL:', state.currentBlobUrl);
       elements.currentImage.src = state.currentBlobUrl;
+    } else if (elements.currentImage && payload.blobUrl) {
+      // Use existing blob URL from history
+      console.log('Using existing blob URL from history:', payload.blobUrl);
+      state.currentBlobUrl = payload.blobUrl;
+      elements.currentImage.src = payload.blobUrl;
     } else {
       console.warn('Cannot display image - missing element or data:', {
         hasElement: !!elements.currentImage,
-        hasData: !!payload.image_data
+        hasData: !!payload.image_data,
+        hasBlobUrl: !!payload.blobUrl
       });
     }
 
@@ -307,6 +338,11 @@ async function displayImage(payload) {
   }
 }
 
+// Check if a blob URL is stored in history (should not be revoked)
+function isHistoryBlobUrl(blobUrl) {
+  return state.imageHistory.some(item => item.blobUrl === blobUrl);
+}
+
 // Update Buffer Display
 function updateBufferDisplay() {
   if (!elements.bufferDots) {
@@ -328,8 +364,11 @@ function updateBufferDisplay() {
     elements.bufferText.textContent = `${state.bufferCount}/${state.bufferMax}`;
   }
 
-  // Show/hide loading overlay based on buffer
-  showLoading(state.bufferCount === 0);
+  // Only show loading if we're waiting for next AND buffer is empty
+  // Don't auto-show loading when browsing history
+  if (state.waitingForNext && state.bufferCount === 0) {
+    showLoading(true);
+  }
 }
 
 // Show/Hide Loading Overlay
@@ -340,8 +379,16 @@ function showLoading(show) {
 
   if (show) {
     elements.loadingOverlay.classList.remove('hidden');
+    // Hide current image when showing loading placeholder
+    if (elements.currentImage) {
+      elements.currentImage.classList.add('hidden');
+    }
   } else {
     elements.loadingOverlay.classList.add('hidden');
+    // Show current image when hiding loading
+    if (elements.currentImage) {
+      elements.currentImage.classList.remove('hidden');
+    }
   }
 }
 
@@ -353,10 +400,62 @@ function visualSuccessFeedback() {
 }
 
 // Action Functions
+
+// Navigate to previous image in history (ArrowLeft)
+function previous() {
+  if (state.isTransitioning) {
+    return;
+  }
+
+  // If we're at the loading placeholder, go back to the last image
+  if (state.waitingForNext && state.imageHistory.length > 0) {
+    state.waitingForNext = false;
+    state.historyIndex = state.imageHistory.length - 1;
+    const historyItem = state.imageHistory[state.historyIndex];
+    showLoading(false);
+    displayImage(historyItem, state.historyIndex);
+    updateSeedDisplay(historyItem.seed);
+    return;
+  }
+
+  // No wrap-around: if at beginning, do nothing
+  if (state.historyIndex <= 0) {
+    console.log('At beginning of history, cannot go back');
+    return;
+  }
+
+  // Navigate to previous image in history
+  state.historyIndex--;
+  const historyItem = state.imageHistory[state.historyIndex];
+  displayImage(historyItem, state.historyIndex);
+  updateSeedDisplay(historyItem.seed);
+}
+
+// Navigate to next image (ArrowRight or Space)
 function skip() {
   if (state.isTransitioning) {
     return;
   }
+
+  // If already waiting for next image, do nothing
+  if (state.waitingForNext) {
+    console.log('Already waiting for next image');
+    return;
+  }
+
+  // If we're in history (not at the end), navigate forward in history
+  if (state.historyIndex < state.imageHistory.length - 1) {
+    state.historyIndex++;
+    const historyItem = state.imageHistory[state.historyIndex];
+    displayImage(historyItem, state.historyIndex);
+    updateSeedDisplay(historyItem.seed);
+    return;
+  }
+
+  // We're at the newest image - request next from backend
+  // Show loading placeholder (new image with spinner, not overlay on current)
+  state.waitingForNext = true;
+  showLoadingPlaceholder();
 
   // Queue skip action to prevent race conditions
   state.actionQueue = state.actionQueue
@@ -365,7 +464,34 @@ function skip() {
     })
     .catch(err => {
       console.error('Skip failed:', err);
+      // On error, go back to showing the last image
+      state.waitingForNext = false;
+      if (state.imageHistory.length > 0) {
+        const historyItem = state.imageHistory[state.historyIndex];
+        showLoading(false);
+        displayImage(historyItem, state.historyIndex);
+      }
     });
+}
+
+// Show loading placeholder (hide current image, show spinner as new view)
+function showLoadingPlaceholder() {
+  if (elements.currentImage) {
+    elements.currentImage.classList.add('hidden');
+  }
+  if (elements.loadingOverlay) {
+    elements.loadingOverlay.classList.remove('hidden');
+  }
+  if (elements.seedDisplay) {
+    elements.seedDisplay.textContent = 'Seed: —';
+  }
+}
+
+// Update seed display helper
+function updateSeedDisplay(seed) {
+  if (elements.seedDisplay) {
+    elements.seedDisplay.textContent = seed !== undefined ? `Seed: ${seed}` : 'Seed: —';
+  }
 }
 
 function accept() {
@@ -418,8 +544,13 @@ function setupKeyboardListeners() {
       return;
     }
 
-    // Space or Right Arrow = skip
-    if (e.key === ' ' || e.key === 'ArrowRight') {
+    // Left Arrow = previous
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      previous();
+    }
+    // Space or Right Arrow = skip/next
+    else if (e.key === ' ' || e.key === 'ArrowRight') {
       e.preventDefault();
       skip();
     }
@@ -446,11 +577,15 @@ if (typeof window !== 'undefined') {
     displayImage,
     updateBufferDisplay,
     showLoading,
+    showLoadingPlaceholder,
+    previous,
     skip,
     accept,
     abort,
     cacheElements,
     allElementsPresent,
+    isHistoryBlobUrl,
+    updateSeedDisplay,
   };
 }
 

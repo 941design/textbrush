@@ -22,9 +22,9 @@
     "windows": [
       {
         "title": "Textbrush",
-        "width": 800,
-        "height": 700,
-        "resizable": false,
+        "width": 1024,
+        "height": 768,
+        "resizable": true,
         "center": true,
         "decorations": true,
         "transparent": false,

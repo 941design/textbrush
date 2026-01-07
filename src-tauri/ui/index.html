@@ -22,7 +22,10 @@
                 />
                 <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
                     <div class="spinner" aria-hidden="true"></div>
-                    <div class="loading-text">Generating image...</div>
+                    <div class="loading-caption" id="loading-caption">
+                        <span class="loading-label">generating:</span>
+                        <span class="loading-prompt" id="loading-prompt"></span>
+                    </div>
                 </div>
             </div>
         </section>
@@ -102,12 +105,12 @@
                 class="control-btn btn-skip"
                 id="skip-btn"
                 type="button"
-                title="Skip current image and show next (Space or →)"
-                aria-label="Skip current image"
+                title="Navigate forward (→ or Space), go back (←)"
+                aria-label="Skip to next image"
             >
-                <span class="btn-icon" aria-hidden="true">→</span>
-                <span class="btn-label">Skip</span>
-                <span class="btn-shortcut">Space / →</span>
+                <span class="btn-icon" aria-hidden="true">↔</span>
+                <span class="btn-label">Navigate</span>
+                <span class="btn-shortcut">← / → / Space</span>
             </button>
             <button
                 class="control-btn btn-accept"
