@@ -147,11 +147,20 @@ make download-model # Download FLUX.1 schnell (requires HuggingFace token)
 ### Development Tasks
 
 ```bash
-make test          # Run test suite
-make lint          # Check code quality
-make format        # Format code
+make test          # Run fast tests (excludes slow/integration)
+make test-all      # Run full test suite including slow/integration tests
+make lint          # Check Python code quality (ruff)
+make format        # Format Python code (ruff)
+make clippy        # Check Rust code quality (cargo clippy)
+make fmt-rust      # Format Rust code (cargo fmt)
+make fmt-check     # Verify all code is formatted (CI)
 make build         # Build Tauri application
+make run           # Run Tauri application locally
+make run-debug     # Run Tauri with debug logging
+make dev           # Run CLI with --help
 make clean         # Remove build artifacts
 ```
 
-See `CLAUDE.md` for detailed development guidelines.
+For detailed development guidelines and coding standards, see `CLAUDE.md`.
+
+For detailed technical guides and troubleshooting, see [docs/](docs/).

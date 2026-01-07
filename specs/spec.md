@@ -181,185 +181,89 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * Backend terminates when UI exits
 * Abort immediately stops inference
 
-#### 5.3 Implemented Components (Increment 1)
+#### 5.3 Python Backend Components
 
-**Python Package Structure:**
+**Package Structure:**
 * Package: `textbrush` (Python >=3.11)
 * Entry point: `textbrush` CLI command
-* Core modules:
-  * `textbrush.cli` - Command-line argument parsing and application entry
-  * `textbrush.config` - TOML configuration loading with environment variable support
-  * `textbrush.paths` - XDG-compliant path constants
-  * `textbrush.model.weights` - HuggingFace model cache discovery and validation
 
-**Configuration System:**
-* TOML-based configuration at `~/.config/textbrush/config.toml`
-* Configuration priority: CLI arguments > environment variables > config file > defaults
-* Environment variables: `TEXTBRUSH_*` prefix (e.g., `TEXTBRUSH_OUTPUT_FORMAT`)
-* Auto-creates default config on first run
-* Sections: output, model, huggingface, inference, logging
+**Core Modules:**
 
-**Model Weight Management:**
-* Automatic discovery of FLUX.1 schnell in HuggingFace cache
-* Respects `HF_HOME` and `HF_HUB_CACHE` environment variables
-* Support for custom model directories via config
-* Model availability checking and validation
-* Integration with huggingface_hub for cache management
+| Module | Purpose |
+|--------|---------|
+| `textbrush.cli` | Command-line argument parsing and application entry |
+| `textbrush.config` | TOML configuration with environment variable support |
+| `textbrush.paths` | XDG-compliant path constants |
+| `textbrush.backend` | High-level workflow orchestration |
+| `textbrush.buffer` | Thread-safe FIFO image buffer |
+| `textbrush.worker` | Background generation worker thread |
 
-**Tauri Shell:**
-* Minimal Tauri v2 project structure in `src-tauri/`
-* Compiles and displays empty window (foundation for UI development)
-* Configured for sidecar process integration (future increments)
+**Inference Engine (`textbrush.inference`):**
+* Abstract `InferenceEngine` interface for pluggable backends
+* `FluxInferenceEngine` implementation for FLUX.1 schnell
+* Hardware auto-detection: CUDA > MPS > CPU
+* Seed-based deterministic generation
+* Aspect ratio presets: 1:1, 16:9, 9:16
 
-#### 5.4 Implemented Components (Increment 2)
+**Model Management (`textbrush.model`):**
+* HuggingFace cache discovery (respects `HF_HOME`, `HF_HUB_CACHE`)
+* Custom model directory support via config
+* Model availability validation
+* Token-based model download via huggingface_hub
 
-**Inference Engine:**
-* `textbrush.inference.base` - Abstract InferenceEngine interface and data classes:
-  * `GenerationOptions` - Immutable generation parameters (seed, steps, aspect_ratio)
-  * `GenerationResult` - Generation output with image, seed, timing
-  * `InferenceEngine` - Abstract base for all inference backends
-* `textbrush.inference.flux` - FLUX.1 schnell implementation:
-  * Hardware auto-detection (CUDA > MPS > CPU priority)
-  * BFloat16 precision for optimal performance
-  * Seed-based deterministic generation
-  * Dimension resolution from aspect ratio presets
-* `textbrush.inference.factory` - Engine factory for backend selection
+**IPC Layer (`textbrush.ipc`):**
+* JSON-over-stdio protocol for Tauri communication
+* Commands: INIT, SKIP, ACCEPT, ABORT, STATUS
+* Events: READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
+* Thread-safe message delivery
+* Error propagation from worker to UI
 
-**Image Buffer System:**
-* `textbrush.buffer.BufferedImage` - Image container with metadata:
-  * Context manager support for resource cleanup
-  * Temporary file cleanup mechanism
-* `textbrush.buffer.ImageBuffer` - Thread-safe FIFO buffer:
-  * Configurable max size (default 8)
-  * Blocking put/get with timeout support
-  * Grace period shutdown for clean termination
-  * Clear operation with resource cleanup
+#### 5.4 Tauri Desktop Shell
 
-**Background Worker:**
-* `textbrush.worker.GenerationWorker` - Background image generation:
-  * Thread-safe operation with stop event
-  * Error capture via thread-safe error queue
-  * Immutable options progression (seed increment via dataclass replace)
-  * Graceful shutdown support
+**Rust Components (`src-tauri/src/`):**
 
-**Backend Coordinator:**
-* `textbrush.backend.TextbrushBackend` - High-level orchestration:
-  * Model initialization and lifecycle management
-  * Generation start/stop control
-  * Image retrieval with timeout support
-  * Accept/skip/abort workflow actions
-  * Error checking and propagation to main thread
-  * Output path generation
+| Module | Purpose |
+|--------|---------|
+| `main.rs` | Application entry and window management |
+| `sidecar.rs` | Python process spawning and lifecycle |
+| `commands.rs` | Tauri commands: init, skip, accept, abort |
+| `exit_handlers.rs` | Exit code contract handling |
 
-**CLI Integration:**
-* `textbrush generate` command fully functional:
-  * Invokes backend workflow end-to-end
-  * Progress messages to stderr
-  * Output path to stdout on success
-  * Proper cleanup in finally block
-
-#### 5.5 Implemented Components (Increment 3)
-
-**IPC Protocol:**
-* `textbrush.ipc.protocol` - JSON message format and types:
-  * Command messages: INIT, SKIP, ACCEPT, ABORT, STATUS
-  * Event messages: READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
-  * Base64 image encoding for JSON transport
-  * Message serialization/deserialization utilities
-
-**IPC Server:**
-* `textbrush.ipc.server` - Python IPC server with thread-safe operations:
-  * `IPCServer` with stdin listener and stdout sender
-  * Thread-safe `send()` method for event emission
-  * Message dispatcher routing commands to handlers
-  * `MessageHandler` coordinating backend via IPC
-  * Error propagation from worker to UI
-  * Graceful shutdown with resource cleanup
-
-**Tauri Sidecar:**
-* `src-tauri/src/sidecar.rs` - Process lifecycle management:
-  * Python backend spawning with environment configuration
-  * Stdio stream capture for IPC communication
-  * Process termination handling
-* `src-tauri/src/lib.rs` - Tauri commands:
-  * init_generation, skip_image, accept_image, abort_generation
-  * Event relay from Python to frontend
-  * Command error handling
-
-#### 5.6 Implemented Components (Increment 4)
-
-**Desktop UI:**
-* `src-tauri/index.html` - Complete slideshow review interface:
-  * Minimal dark theme (#1a1a1a background, #2d2d2d panels)
-  * Centered image display with contain scaling
-  * Real-time buffer status indicator (visual dots + numeric count)
-  * Control buttons: Abort / Skip / Accept with hover states
-  * 800x700 fixed window, centered on screen
-  * Non-resizable for consistent layout
-
-**Frontend Logic:**
-* `src-tauri/main.js` - UI state management and IPC integration:
-  * Event handlers for READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
-  * Action queue preventing race conditions during rapid input
-  * Memory-efficient blob URLs (replaced base64 data URLs)
-  * Keyboard shortcuts: Space/→ (skip), Enter (accept), Esc (abort)
-  * Mouse click handlers for control buttons
-  * Image transition animations with GPU acceleration
-  * Conditional animation skipping for performance
-  * Exit handling for OS window close events (maps to abort)
-  * Frontend state machine: idle → loading → ready → action states
+**Frontend (`src-tauri/ui/`):**
+* Single-page HTML/CSS/JS application
+* Minimal dark theme (#1a1a1a background)
+* Real-time buffer status visualization
+* GPU-accelerated image transitions
+* Keyboard shortcuts: Space/→ (skip), Enter (accept), Esc (abort)
+* State machine: idle → loading → ready → action states
 
 **Window Configuration:**
-* `src-tauri/tauri.conf.json` - Window settings:
-  * Title: "Textbrush"
-  * Dimensions: 800x700 pixels
-  * Center: true
-  * Resizable: false
-  * Decorations: true
-  * Full screen: false
+* Fixed size: 800x700 pixels
+* Centered, non-resizable
+* macOS minimum: 10.15
 
-#### 5.7 Implemented Components (Increment 5)
+#### 5.5 Headless Mode
 
-**Headless Mode:**
-* `textbrush.cli.headless` - Non-interactive CLI operation:
-  * `--headless` flag disables UI launch
-  * `--auto-accept` automatically accepts first generated image
-  * `--auto-abort` immediately exits with failure code
-  * 120-second timeout for image generation
-  * Predictable exit codes (0 for success, 1 for failure/abort)
-  * Machine-readable stdout (only output path on accept)
-  * Progress messages to stderr for human monitoring
+For CI/CD and automated workflows:
+* `--headless` flag disables UI
+* `--auto-accept` accepts first image (exit 0)
+* `--auto-abort` aborts immediately (exit 1)
+* 120-second timeout for generation
+* Machine-readable stdout (path only on accept)
 
-**E2E Test Suite:**
-* `tests/e2e/test_cli_workflows.py` - End-to-end integration tests:
-  * Subprocess-based CLI invocation tests
-  * Headless mode workflow verification (accept/abort)
-  * Seed determinism testing with SHA256 file hash comparison
-  * Exit code contract validation
-  * Timeout behavior verification
-  * CI smoke test integration
+#### 5.6 CI/CD Pipeline
 
-**CI/CD Pipeline:**
-* `.github/workflows/ci.yml` - Continuous integration:
-  * Multi-platform builds (macOS ARM64/x64, Linux)
-  * Python test suite execution (pytest)
-  * Rust test suite execution (cargo test)
-  * Linting and formatting checks
-  * E2E smoke test execution with headless mode
-  * Artifact generation with SHA256 checksums
+**Continuous Integration (`.github/workflows/ci.yml`):**
+* Multi-platform builds: macOS ARM64/x64, Linux x64
+* Python tests (pytest) and Rust tests (cargo test)
+* Linting and formatting checks
+* E2E smoke tests with headless mode
 
-* `.github/workflows/release.yml` - Release automation:
-  * Tagged release builds
-  * Binary packaging for macOS (.app, .dmg)
-  * Binary packaging for Linux
-  * Automatic artifact uploads to GitHub Releases
-
-**Tauri Bundling:**
-* `src-tauri/tauri.conf.json` - macOS app bundle configuration:
-  * Bundle targets: .app and .dmg
-  * Ad-hoc code signing (signingIdentity: "-")
-  * Minimum system version: macOS 10.15
-  * Version synchronization with Cargo.toml
+**Release Automation (`.github/workflows/release.yml`):**
+* Triggered by version tags (v*)
+* Binary packaging: .app, .dmg (macOS), .tar.gz (Linux)
+* SHA256 checksums for verification
+* GitHub Releases upload
 
 ---
 
@@ -573,12 +477,6 @@ The config file is automatically created with defaults on first run if it does n
 
   * Signed artifacts (checksums)
 
-#### Updates
-
-* Manual updates only
-* User-triggered “Check for updates”
-* Uses GitHub Releases metadata
-
 ---
 
 ### 14. Open Source & Project Hygiene
@@ -600,5 +498,9 @@ The config file is automatically created with defaults on first run if it does n
 
 * Windows support
 * Model fine-tuning
-* Auto-updates
+* Auto-updates (only manual updates allowed)
 * Telemetry or usage metrics
+* Image editing or post-processing
+* Model training
+
+**Note:** For planned features not yet implemented, see separate feature specifications in `specs/` directory.

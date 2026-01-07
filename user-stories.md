@@ -378,3 +378,196 @@ Headless mode for automated testing, end-to-end test coverage, and CI/CD pipelin
 - Release workflow for tagged versions
 - Artifact upload and checksum generation
 - E2E smoke tests running in CI environment
+
+---
+
+## Additional Personas
+
+### 3. DevOps/CI Engineer
+Engineers maintaining continuous integration pipelines and automated testing infrastructure. They value:
+- Headless operation without UI dependencies
+- Predictable exit codes (0/1) for pipeline integration
+- Machine-readable stdout for scripting
+- Timeout protection for resource management
+- Multi-platform support (macOS ARM64/x64, Linux)
+
+### 4. Power User (Interactive)
+Advanced users who want rapid visual review and selection of AI-generated images. They value:
+- Keyboard-driven workflow for speed
+- Real-time buffer visualization showing generation progress
+- Minimal, distraction-free UI
+- GPU-accelerated performance (<100ms skip latency)
+- Accessibility features (ARIA labels, semantic HTML)
+
+### 5. Open Source Maintainer
+Project maintainers and contributors managing releases, builds, and project hygiene. They value:
+- Automated release workflows
+- Multi-platform binary packaging
+- Clear development tooling (Makefile targets)
+- Reproducible builds with checksums
+- Semantic versioning
+
+---
+
+## Epic: Accessibility and Usability
+
+Accessibility features and user experience enhancements for keyboard navigation and screen readers.
+
+### [Implemented] Story 6.1: Keyboard Accessibility
+
+**As a** Power User
+**I want** comprehensive keyboard shortcuts for all UI actions
+**So that** I can review images without touching the mouse
+
+**Acceptance Criteria:**
+- Space or → keys skip to next image
+- Enter key accepts current image
+- Esc key aborts generation
+- All actions accessible via keyboard
+- No mouse required for complete workflow
+
+**Implementation:**
+- Event handlers in src-tauri/ui/main.js (lines 401-419)
+- Keyboard events prevent default browser behavior
+- Focus management for accessibility
+
+---
+
+### [Implemented] Story 6.2: Screen Reader Support
+
+**As a** Visually Impaired User
+**I want** semantic HTML with ARIA labels
+**So that** I can use the application with assistive technology
+
+**Acceptance Criteria:**
+- `aria-label` attributes on all interactive elements
+- `aria-live="polite"` on loading overlay
+- `role="status"` on buffer indicator
+- Semantic button elements with descriptive text
+- Proper heading hierarchy
+
+**Implementation:**
+- ARIA labels on buffer dots (index.html lines 40-47)
+- Live regions for dynamic content updates
+- Semantic HTML5 elements throughout
+
+---
+
+### [Implemented] Story 6.3: Real-Time Visual Feedback
+
+**As a** Power User
+**I want** real-time buffer status visualization
+**So that** I know how many images are ready to review
+
+**Acceptance Criteria:**
+- Buffer dots indicator with fill states
+- Numeric count display (0/8 format)
+- Loading overlay with spinner
+- Success feedback on accept (green glow effect)
+- Visual state changes are immediate
+
+**Implementation:**
+- Buffer visualization with CSS animations
+- State-driven UI updates
+- Performance optimizations for smooth transitions
+
+---
+
+## Epic: Configuration and Customization
+
+Advanced configuration options for reproducible workflows and environment-specific settings.
+
+### [Implemented] Story 7.1: Multi-Source Configuration
+
+**As a** Developer
+**I want** configuration from CLI args, environment variables, and config files with clear priority
+**So that** I can adapt the tool to different environments without code changes
+
+**Acceptance Criteria:**
+- Priority system: CLI > env > file > defaults
+- `TEXTBRUSH_*` environment variable prefix
+- TOML config file support at ~/.config/textbrush/config.toml
+- Clear precedence rules documented
+- Config file auto-created on first run
+
+**Implementation:**
+- Three-tier config merging in textbrush/config.py
+- Environment variable naming convention
+- Path expansion and validation
+
+---
+
+### [Implemented] Story 7.2: Reproducible Generation
+
+**As a** Technical Writer
+**I want** seed-based deterministic image generation
+**So that** I can generate identical images for version-controlled documentation
+
+**Acceptance Criteria:**
+- `--seed` CLI argument for reproducibility
+- Seed display in UI during generation
+- Auto-increment for variation in continuous generation
+- SHA256 hash verification in E2E tests
+- Same seed + prompt = identical image (on same hardware)
+
+**Implementation:**
+- Seed parameter in inference engine (textbrush/inference/flux.py)
+- Determinism tests with hash comparison
+- UI seed display (index.html lines 51-53)
+
+---
+
+### [Implemented] Story 7.3: Aspect Ratio Presets
+
+**As a** Technical Writer
+**I want** common aspect ratio presets (1:1, 16:9, 9:16)
+**So that** I can generate images that fit standard layouts
+
+**Acceptance Criteria:**
+- `--aspect-ratio` CLI argument with choices validation
+- 1:1 (1024x1024), 16:9 (1344x768), 9:16 (768x1344)
+- Dimension resolution in FluxInferenceEngine
+- Property-based tests for all presets
+
+**Implementation:**
+- Aspect ratio parsing in CLI
+- Dimension calculation in inference engine
+- Property tests for dimension resolution
+
+---
+
+## Epic: Planned Features
+
+Features documented but not yet implemented. See separate feature specifications in `specs/` directory.
+
+### [Planned] Story 8.1: CLI Model Download
+
+**As a** Developer
+**I want** to download models via a CLI flag
+**So that** I can automate model setup without using Makefile commands
+
+**Acceptance Criteria:**
+- `--download-model` flag downloads FLUX.1 schnell
+- Requires HuggingFace token (env var or config)
+- Clear progress indication
+- Success message with cache path
+- Cannot be combined with `--prompt`
+
+**Specification:** See `specs/cli-download-model-spec.md`
+
+---
+
+### [Planned] Story 8.2: Manual Update Check
+
+**As a** Developer
+**I want** to check for newer textbrush releases
+**So that** I can stay up to date with bug fixes and features
+
+**Acceptance Criteria:**
+- `--check-updates` flag queries GitHub Releases API
+- Compares current version with latest release
+- Displays update notification if newer version available
+- Provides download link to GitHub Releases
+- Manual trigger only (no automatic checks)
+
+**Specification:** See `specs/update-check-spec.md`

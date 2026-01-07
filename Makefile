@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test lint format build build-python clean run run-debug
+.PHONY: help install download-model dev test test-all lint format clippy fmt-rust fmt-check build build-python clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -39,11 +39,21 @@ test-all:  ## Run full test suite including slow/integration tests
 	uv run pytest tests -v
 	cd src-tauri && cargo check
 
-lint:  ## Check code quality with ruff
+lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests
 
-format:  ## Format code with ruff
+format:  ## Format Python code with ruff
 	uv run ruff format textbrush tests
+
+clippy:  ## Check Rust code quality with clippy
+	cd src-tauri && cargo clippy -- -D warnings
+
+fmt-rust:  ## Format Rust code with rustfmt
+	cd src-tauri && cargo fmt
+
+fmt-check:  ## Verify all code is formatted (for CI)
+	uv run ruff format --check textbrush tests
+	cd src-tauri && cargo fmt --check
 
 # ============================================================================
 # Build
