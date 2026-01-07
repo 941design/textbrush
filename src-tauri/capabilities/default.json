@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Default permissions for textbrush",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default"
+  ]
 }

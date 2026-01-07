@@ -58,7 +58,7 @@ pub async fn init_generation(
     seed: Option<i64>,
     aspect_ratio: String,
 ) -> Result<(), String> {
-    let mut sidecar = Sidecar::spawn("python", &["-m", "textbrush.ipc"])?;
+    let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])?;
 
     let window_clone = window.clone();
     sidecar.start_reader(move |msg| {

@@ -180,6 +180,111 @@ Complete image generation backend with FLUX.1 integration, background worker, an
 
 ---
 
+## Epic: Tauri IPC Integration
+
+Communication layer enabling Tauri desktop shell to orchestrate Python inference backend via IPC protocol.
+
+### [Implemented] Story 3.1: Stdio IPC Protocol
+
+**As a** Developer
+**I want** a JSON-based stdio protocol for Tauri-Python communication
+**So that** the desktop UI can control inference backend across process boundaries
+
+**Acceptance Criteria:**
+- JSON message format over stdin/stdout with newline delimiters
+- Command messages: INIT, SKIP, ACCEPT, ABORT, STATUS
+- Event messages: READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
+- Base64 image encoding for JSON transport
+- Thread-safe message sending with proper synchronization
+- Error propagation from worker to UI via fatal error events
+
+**Test Coverage:**
+- Message serialization/deserialization tests
+- Command dispatch tests
+- Thread-safe message delivery tests
+- Error propagation tests
+
+---
+
+### [Implemented] Story 3.2: IPC Server
+
+**As a** Developer
+**I want** a Python IPC server that handles UI commands and emits backend events
+**So that** the Tauri shell can orchestrate generation workflow
+
+**Acceptance Criteria:**
+- `IPCServer` with thread-safe `send()` method
+- Message dispatcher coordinating backend operations
+- Command handlers: init, skip, accept, abort, status
+- Event emission: ready, image_ready, buffer_status, error, accepted, aborted
+- Graceful shutdown with resource cleanup
+- Worker error propagation to UI
+
+**Test Coverage:**
+- Server lifecycle tests
+- Command dispatch integration tests
+- Event emission tests
+- Shutdown behavior tests
+
+---
+
+### [Implemented] Story 3.3: Tauri Sidecar Management
+
+**As a** Developer
+**I want** Rust sidecar spawning and lifecycle management
+**So that** Tauri can launch and control Python backend process
+
+**Acceptance Criteria:**
+- Sidecar process spawning with environment configuration
+- Stdio stream capture for IPC communication
+- Process termination on UI exit
+- Tauri commands: init_generation, skip_image, accept_image, abort_generation
+- Event relay from Python to frontend
+
+**Test Coverage:**
+- Process lifecycle tests
+- Command relay tests
+- Event handling tests
+
+---
+
+## Epic: Desktop UI
+
+Complete slideshow review interface for generated images with real-time buffer visualization.
+
+### [Implemented] Story 4.1: UI Implementation
+
+**As a** Technical Writer
+**I want** a minimal dark-themed slideshow UI with keyboard and mouse controls
+**So that** I can quickly review generated images and accept/skip/abort
+
+**Acceptance Criteria:**
+- Minimal dark theme with centered image display
+- Real-time buffer status indicator (visual dots + count)
+- Keyboard shortcuts: Space/→ for skip, Enter for accept, Esc for abort
+- Mouse controls: on-screen buttons for Skip/Accept/Abort
+- Smooth image transitions with GPU-accelerated animations
+- <100ms skip latency when buffer is non-empty
+- Window: 800x700, non-resizable, centered
+- Exit contract: Accept prints path + exit 0, Abort/close exits 1
+
+**Test Coverage:**
+- UI component rendering tests
+- Keyboard event handling tests
+- Image transition tests
+- Buffer status display tests
+- Exit behavior verification
+
+**Implementation Details:**
+- HTML/CSS/JS UI with Tailwind-inspired utility classes
+- Memory-efficient blob URLs (replaced base64 data URLs)
+- Action queue preventing race conditions
+- Exit handling for OS window close events
+- Conditional animation skipping for performance
+- Frontend state machine for action flow control
+
+---
+
 ### [Implemented] Story 2.5: CLI Integration
 
 **As a** Technical Writer

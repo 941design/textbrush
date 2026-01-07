@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test lint format build build-python clean
+.PHONY: help install download-model dev test lint format build build-python clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -24,6 +24,12 @@ download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
 
 dev:  ## Run textbrush CLI with --help
 	uv run textbrush --help
+
+run:  ## Run Tauri application
+	cd src-tauri && cargo run
+
+run-debug:  ## Run Tauri application with debug logging
+	cd src-tauri && RUST_LOG=debug cargo run
 
 test:  ## Run test suite with pytest (excludes slow/integration tests)
 	uv run pytest tests --ignore=tests/test_buffer_stress.py -m "not slow and not integration" -v

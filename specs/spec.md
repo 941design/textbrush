@@ -238,6 +238,66 @@ CLI arguments override config file values.
   * Output path to stdout on success
   * Proper cleanup in finally block
 
+#### 5.5 Implemented Components (Increment 3)
+
+**IPC Protocol:**
+* `textbrush.ipc.protocol` - JSON message format and types:
+  * Command messages: INIT, SKIP, ACCEPT, ABORT, STATUS
+  * Event messages: READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
+  * Base64 image encoding for JSON transport
+  * Message serialization/deserialization utilities
+
+**IPC Server:**
+* `textbrush.ipc.server` - Python IPC server with thread-safe operations:
+  * `IPCServer` with stdin listener and stdout sender
+  * Thread-safe `send()` method for event emission
+  * Message dispatcher routing commands to handlers
+  * `MessageHandler` coordinating backend via IPC
+  * Error propagation from worker to UI
+  * Graceful shutdown with resource cleanup
+
+**Tauri Sidecar:**
+* `src-tauri/src/sidecar.rs` - Process lifecycle management:
+  * Python backend spawning with environment configuration
+  * Stdio stream capture for IPC communication
+  * Process termination handling
+* `src-tauri/src/lib.rs` - Tauri commands:
+  * init_generation, skip_image, accept_image, abort_generation
+  * Event relay from Python to frontend
+  * Command error handling
+
+#### 5.6 Implemented Components (Increment 4)
+
+**Desktop UI:**
+* `src-tauri/index.html` - Complete slideshow review interface:
+  * Minimal dark theme (#1a1a1a background, #2d2d2d panels)
+  * Centered image display with contain scaling
+  * Real-time buffer status indicator (visual dots + numeric count)
+  * Control buttons: Abort / Skip / Accept with hover states
+  * 800x700 fixed window, centered on screen
+  * Non-resizable for consistent layout
+
+**Frontend Logic:**
+* `src-tauri/main.js` - UI state management and IPC integration:
+  * Event handlers for READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
+  * Action queue preventing race conditions during rapid input
+  * Memory-efficient blob URLs (replaced base64 data URLs)
+  * Keyboard shortcuts: Space/→ (skip), Enter (accept), Esc (abort)
+  * Mouse click handlers for control buttons
+  * Image transition animations with GPU acceleration
+  * Conditional animation skipping for performance
+  * Exit handling for OS window close events (maps to abort)
+  * Frontend state machine: idle → loading → ready → action states
+
+**Window Configuration:**
+* `src-tauri/tauri.conf.json` - Window settings:
+  * Title: "Textbrush"
+  * Dimensions: 800x700 pixels
+  * Center: true
+  * Resizable: false
+  * Decorations: true
+  * Full screen: false
+
 ---
 
 ### 6. Local Model Management

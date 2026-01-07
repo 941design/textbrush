@@ -231,28 +231,24 @@ class TestFluxEngineReproducibilityMocked:
 class TestRealFluxReproducibility:
     """Real FLUX reproducibility tests (require model weights).
 
-    These tests are skipped unless the FLUX model is available.
-    Run with: pytest -m "slow and integration" --run-slow
+    These tests are skipped unless explicitly enabled with --run-slow.
+    They share a single model instance (session-scoped) and MUST run sequentially.
+
+    Run with: pytest --run-slow -k TestRealFluxReproducibility
+    Do NOT use -n (parallel) with these tests.
     """
 
-    @pytest.fixture
-    def flux_engine(self) -> FluxInferenceEngine:
-        """Load FLUX engine once for reproducibility tests."""
-        engine = FluxInferenceEngine()
-        # Load model - will fail if model not available (fail fast per CLAUDE.md)
-        engine.load()
-        yield engine
-        engine.unload()
-
-    def test_same_hardware_determinism(self, flux_engine: FluxInferenceEngine) -> None:
+    def test_same_hardware_determinism(
+        self, flux_engine_session: FluxInferenceEngine
+    ) -> None:
         """Same seed on same hardware produces identical images."""
         prompt = "a red cube on a blue surface"
         seed = 42
         options = GenerationOptions(seed=seed, steps=4, aspect_ratio="1:1")
 
         # Generate twice with same parameters
-        result1 = flux_engine.generate(prompt, options)
-        result2 = flux_engine.generate(prompt, options)
+        result1 = flux_engine_session.generate(prompt, options)
+        result2 = flux_engine_session.generate(prompt, options)
 
         # Images should be identical (or nearly identical due to FP precision)
         similarity = image_similarity(result1.image, result2.image)
@@ -264,13 +260,13 @@ class TestRealFluxReproducibility:
         assert result1.seed == result2.seed == seed
 
     def test_different_seeds_produce_different_images(
-        self, flux_engine: FluxInferenceEngine
+        self, flux_engine_session: FluxInferenceEngine
     ) -> None:
         """Different seeds produce visually distinct images."""
         prompt = "a red cube on a blue surface"
 
-        result1 = flux_engine.generate(prompt, GenerationOptions(seed=42, steps=4))
-        result2 = flux_engine.generate(prompt, GenerationOptions(seed=123, steps=4))
+        result1 = flux_engine_session.generate(prompt, GenerationOptions(seed=42, steps=4))
+        result2 = flux_engine_session.generate(prompt, GenerationOptions(seed=123, steps=4))
 
         # Images should be different
         similarity = image_similarity(result1.image, result2.image)
@@ -286,7 +282,7 @@ class TestRealFluxReproducibility:
     @settings(max_examples=3, deadline=120000)  # Very slow - real inference
     def test_reproducibility_property(
         self,
-        flux_engine: FluxInferenceEngine,
+        flux_engine_session: FluxInferenceEngine,
         seed: int,
         aspect_ratio: str,
     ) -> None:
@@ -295,8 +291,8 @@ class TestRealFluxReproducibility:
         options = GenerationOptions(seed=seed, steps=4, aspect_ratio=aspect_ratio)
 
         # Generate twice
-        result1 = flux_engine.generate(prompt, options)
-        result2 = flux_engine.generate(prompt, options)
+        result1 = flux_engine_session.generate(prompt, options)
+        result2 = flux_engine_session.generate(prompt, options)
 
         # Calculate similarity
         similarity = image_similarity(result1.image, result2.image)

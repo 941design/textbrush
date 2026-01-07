@@ -1,0 +1,102 @@
+/* Design System Variables - CSS Custom Properties
+ *
+ * CONTRACT:
+ *   Purpose: Define all design tokens (colors, spacing, typography, transitions, shadows)
+ *            as CSS custom properties for consistent styling across the application.
+ *
+ *   Inputs: None (pure CSS variable definitions)
+ *
+ *   Outputs: CSS custom properties available to all stylesheets via var() function
+ *
+ *   Invariants:
+ *     - All variables defined in :root scope (globally accessible)
+ *     - Color values use hex format for consistency
+ *     - Spacing uses px units in multiples of 4 (4px base grid)
+ *     - Transition durations in milliseconds with easing functions
+ *     - Shadow values use rgba for alpha transparency
+ *
+ *   Properties:
+ *     - Immutable: variable definitions don't change at runtime
+ *     - Semantic naming: colors named by usage (primary, secondary) not appearance (blue, gray)
+ *     - Hierarchical: spacing has clear small→large progression
+ *     - Dark theme: optimized for low-light viewing with high contrast
+ *
+ *   Design Tokens Required:
+ *
+ *     Colors (dark theme palette):
+ *       - bg-primary: #0d0d0d (main background - darkest)
+ *       - bg-secondary: #1a1a1a (viewer area background)
+ *       - bg-tertiary: #262626 (status bar and button backgrounds)
+ *       - text-primary: #ffffff (main text - highest contrast)
+ *       - text-secondary: #a0a0a0 (secondary info text)
+ *       - text-muted: #666666 (least important text)
+ *       - accent-primary: #3b82f6 (interactive elements, focus states)
+ *       - accent-success: #22c55e (accept button hover)
+ *       - accent-danger: #ef4444 (abort button hover)
+ *       - border-subtle: #333333 (default borders)
+ *       - border-focus: #3b82f6 (focused element borders)
+ *
+ *     Spacing (4px base grid):
+ *       - spacing-xs: 4px
+ *       - spacing-sm: 8px
+ *       - spacing-md: 16px
+ *       - spacing-lg: 24px
+ *       - spacing-xl: 32px
+ *
+ *     Typography:
+ *       - font-mono: 'SF Mono', 'Menlo', 'Monaco', monospace (for code/seeds/shortcuts)
+ *       - font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif (for UI text)
+ *
+ *     Transitions:
+ *       - transition-fast: 100ms ease (button presses, immediate feedback)
+ *       - transition-normal: 200ms ease (image fades, standard animations)
+ *       - transition-slow: 300ms ease (loading overlays)
+ *
+ *     Shadows (layering depth):
+ *       - shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5) (subtle elevation)
+ *       - shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5) (moderate elevation)
+ *       - shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5) (images, high elevation)
+ *
+ * IMPLEMENTATION GUIDANCE:
+ *   - Use exact values from spec (already provided above)
+ *   - Define all variables under :root selector
+ *   - Use -- prefix for custom property names (CSS standard)
+ *   - Group related properties with comments
+ *   - Keep alphabetical order within groups for maintainability
+ */
+
+:root {
+    /* Colors - Dark Theme */
+    --bg-primary: #0d0d0d;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #262626;
+
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0a0;
+    --text-muted: #666666;
+
+    --accent-primary: #3b82f6;
+    --accent-success: #22c55e;
+    --accent-danger: #ef4444;
+
+    --border-subtle: #333333;
+    --border-focus: #3b82f6;
+
+    /* Spacing - 4px Base Grid */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    /* Typography */
+    --font-mono: 'SF Mono', 'Menlo', 'Monaco', monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    /* Transitions */
+    --transition-fast: 100ms ease;
+    --transition-normal: 200ms ease;
+
+    /* Shadows */
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+}

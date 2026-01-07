@@ -1,101 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Textbrush</title>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            padding: 20px;
-            background: #1a1a1a;
-            color: #ffffff;
-        }
-        h1 {
-            margin-bottom: 20px;
-            font-size: 24px;
-            font-weight: 500;
-        }
-        #image-container {
-            margin-bottom: 20px;
-            border: 1px solid #333;
-            border-radius: 4px;
-            padding: 10px;
-            background: #222;
-            min-height: 400px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #image {
-            max-width: 100%;
-            max-height: 512px;
-            border-radius: 4px;
-        }
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: 500;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button:hover {
-            opacity: 0.9;
-        }
-        button:active {
-            transform: scale(0.98);
-        }
-        #skip {
-            background: #444;
-            color: white;
-        }
-        #accept {
-            background: #2ea44f;
-            color: white;
-        }
-        #abort {
-            background: #cf222e;
-            color: white;
-        }
-        #status {
-            font-family: "SF Mono", Monaco, Consolas, monospace;
-            font-size: 13px;
-            padding: 12px;
-            background: #222;
-            border: 1px solid #333;
-            border-radius: 4px;
-            line-height: 1.6;
-        }
-        .placeholder {
-            color: #666;
-            font-size: 14px;
-        }
-    </style>
+    <title>Textbrush</title>
+    <link rel="stylesheet" href="/styles/variables.css" />
+    <link rel="stylesheet" href="/styles/animations.css" />
+    <link rel="stylesheet" href="/styles/main.css" />
 </head>
 <body>
-    <h1>Textbrush Test UI</h1>
-    <div id="image-container">
-        <img id="image" src="" alt="" style="display: none;" />
-        <div class="placeholder">Waiting for image...</div>
-    </div>
-    <div class="controls">
-        <button id="skip">Skip (Space)</button>
-        <button id="accept">Accept (Enter)</button>
-        <button id="abort">Abort (Esc)</button>
-    </div>
-    <div id="status">Status: Initializing...</div>
+    <main id="app">
+        <!-- Image Viewer Section -->
+        <section class="viewer">
+            <div class="image-container">
+                <img
+                    class="current-image"
+                    id="current-image"
+                    src=""
+                    alt="Generated image"
+                    title="Generated image preview"
+                />
+                <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <div class="loading-text">Generating image...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Status Bar -->
+        <section class="status-bar">
+            <div class="status-left">
+                <div class="prompt-display" id="prompt-display" title="Generation prompt">
+                    Ready for generation
+                </div>
+            </div>
+            <div class="status-right">
+                <div class="buffer-indicator" id="buffer-indicator">
+                    <div class="buffer-dots" id="buffer-dots" role="status" aria-label="Buffer status">
+                        <span class="buffer-dot" aria-label="Buffer slot 1"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 2"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 3"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 4"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 5"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 6"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 7"></span>
+                        <span class="buffer-dot" aria-label="Buffer slot 8"></span>
+                    </div>
+                    <div class="buffer-text" id="buffer-text">0/8</div>
+                </div>
+                <div class="seed-display" id="seed-display" title="Generation seed">
+                    seed: —
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls Section -->
+        <section class="controls">
+            <button
+                class="control-btn btn-abort"
+                id="abort-btn"
+                type="button"
+                title="Abort generation and discard all images (Esc)"
+                aria-label="Abort generation"
+            >
+                <span class="btn-icon" aria-hidden="true">⊘</span>
+                <span class="btn-label">Abort</span>
+                <span class="btn-shortcut">Esc</span>
+            </button>
+            <button
+                class="control-btn btn-skip"
+                id="skip-btn"
+                type="button"
+                title="Skip current image and show next (Space or →)"
+                aria-label="Skip current image"
+            >
+                <span class="btn-icon" aria-hidden="true">→</span>
+                <span class="btn-label">Skip</span>
+                <span class="btn-shortcut">Space / →</span>
+            </button>
+            <button
+                class="control-btn btn-accept"
+                id="accept-btn"
+                type="button"
+                title="Accept and save current image (Enter)"
+                aria-label="Accept and save current image"
+            >
+                <span class="btn-icon" aria-hidden="true">✓</span>
+                <span class="btn-label">Accept</span>
+                <span class="btn-shortcut">Enter</span>
+            </button>
+        </section>
+    </main>
 
     <script type="module" src="/main.js"></script>
 </body>

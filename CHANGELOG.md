@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Desktop UI Implementation**: Complete slideshow review interface for generated images
+  - Minimal dark-themed UI with centered image display
+  - Real-time buffer status indicator (visual dots + count showing generation progress)
+  - Keyboard shortcuts: Space/→ for skip, Enter for accept, Esc for abort
+  - Mouse controls: on-screen buttons for Skip/Accept/Abort actions
+  - Smooth GPU-accelerated image transitions with <100ms skip latency
+  - Memory-efficient blob URLs (replaced base64 data URLs for large images)
+  - Action queue preventing race conditions during rapid user input
+  - Exit handling for OS window close events (maps to abort action)
+  - Conditional animation skipping for performance optimization
+  - Frontend state machine for robust action flow control
+  - Window: 800x700, non-resizable, centered
+  - Exit contract: Accept prints path + exit 0, Abort/close exits 1
 - **Tauri IPC Integration**: Complete communication layer between Tauri desktop shell and Python backend
   - Stdio-based JSON protocol for cross-process communication
   - `IPCServer` with thread-safe message sending and dispatch

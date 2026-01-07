@@ -1,0 +1,189 @@
+/* Animation Definitions
+ *
+ * CONTRACT:
+ *   Purpose: Define all CSS animations and keyframes for UI transitions,
+ *            loading indicators, and user interaction feedback.
+ *
+ *   Inputs: None (pure CSS keyframe and animation definitions)
+ *
+ *   Outputs:
+ *     - Keyframe animations available for use in other stylesheets
+ *     - Animation classes that can be applied to elements
+ *
+ *   Invariants:
+ *     - All keyframe names are unique and descriptive
+ *     - Animation durations use CSS custom properties from variables.css
+ *     - All animations use 'forwards' fill-mode to maintain end state
+ *     - Transformations use GPU-accelerated properties (transform, opacity)
+ *
+ *   Properties:
+ *     - Performance: only animate transform and opacity (no layout thrashing)
+ *     - Accessibility: respect prefers-reduced-motion (disable animations if requested)
+ *     - Smooth: use ease/ease-in-out timing functions for natural motion
+ *     - Reversible: animations can transition smoothly in both directions
+ *
+ *   Required Animations:
+ *
+ *     1. Spinner (loading indicator):
+ *        - Infinite rotation animation for loading states
+ *        - 360° rotation over 1 second duration
+ *        - Linear timing (constant speed)
+ *        - Applied to .spinner element
+ *        - Visual: 40px circle with border, top border colored accent-primary
+ *
+ *     2. Image Transitions:
+ *        a) fadeIn: Image appears when loaded
+ *           - From: opacity 0, scale 0.98
+ *           - To: opacity 1, scale 1
+ *           - Duration: var(--transition-normal)
+ *           - Timing: ease
+ *           - Applied via .image-enter class
+ *
+ *        b) fadeOut: Image disappears when skipped
+ *           - From: opacity 1
+ *           - To: opacity 0
+ *           - Duration: var(--transition-fast)
+ *           - Timing: ease
+ *           - Applied via .image-exit class
+ *
+ *     3. Button Press Feedback:
+ *        - btnPress: Scale animation for tactile feedback
+ *        - Keyframes: 1 → 0.95 → 1 (shrink and return)
+ *        - Duration: 150ms
+ *        - Timing: ease
+ *        - Applied via .btn-pressed class
+ *
+ *     4. Buffer Status Indicator:
+ *        - pulse: Fade in/out for last buffer dot during generation
+ *        - Keyframes: opacity 0.3 → 1 → 0.3
+ *        - Duration: 1s infinite
+ *        - Timing: ease
+ *        - Applied when .buffer-generating class present on indicator
+ *        - Targets: .buffer-dot:last-child (only last dot pulses)
+ *
+ *   Algorithm:
+ *     1. Define @keyframes for each animation pattern
+ *     2. Create animation utility classes that apply keyframes
+ *     3. Use CSS custom properties for durations (from variables.css)
+ *     4. Apply GPU acceleration with transform: translateZ(0) where needed
+ *     5. Handle reduced-motion preference with @media query
+ *
+ * IMPLEMENTATION GUIDANCE:
+ *   - Define @keyframes first, then apply with animation property
+ *   - Use transform and opacity exclusively (GPU accelerated)
+ *   - Reference timing variables: var(--transition-fast), var(--transition-normal)
+ *   - Add @media (prefers-reduced-motion: reduce) to disable animations
+ *   - Ensure spinner is visible with border-top-color: var(--accent-primary)
+ */
+
+/* ========== Keyframe Definitions ========== */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes btnPress {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+/* ========== Animation Classes ========== */
+
+.spinner {
+  animation: spin 1s linear infinite;
+  transform: translateZ(0);
+}
+
+.image-enter {
+  animation: fadeIn var(--transition-normal) forwards;
+  transform: translateZ(0);
+}
+
+.image-exit {
+  animation: fadeOut var(--transition-fast) forwards;
+  transform: translateZ(0);
+}
+
+.btn-pressed {
+  animation: btnPress 150ms ease forwards;
+  transform: translateZ(0);
+}
+
+.buffer-generating .buffer-dot:last-child {
+  animation: pulse 1s ease infinite;
+  transform: translateZ(0);
+}
+
+/* ========== Accessibility ========== */
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .image-enter,
+  .image-exit,
+  .btn-pressed,
+  .buffer-generating .buffer-dot:last-child {
+    animation: none;
+    transform: none;
+  }
+
+  .image-enter {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .image-exit {
+    opacity: 0;
+  }
+
+  .btn-pressed {
+    transform: scale(1);
+  }
+
+  .buffer-generating .buffer-dot:last-child {
+    opacity: 0.3;
+  }
+}
