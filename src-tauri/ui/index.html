@@ -30,7 +30,38 @@
         <!-- Status Bar -->
         <section class="status-bar">
             <div class="status-left">
-                <div class="prompt-display" id="prompt-display" title="Generation prompt">
+                <div class="config-controls">
+                    <div class="prompt-control">
+                        <label for="prompt-input" class="control-label">Prompt:</label>
+                        <input
+                            type="text"
+                            class="prompt-input"
+                            id="prompt-input"
+                            placeholder="Enter generation prompt"
+                            title="Generation prompt"
+                            aria-label="Generation prompt"
+                        />
+                    </div>
+                    <div class="aspect-ratio-control">
+                        <span class="control-label">Aspect Ratio:</span>
+                        <div class="aspect-ratio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="1:1" checked />
+                                <span>1:1</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="16:9" />
+                                <span>16:9</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="9:16" />
+                                <span>9:16</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="validation-error hidden" id="validation-error" role="alert" aria-live="polite"></div>
+                <div class="prompt-display" id="prompt-display" style="display: none;" title="Generation prompt">
                     Ready for generation
                 </div>
             </div>

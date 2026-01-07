@@ -303,6 +303,114 @@ class MessageHandler:
                 )
             )
 
+    def handle_update_config(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Handle UPDATE_CONFIG command: restart generation with new configuration.
+
+        CONTRACT:
+          Inputs:
+            - payload: dict with keys: prompt (str), aspect_ratio (str)
+            - server: IPCServer instance for sending events
+
+          Outputs: none (modifies backend state, sends events)
+
+          Invariants:
+            - If backend not initialized: sends non-fatal ERROR event
+            - If backend exists:
+              * Calls backend.abort() to stop current worker and clear buffer
+              * Calls backend.start_generation() with new prompt and aspect_ratio
+              * Sends BUFFER_STATUS event showing reset buffer (count=0)
+              * Image delivery thread continues, will deliver new images
+
+          Properties:
+            - Thread-safe: uses backend's thread-safe abort() and start_generation()
+            - Non-blocking: returns quickly after starting restart sequence
+            - Continuous delivery: image delivery thread not restarted, continues running
+            - Seed handling: new generation uses auto-generated seeds (seed=None)
+            - Buffer cleared: all pending images from old generation are purged
+            - Error handling: sends non-fatal ERROR if backend not initialized
+
+          Algorithm:
+            1. Parse payload into UpdateConfigCommand dataclass
+            2. If backend is None:
+               a. Send non-fatal ERROR event ("Backend not initialized")
+               b. Return
+            3. Log config update with truncated prompt
+            4. Call backend.abort():
+               - Stops current GenerationWorker thread
+               - Clears buffer via buffer.clear()
+               - Waits for worker to finish
+            5. Call backend.start_generation():
+               - Creates new GenerationWorker with updated prompt, aspect_ratio
+               - Seed is None (auto-generate)
+               - Starts new worker thread
+            6. Send BUFFER_STATUS event:
+               - count: 0 (buffer was just cleared)
+               - max: backend.buffer.max_size
+               - generating: True (new worker started)
+            7. Return (image delivery thread will deliver new images automatically)
+
+        Thread Safety:
+          - backend.abort() is thread-safe: stops worker, waits for completion
+          - backend.start_generation() is thread-safe: creates new worker
+          - buffer.clear() is atomic (called by abort())
+          - Image delivery thread continues running, will automatically:
+            * Wait on empty buffer after clear
+            * Receive new images when new worker produces them
+            * No race conditions: buffer operations are thread-safe
+        """
+        from textbrush.ipc.protocol import ErrorEvent, UpdateConfigCommand
+
+        cmd = UpdateConfigCommand(**payload)
+
+        if not self.backend:
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(ErrorEvent(message="Backend not initialized", fatal=False)),
+                )
+            )
+            return
+
+        valid_aspect_ratios = {"1:1", "16:9", "9:16"}
+        if cmd.aspect_ratio not in valid_aspect_ratios:
+            valid_values = ", ".join(sorted(valid_aspect_ratios))
+            error_msg = f"Invalid aspect_ratio: {cmd.aspect_ratio}. Must be one of: {valid_values}"
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(ErrorEvent(message=error_msg, fatal=False)),
+                )
+            )
+            return
+
+        if not cmd.prompt or not cmd.prompt.strip():
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(ErrorEvent(message="Prompt cannot be empty", fatal=False)),
+                )
+            )
+            return
+
+        logger.info(
+            f"UPDATE_CONFIG: prompt='{cmd.prompt[:50]}...', aspect_ratio={cmd.aspect_ratio}"
+        )
+        self.backend.abort()
+        self.backend.start_generation(prompt=cmd.prompt, seed=None, aspect_ratio=cmd.aspect_ratio)
+
+        server.send(
+            Message(
+                MessageType.BUFFER_STATUS,
+                dataclass_to_dict(
+                    BufferStatusEvent(
+                        count=0,
+                        max=self.backend.buffer.max_size,
+                        generating=True,
+                    )
+                ),
+            )
+        )
+
     def _start_image_delivery(self, server: "IPCServer", output_path: str | None) -> None:  # type: ignore  # noqa: F821
         """Start background thread delivering images to UI.
 

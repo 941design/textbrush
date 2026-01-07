@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod commands_update_config;
 mod exit_handlers;
 mod launch_args;
 mod sidecar;
@@ -83,6 +84,7 @@ fn main() {
             commands::skip_image,
             commands::accept_image,
             commands::abort_generation,
+            commands_update_config::update_generation_config,
             exit_handlers::print_and_exit,
             exit_handlers::abort_exit,
             launch_args::get_launch_args,

@@ -492,3 +492,218 @@ class TestErrorHandling:
 
         assert payload["message"] == error_msg
         assert payload["fatal"] is False
+
+
+class TestUpdateConfigCommand:
+    """Property-based tests for UPDATE_CONFIG command handling."""
+
+    @given(
+        prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),
+        aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16"]),
+    )
+    def test_update_config_valid_inputs(self, prompt, aspect_ratio):
+        """Valid config updates restart generation correctly."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        payload = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_backend.abort.assert_called_once()
+        mock_backend.start_generation.assert_called_once_with(
+            prompt=prompt, seed=None, aspect_ratio=aspect_ratio
+        )
+        mock_server.send.assert_called()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.BUFFER_STATUS
+        assert call_args.payload["count"] == 0
+        assert call_args.payload["max"] == 8
+        assert call_args.payload["generating"] is True
+
+    def test_update_config_no_backend_sends_error(self, handler, mock_server):
+        """Update config with no backend sends non-fatal error."""
+        handler.backend = None
+        payload = {"prompt": "test prompt", "aspect_ratio": "1:1"}
+
+        handler.handle_update_config(payload, mock_server)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.ERROR
+        assert call_args.payload["fatal"] is False
+        assert "Backend not initialized" in call_args.payload["message"]
+
+    @given(invalid_aspect=st.text().filter(lambda x: x not in {"1:1", "16:9", "9:16"}))
+    def test_update_config_invalid_aspect_ratio_sends_error(self, invalid_aspect):
+        """Invalid aspect ratio sends non-fatal error."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        handler.backend = mock_backend
+
+        payload = {"prompt": "test prompt", "aspect_ratio": invalid_aspect}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.ERROR
+        assert call_args.payload["fatal"] is False
+        assert "Invalid aspect_ratio" in call_args.payload["message"]
+        mock_backend.abort.assert_not_called()
+        mock_backend.start_generation.assert_not_called()
+
+    @given(
+        empty_prompt=st.one_of(
+            st.just(""),
+            st.text(max_size=20).filter(lambda x: not x.strip()),
+        )
+    )
+    def test_update_config_empty_prompt_sends_error(self, empty_prompt):
+        """Empty or whitespace-only prompt sends non-fatal error."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        handler.backend = mock_backend
+
+        payload = {"prompt": empty_prompt, "aspect_ratio": "1:1"}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.ERROR
+        assert call_args.payload["fatal"] is False
+        assert "Prompt cannot be empty" in call_args.payload["message"]
+        mock_backend.abort.assert_not_called()
+        mock_backend.start_generation.assert_not_called()
+
+    def test_update_config_calls_abort_before_start(self, handler, mock_server):
+        """Update config calls abort before starting new generation."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        call_order = []
+
+        def record_abort():
+            call_order.append("abort")
+
+        def record_start(*args, **kwargs):
+            call_order.append("start")
+
+        mock_backend.abort.side_effect = record_abort
+        mock_backend.start_generation.side_effect = record_start
+
+        payload = {"prompt": "new prompt", "aspect_ratio": "16:9"}
+        handler.handle_update_config(payload, mock_server)
+
+        assert call_order == ["abort", "start"]
+
+    def test_update_config_sends_buffer_status_after_restart(self, handler, mock_server):
+        """Update config sends buffer status showing cleared buffer."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.BUFFER_STATUS
+        assert call_args.payload["count"] == 0
+        assert call_args.payload["generating"] is True
+
+    @given(
+        prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),
+        aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16"]),
+    )
+    def test_update_config_seed_is_none(self, prompt, aspect_ratio):
+        """Update config always uses seed=None for auto-generation."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        payload = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_backend.start_generation.assert_called_once()
+        call_kwargs = mock_backend.start_generation.call_args[1]
+        assert call_kwargs["seed"] is None
+
+    @given(
+        prompt1=st.text(min_size=1, max_size=100).filter(lambda x: x.strip()),
+        prompt2=st.text(min_size=1, max_size=100).filter(lambda x: x.strip()),
+        aspect1=st.sampled_from(["1:1", "16:9", "9:16"]),
+        aspect2=st.sampled_from(["1:1", "16:9", "9:16"]),
+    )
+    def test_update_config_multiple_updates(self, prompt1, prompt2, aspect1, aspect2):
+        """Multiple config updates work correctly."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        payload1 = {"prompt": prompt1, "aspect_ratio": aspect1}
+        handler.handle_update_config(payload1, mock_server)
+
+        payload2 = {"prompt": prompt2, "aspect_ratio": aspect2}
+        handler.handle_update_config(payload2, mock_server)
+
+        assert mock_backend.abort.call_count == 2
+        assert mock_backend.start_generation.call_count == 2
+
+        last_call_kwargs = mock_backend.start_generation.call_args[1]
+        assert last_call_kwargs["prompt"] == prompt2
+        assert last_call_kwargs["aspect_ratio"] == aspect2
+
+    def test_update_config_does_not_restart_image_delivery_thread(self, handler, mock_server):
+        """Update config does not create new image delivery thread."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        with patch.object(handler, "_start_image_delivery") as mock_delivery:
+            payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
+            handler.handle_update_config(payload, mock_server)
+
+            mock_delivery.assert_not_called()
+
+    @given(
+        prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),
+        aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16"]),
+        buffer_max=st.integers(min_value=1, max_value=16),
+    )
+    def test_update_config_buffer_status_uses_backend_max_size(
+        self, prompt, aspect_ratio, buffer_max
+    ):
+        """Buffer status event uses backend's actual max_size."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = buffer_max
+        handler.backend = mock_backend
+
+        payload = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+        handler.handle_update_config(payload, mock_server)
+
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.payload["max"] == buffer_max

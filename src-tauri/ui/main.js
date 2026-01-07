@@ -1,6 +1,8 @@
 // Textbrush UI Application Logic
 // Handles image review workflow, state management, and user interactions via Tauri IPC
 
+import * as ConfigControls from './config_controls.js';
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { appWindow } = window.__TAURI__.window;
@@ -14,6 +16,7 @@ const state = {
   isGenerating: false,
   isTransitioning: false,
   prompt: '',
+  aspectRatio: '1:1',
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
 };
@@ -29,6 +32,9 @@ const elements = {
   loadingText: null,
   statusBar: null,
   promptDisplay: null,
+  promptInput: null,
+  aspectRatioRadios: null,
+  validationError: null,
   bufferIndicator: null,
   bufferDots: null,
   bufferText: null,
@@ -49,6 +55,9 @@ function cacheElements() {
   elements.loadingText = document.querySelector('.loading-text');
   elements.statusBar = document.querySelector('.status-bar');
   elements.promptDisplay = document.getElementById('prompt-display');
+  elements.promptInput = document.getElementById('prompt-input');
+  elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+  elements.validationError = document.getElementById('validation-error');
   elements.bufferIndicator = document.getElementById('buffer-indicator');
   elements.bufferDots = document.getElementById('buffer-dots');
   elements.bufferText = document.getElementById('buffer-text');
@@ -83,12 +92,16 @@ async function init() {
     const launchArgs = await invoke('get_launch_args');
     console.log('Launch args received:', launchArgs);
     state.prompt = launchArgs.prompt || '';
+    state.aspectRatio = launchArgs.aspect_ratio || '1:1';
     state.bufferMax = launchArgs.buffer_max || 8;
 
-    // Display the prompt
+    // Display the prompt (legacy support if config controls not initialized)
     if (elements.promptDisplay) {
       elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
     }
+
+    // Initialize config controls
+    ConfigControls.initConfigControls(state.prompt, state.aspectRatio, state, elements);
 
     // Setup event listeners
     setupMessageListener();
@@ -400,6 +413,11 @@ function setupButtonListeners() {
 // Keyboard Event Listener
 function setupKeyboardListeners() {
   document.addEventListener('keydown', (e) => {
+    // Ignore keyboard shortcuts when user is typing in input field
+    if (e.target.tagName === 'INPUT' && e.target.type === 'text') {
+      return;
+    }
+
     // Space or Right Arrow = skip
     if (e.key === ' ' || e.key === 'ArrowRight') {
       e.preventDefault();

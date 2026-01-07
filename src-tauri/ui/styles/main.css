@@ -370,6 +370,94 @@ body {
 }
 
 /* ============================================================================
+   CONFIG CONTROLS
+   ============================================================================ */
+
+.config-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+}
+
+.prompt-control,
+.aspect-ratio-control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.control-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.prompt-input {
+    flex: 1;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.prompt-input:focus {
+    border-color: var(--border-focus);
+}
+
+.prompt-input::placeholder {
+    color: var(--text-muted);
+}
+
+.aspect-ratio-group {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 11px;
+    transition: color var(--transition-fast);
+}
+
+.radio-label:hover {
+    color: var(--text-primary);
+}
+
+.radio-label input[type="radio"] {
+    cursor: pointer;
+    accent-color: var(--accent-primary);
+}
+
+.radio-label span {
+    font-family: var(--font-mono);
+}
+
+.validation-error {
+    color: var(--accent-danger);
+    font-size: 11px;
+    margin-top: var(--spacing-xs);
+    opacity: 1;
+    transition: opacity var(--transition-normal);
+}
+
+.validation-error.hidden {
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+/* ============================================================================
    CONTROLS SECTION
    ============================================================================ */
 
@@ -455,4 +543,91 @@ body {
     font-size: 10px;
     color: var(--text-muted);
     font-family: var(--font-mono);
+}
+
+/* ============================================================================
+   CONFIG CONTROLS (PROMPT INPUT AND ASPECT RATIO)
+   ============================================================================ */
+
+.prompt-input {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 300px;
+    transition: border-color var(--transition-fast);
+}
+
+.prompt-input:hover {
+    border-color: var(--border-focus);
+}
+
+.prompt-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.aspect-ratio-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin: 0 var(--spacing-md);
+}
+
+.aspect-ratio-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-right: var(--spacing-xs);
+}
+
+.aspect-ratio-option {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.aspect-ratio-option input[type="radio"] {
+    cursor: pointer;
+}
+
+.aspect-ratio-option:hover {
+    color: var(--text-primary);
+}
+
+.validation-error {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    font-size: 11px;
+    border-radius: 4px;
+    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.status-left {
+    position: relative;
 }

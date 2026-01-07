@@ -23,6 +23,7 @@ class MessageType(str, Enum):
     ACCEPT = "accept"
     ABORT = "abort"
     STATUS = "status"
+    UPDATE_CONFIG = "update_config"
 
     # Events (Python → Tauri)
     READY = "ready"
@@ -42,6 +43,17 @@ class InitCommand:
     seed: int | None = None
     aspect_ratio: str = "1:1"
     format: str = "png"
+
+
+@dataclass
+class UpdateConfigCommand:
+    """Command to update generation configuration.
+
+    Triggers generation restart with new prompt and/or aspect ratio.
+    """
+
+    prompt: str
+    aspect_ratio: str = "1:1"
 
 
 @dataclass
