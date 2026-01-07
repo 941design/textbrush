@@ -458,9 +458,13 @@ class TestMain:
         assert exc_info.value.code == 0
 
     @patch("textbrush.cli.load_config")
-    def test_main_loads_config_with_default_path(self, mock_load_config, sample_config):
+    @patch("textbrush.backend.create_engine")
+    def test_main_loads_config_with_default_path(
+        self, mock_create_engine, mock_load_config, sample_config, mock_engine
+    ):
         """Main loads config from default path when --config not provided."""
         mock_load_config.return_value = sample_config
+        mock_create_engine.return_value = mock_engine
         try:
             main(["--prompt", "test"])
         except SystemExit:
@@ -468,9 +472,13 @@ class TestMain:
         mock_load_config.assert_called()
 
     @patch("textbrush.cli.load_config")
-    def test_main_loads_config_with_custom_path(self, mock_load_config, sample_config, tmp_path):
+    @patch("textbrush.backend.create_engine")
+    def test_main_loads_config_with_custom_path(
+        self, mock_create_engine, mock_load_config, sample_config, mock_engine, tmp_path
+    ):
         """Main loads config from custom path when --config provided."""
         mock_load_config.return_value = sample_config
+        mock_create_engine.return_value = mock_engine
         config_file = tmp_path / "config.toml"
         config_file.write_text("[test]\n")
         try:
