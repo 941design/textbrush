@@ -6,19 +6,21 @@ use crate::commands::AppState;
 use crate::sidecar::IpcMessage;
 use tauri::{command, State};
 
-/// Update generation configuration (prompt and aspect ratio).
+/// Update generation configuration (prompt, aspect ratio, and dimensions).
 ///
 /// CONTRACT:
 ///   Inputs:
 ///     - state: AppState containing sidecar
 ///     - prompt: new text description for image generation, non-empty string
 ///     - aspect_ratio: new aspect ratio string, one of "1:1", "16:9", "9:16"
+///     - width: optional image width in pixels (overrides aspect_ratio)
+///     - height: optional image height in pixels (overrides aspect_ratio)
 ///
 ///   Outputs:
 ///     - Result<(), String>: Ok on success, error message on failure
 ///
 ///   Invariants:
-///     - If sidecar exists: sends UPDATE_CONFIG command with prompt and aspect_ratio
+///     - If sidecar exists: sends UPDATE_CONFIG command with prompt, aspect_ratio, width, height
 ///     - If no sidecar: returns error "No sidecar running"
 ///     - Python backend will:
 ///       * Stop current generation worker
@@ -31,13 +33,14 @@ use tauri::{command, State};
 ///     - Error handling: returns Result with error if no sidecar
 ///     - Validation: input validation happens on frontend and Python backend
 ///     - Non-blocking: command send is fast, restart happens in backend
+///     - Dimension priority: explicit width/height override aspect_ratio
 ///
 ///   Algorithm:
 ///     1. Lock AppState.sidecar mutex
 ///     2. If sidecar exists:
 ///        a. Create IpcMessage:
 ///           - msg_type: "update_config"
-///           - payload: JSON object with "prompt" and "aspect_ratio" fields
+///           - payload: JSON object with "prompt", "aspect_ratio", "width", "height" fields
 ///        b. Send message via sidecar.send()
 ///        c. Return Ok or Err from send operation
 ///     3. If no sidecar:
@@ -46,12 +49,14 @@ use tauri::{command, State};
 /// Integration:
 ///   - Add this function to commands.rs after skip_image() function
 ///   - Add to tauri::Builder in main.rs: .invoke_handler(tauri::generate_handler![..., update_generation_config])
-///   - Frontend invokes via: await invoke('update_generation_config', { prompt, aspect_ratio })
+///   - Frontend invokes via: await invoke('update_generation_config', { prompt, aspect_ratio, width, height })
 #[command]
 pub async fn update_generation_config(
     state: State<'_, AppState>,
     prompt: String,
     aspect_ratio: String,
+    width: Option<u32>,
+    height: Option<u32>,
 ) -> Result<(), String> {
     let sidecar_guard = state.sidecar.lock().unwrap();
 
@@ -61,6 +66,8 @@ pub async fn update_generation_config(
             payload: serde_json::json!({
                 "prompt": prompt,
                 "aspect_ratio": aspect_ratio,
+                "width": width,
+                "height": height,
             }),
         };
         sidecar.send(&message)?;

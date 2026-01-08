@@ -312,6 +312,34 @@ class ImageBuffer:
             self._not_empty.notify_all()
             self._not_full.notify_all()
 
+    def reset_shutdown(self) -> None:
+        """Reset shutdown state to allow buffer reuse.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - After reset_shutdown(), buffer behaves as if shutdown() was never called
+            - put() and get() resume normal blocking behavior
+            - Buffer contents are preserved (not cleared)
+
+          Properties:
+            - Idempotent: calling multiple times has same effect as calling once
+            - Thread-safe: can be called while other threads wait
+            - State reset: clears shutdown flag and timing state
+
+          Algorithm:
+            1. Acquire lock
+            2. Set shutdown flag to False
+            3. Reset shutdown timing state
+        """
+        with self._lock:
+            self._shutdown = False
+            self._shutdown_start_time = None
+            self._shutdown_grace_period = 0.0
+
     def clear(self) -> list[BufferedImage]:
         """Clear buffer and return discarded items.
 

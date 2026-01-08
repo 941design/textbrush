@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 
 import torch
@@ -68,10 +69,12 @@ class FluxInferenceEngine(InferenceEngine):
 
           Properties:
             - Lightweight: no model loading in constructor
+            - Thread-safe: includes lock for serializing generate() calls
         """
         self._pipeline = None
         self._device = None
         self._dtype = None
+        self._generate_lock = threading.Lock()
 
     def load(self) -> None:
         """Load FLUX model into memory.
@@ -130,7 +133,7 @@ class FluxInferenceEngine(InferenceEngine):
         CONTRACT:
           Inputs:
             - prompt: text description, non-empty string
-            - options: GenerationOptions with seed, steps, aspect_ratio
+            - options: GenerationOptions with seed, steps, aspect_ratio, width, height
 
           Outputs:
             - GenerationResult containing image, seed, time, model_name
@@ -138,17 +141,21 @@ class FluxInferenceEngine(InferenceEngine):
           Invariants:
             - is_loaded() must be True before calling (else RuntimeError)
             - Returned seed matches options.seed if provided, else is auto-generated
-            - Returned image has dimensions matching aspect_ratio from ASPECT_RATIOS
+            - Returned image has dimensions from options.width/height if non-default,
+              otherwise from aspect_ratio lookup
             - generation_time is non-negative
 
           Properties:
             - Deterministic: same prompt + seed → same image (within numerical precision)
             - Seed handling: use options.seed if provided, else random.randint(0, 2**32 - 1)
-            - Aspect ratio mapping: uses ASPECT_RATIOS dict to resolve dimensions
+            - Dimension priority: "custom" or explicit width/height > aspect_ratio lookup
 
           Algorithm:
             1. Check is_loaded(), raise RuntimeError if not loaded
-            2. Resolve width, height from options.aspect_ratio using ASPECT_RATIOS
+            2. Determine dimensions:
+               - If aspect_ratio is "custom", use options.width/height directly
+               - If options.width != 512 or options.height != 512, use those
+               - Otherwise resolve from options.aspect_ratio using ASPECT_RATIOS
             3. Create torch.Generator(self._device)
             4. Determine seed: options.seed if not None, else random.randint(0, 2**32 - 1)
             5. Set generator.manual_seed(seed)
@@ -160,26 +167,38 @@ class FluxInferenceEngine(InferenceEngine):
         if not self.is_loaded():
             raise RuntimeError("Engine not loaded. Call load() before generate().")
 
+        # Use explicit dimensions if "custom" aspect ratio or dimensions differ from defaults
+        if options.aspect_ratio == "custom" or options.width != 512 or options.height != 512:
+            width, height = options.width, options.height
+        else:
+            width, height = self._resolve_dimensions(options.aspect_ratio)
+
         logger.info(
             f"Generating image: prompt='{prompt}', "
-            f"seed={options.seed}, steps={options.steps}, aspect_ratio={options.aspect_ratio}"
+            f"seed={options.seed}, steps={options.steps}, "
+            f"width={width}, height={height}"
         )
-
-        width, height = self._resolve_dimensions(options.aspect_ratio)
 
         generator = torch.Generator(self._device)
         seed = options.seed if options.seed is not None else random.randint(0, 2**32 - 1)
         generator.manual_seed(seed)
 
-        start_time = time.perf_counter()
-        result = self._pipeline(
-            prompt=prompt,
-            width=width,
-            height=height,
-            num_inference_steps=options.steps,
-            generator=generator,
-        )
-        generation_time = time.perf_counter() - start_time
+        # Acquire lock to prevent concurrent pipeline access (scheduler state corruption)
+        with self._generate_lock:
+            # Reset scheduler state to prevent IndexError from corrupted state
+            # (e.g., when previous generation was interrupted mid-step)
+            if hasattr(self._pipeline, "scheduler"):
+                self._pipeline.scheduler._step_index = None
+
+            start_time = time.perf_counter()
+            result = self._pipeline(
+                prompt=prompt,
+                width=width,
+                height=height,
+                num_inference_steps=options.steps,
+                generator=generator,
+            )
+            generation_time = time.perf_counter() - start_time
 
         return GenerationResult(
             image=result.images[0],

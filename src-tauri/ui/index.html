@@ -69,6 +69,38 @@
                                 <input type="radio" name="aspect-ratio" value="9:16" />
                                 <span>9:16</span>
                             </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="custom" />
+                                <span>Custom</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="dimension-control">
+                        <span class="control-label">Size:</span>
+                        <div class="dimension-group">
+                            <input
+                                type="number"
+                                class="dimension-input"
+                                id="width-input"
+                                value="1024"
+                                min="64"
+                                max="2048"
+                                step="64"
+                                title="Image width in pixels"
+                                aria-label="Image width"
+                            />
+                            <span class="dimension-separator">×</span>
+                            <input
+                                type="number"
+                                class="dimension-input"
+                                id="height-input"
+                                value="1024"
+                                min="64"
+                                max="2048"
+                                step="64"
+                                title="Image height in pixels"
+                                aria-label="Image height"
+                            />
                         </div>
                     </div>
                 </div>

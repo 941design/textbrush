@@ -49,6 +49,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_options, MagicMock() as mock_gen_worker:
             original_gen_options = GenerationOptions
@@ -83,6 +84,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -118,6 +120,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -144,6 +147,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -170,6 +174,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -197,6 +202,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -224,6 +230,7 @@ class TestStartGenerationProperties:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -245,6 +252,23 @@ class TestStartGenerationProperties:
                 textbrush.backend.GenerationWorker = original_gen_worker
 
 
+class TestStartGenerationPrerequisites:
+    """Tests for start_generation() prerequisites."""
+
+    def test_raises_runtime_error_when_engine_not_loaded(self):
+        """start_generation() raises RuntimeError if engine is not loaded."""
+        import pytest
+
+        mock_config = create_mock_config()
+        backend = TextbrushBackend(mock_config)
+
+        # Engine is not loaded (initialize() not called)
+        assert not backend.engine.is_loaded()
+
+        with pytest.raises(RuntimeError, match="Engine not loaded"):
+            backend.start_generation("test prompt")
+
+
 class TestStartGenerationExamples:
     """Example-based tests for specific scenarios."""
 
@@ -253,6 +277,7 @@ class TestStartGenerationExamples:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -285,6 +310,7 @@ class TestStartGenerationExamples:
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
+        backend.engine.is_loaded = Mock(return_value=True)
 
         with MagicMock() as mock_gen_worker:
             original_gen_worker = GenerationWorker
@@ -316,6 +342,7 @@ class TestStartGenerationExamples:
         """Calling start_generation replaces any existing worker reference."""
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
+        backend.engine.is_loaded = Mock(return_value=True)
 
         old_worker = Mock()
         backend._worker = old_worker
@@ -335,6 +362,31 @@ class TestStartGenerationExamples:
 
                 assert backend._worker is new_worker_instance
                 assert backend._worker is not old_worker
+
+            finally:
+                textbrush.backend.GenerationWorker = original_gen_worker
+
+    def test_resets_buffer_shutdown_before_starting_worker(self):
+        """start_generation() calls buffer.reset_shutdown() before creating worker."""
+        mock_config = create_mock_config()
+        backend = TextbrushBackend(mock_config)
+        backend.engine.is_loaded = Mock(return_value=True)
+        backend.buffer.reset_shutdown = Mock()
+
+        with MagicMock() as mock_gen_worker:
+            original_gen_worker = GenerationWorker
+
+            try:
+                import textbrush.backend
+
+                textbrush.backend.GenerationWorker = mock_gen_worker
+
+                mock_worker_instance = Mock()
+                mock_gen_worker.return_value = mock_worker_instance
+
+                backend.start_generation("test prompt")
+
+                backend.buffer.reset_shutdown.assert_called_once()
 
             finally:
                 textbrush.backend.GenerationWorker = original_gen_worker

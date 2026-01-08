@@ -516,7 +516,7 @@ class TestUpdateConfigCommand:
 
         mock_backend.abort.assert_called_once()
         mock_backend.start_generation.assert_called_once_with(
-            prompt=prompt, seed=None, aspect_ratio=aspect_ratio
+            prompt=prompt, seed=None, aspect_ratio=aspect_ratio, width=None, height=None
         )
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]

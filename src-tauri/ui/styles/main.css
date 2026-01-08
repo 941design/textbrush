@@ -438,7 +438,8 @@ body {
 }
 
 .prompt-control,
-.aspect-ratio-control {
+.aspect-ratio-control,
+.dimension-control {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
@@ -475,6 +476,45 @@ body {
 .aspect-ratio-group {
     display: flex;
     gap: var(--spacing-sm);
+}
+
+.dimension-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.dimension-input {
+    width: 70px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-align: center;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.dimension-input:focus {
+    border-color: var(--border-focus);
+}
+
+.dimension-input::-webkit-inner-spin-button,
+.dimension-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.dimension-input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+.dimension-separator {
+    color: var(--text-muted);
+    font-size: 12px;
 }
 
 .radio-label {
@@ -672,6 +712,52 @@ body {
 
 .aspect-ratio-option:hover {
     color: var(--text-primary);
+}
+
+/* Dimension Controls */
+.dimension-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin: 0 var(--spacing-md);
+}
+
+.dimension-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-right: var(--spacing-xs);
+}
+
+.dimension-input {
+    width: 60px;
+    padding: 2px 6px;
+    font-size: 11px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.dimension-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+
+.dimension-input::-webkit-inner-spin-button,
+.dimension-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.dimension-input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+.dimension-separator {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 .validation-error {

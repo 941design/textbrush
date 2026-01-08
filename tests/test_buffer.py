@@ -604,3 +604,58 @@ class TestImageBufferShutdownGracePeriod:
 
         assert len(retrieved) == len(items)
         assert [r.seed for r in retrieved] == [i.seed for i in items]
+
+
+class TestImageBufferResetShutdown:
+    """Tests for ImageBuffer.reset_shutdown() functionality."""
+
+    def test_reset_shutdown_allows_put_after_shutdown(self):
+        """After shutdown and reset_shutdown, put() should work again."""
+        buffer = ImageBuffer(max_size=5)
+        img = Image.new("RGB", (10, 10))
+        item = BufferedImage(image=img, seed=42)
+
+        # First put should work
+        assert buffer.put(item) is True
+
+        # Shutdown the buffer
+        buffer.shutdown(grace_period=0.0)
+        time.sleep(0.1)  # Wait for grace period to expire
+
+        # Put should fail after shutdown grace period
+        item2 = BufferedImage(image=img, seed=43)
+        assert buffer.put(item2, timeout=0.1) is False
+
+        # Reset shutdown state
+        buffer.reset_shutdown()
+
+        # Put should work again after reset
+        item3 = BufferedImage(image=img, seed=44)
+        assert buffer.put(item3) is True
+
+        # Get should also work
+        result = buffer.get(timeout=0.1)
+        assert result is not None
+
+    def test_reset_shutdown_allows_blocking_get(self):
+        """After shutdown and reset_shutdown, get() should block waiting for items."""
+        buffer = ImageBuffer(max_size=5)
+        img = Image.new("RGB", (10, 10))
+
+        # Shutdown the buffer
+        buffer.shutdown(grace_period=0.0)
+        time.sleep(0.1)  # Wait for grace period to expire
+
+        # Get should return None immediately after shutdown
+        result = buffer.get(timeout=0.1)
+        assert result is None
+
+        # Reset shutdown state
+        buffer.reset_shutdown()
+
+        # Now put an item and verify get() works
+        item = BufferedImage(image=img, seed=42)
+        buffer.put(item)
+        result = buffer.get(timeout=0.1)
+        assert result is not None
+        assert result.seed == 42

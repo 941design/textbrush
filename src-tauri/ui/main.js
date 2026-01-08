@@ -21,6 +21,8 @@ const state = {
   isTransitioning: false,
   prompt: '',
   aspectRatio: '1:1',
+  width: 1024,
+  height: 1024,
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
   // Navigation history
@@ -42,6 +44,10 @@ const elements = {
   promptDisplay: null,
   promptInput: null,
   aspectRatioRadios: null,
+  aspectRatioControls: null,
+  dimensionControls: null,
+  widthInput: null,
+  heightInput: null,
   validationError: null,
   bufferIndicator: null,
   bufferDots: null,
@@ -69,6 +75,10 @@ function cacheElements() {
   elements.promptDisplay = document.getElementById('prompt-display');
   elements.promptInput = document.getElementById('prompt-input');
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+  elements.aspectRatioControls = document.querySelector('.aspect-ratio-control');
+  elements.dimensionControls = document.querySelector('.dimension-control');
+  elements.widthInput = document.getElementById('width-input');
+  elements.heightInput = document.getElementById('height-input');
   elements.validationError = document.getElementById('validation-error');
   elements.bufferIndicator = document.getElementById('buffer-indicator');
   elements.bufferDots = document.getElementById('buffer-dots');

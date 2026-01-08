@@ -61,7 +61,7 @@ class TestConfigUpdateE2E:
 
         # Verify start_generation() called with new config
         handler_with_backend.backend.start_generation.assert_called_once_with(
-            prompt="New prompt text", seed=None, aspect_ratio="16:9"
+            prompt="New prompt text", seed=None, aspect_ratio="16:9", width=None, height=None
         )
 
         # Verify BUFFER_STATUS event sent
@@ -85,7 +85,7 @@ class TestConfigUpdateE2E:
 
         handler_with_backend.backend.abort.assert_called_once()
         handler_with_backend.backend.start_generation.assert_called_once_with(
-            prompt="Same prompt", seed=None, aspect_ratio="9:16"
+            prompt="Same prompt", seed=None, aspect_ratio="9:16", width=None, height=None
         )
 
         # Verify buffer status reflects reset state

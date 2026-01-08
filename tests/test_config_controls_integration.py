@@ -97,7 +97,7 @@ class TestHTMLConfigControls:
         assert "aria-label" in prompt_input, "prompt-input must have aria-label for accessibility"
 
     def test_aspect_ratio_radio_buttons_exist(self):
-        """Aspect ratio radio buttons must exist for all three values."""
+        """Aspect ratio radio buttons must exist for all four values (including custom)."""
         html = load_html()
         parser = parse_html(html)
 
@@ -107,12 +107,13 @@ class TestHTMLConfigControls:
             if attrs.get("type") == "radio" and attrs.get("name") == "aspect-ratio"
         ]
 
-        assert len(radio_inputs) == 3, "Must have exactly 3 aspect ratio radio buttons"
+        assert len(radio_inputs) == 4, "Must have exactly 4 aspect ratio radio buttons"
 
         values = [attrs.get("value") for attrs in radio_inputs]
         assert "1:1" in values, "Must have 1:1 aspect ratio option"
         assert "16:9" in values, "Must have 16:9 aspect ratio option"
         assert "9:16" in values, "Must have 9:16 aspect ratio option"
+        assert "custom" in values, "Must have custom aspect ratio option"
 
         checked_radios = [attrs for attrs in radio_inputs if "checked" in attrs]
         assert len(checked_radios) == 1, "Exactly one radio button should be checked by default"
@@ -262,8 +263,8 @@ class TestJavaScriptIntegration:
         assert "update_generation_config" in js, "Must invoke update_generation_config"
         assert "invoke" in js, "Must use invoke to call backend"
 
-        # Check that aspect_ratio uses snake_case (matches Rust command parameter)
-        assert "aspect_ratio:" in js, "Must use snake_case aspect_ratio for Rust command"
+        # Check that aspectRatio uses camelCase (Tauri converts to snake_case for Rust)
+        assert "aspectRatio:" in js, "Must use camelCase aspectRatio for Tauri invoke"
 
         # Verify the invoke call pattern
         invoke_match = re.search(
@@ -273,7 +274,7 @@ class TestJavaScriptIntegration:
 
         invoke_params = invoke_match.group(1)
         assert "prompt" in invoke_params, "Must pass prompt parameter"
-        assert "aspect_ratio" in invoke_params, "Must pass aspect_ratio parameter (snake_case)"
+        assert "aspectRatio" in invoke_params, "Must pass aspectRatio parameter (camelCase)"
 
     def test_keyboard_listeners_ignore_input_focus(self):
         """Keyboard listeners must ignore events when user is typing in input fields."""

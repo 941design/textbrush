@@ -169,10 +169,11 @@ class TestConfigControlsStructure:
         )
 
     def test_handle_update_signature(self):
-        """handleConfigUpdate must have exactly 3 parameters and be async."""
+        """handleConfigUpdate must have exactly 5 parameters and be async."""
         js_code = load_config_controls_js()
-        assert function_has_parameter_count(js_code, "handleConfigUpdate", 3), (
-            "handleConfigUpdate must accept 3 parameters (promptValue, aspectRatioValue, state)"
+        assert function_has_parameter_count(js_code, "handleConfigUpdate", 5), (
+            "handleConfigUpdate must accept 5 parameters "
+            "(promptValue, aspectRatioValue, widthValue, heightValue, state)"
         )
 
         assert "export async function handleConfigUpdate" in js_code, (
@@ -197,25 +198,29 @@ class TestConfigControlsStructure:
 class TestInitConfigControlsImplementation:
     """Test initConfigControls function implementation."""
 
-    def test_creates_prompt_input_element(self):
-        """initConfigControls must create an input element for prompt."""
+    def test_gets_prompt_input_element(self):
+        """initConfigControls must get existing prompt input element."""
         js_code = load_config_controls_js()
-        assert function_creates_element(js_code, "initConfigControls", "input"), (
-            "initConfigControls must create input element"
+        assert "getElementById('prompt-input')" in js_code, (
+            "initConfigControls must get existing prompt input element"
         )
 
-    def test_creates_aspect_ratio_container(self):
-        """initConfigControls must create div for aspect ratio controls."""
+    def test_gets_dimension_input_elements(self):
+        """initConfigControls must get existing dimension input elements."""
         js_code = load_config_controls_js()
-        assert function_creates_element(js_code, "initConfigControls", "div"), (
-            "initConfigControls must create div element for aspect ratio container"
+        assert "getElementById('width-input')" in js_code, (
+            "initConfigControls must get existing width input element"
+        )
+        assert "getElementById('height-input')" in js_code, (
+            "initConfigControls must get existing height input element"
         )
 
-    def test_creates_radio_inputs(self):
-        """initConfigControls must create radio inputs for aspect ratios."""
+    def test_gets_aspect_ratio_radios(self):
+        """initConfigControls must get existing aspect ratio radio inputs."""
         js_code = load_config_controls_js()
-        pattern = r'radio\.type\s*=\s*[\'"]radio[\'"]'
-        assert re.search(pattern, js_code), "initConfigControls must create radio input elements"
+        assert "querySelectorAll" in js_code, (
+            "initConfigControls must query for aspect ratio radio buttons"
+        )
 
     def test_sets_up_blur_listener(self):
         """initConfigControls must add blur event listener to prompt input."""
@@ -259,8 +264,11 @@ class TestInitConfigControlsImplementation:
         assert "elements.promptInput" in js_code, (
             "initConfigControls must store promptInput reference"
         )
-        assert "elements.aspectRatioControls" in js_code, (
-            "initConfigControls must store aspectRatioControls reference"
+        assert "elements.widthInput" in js_code, (
+            "initConfigControls must store widthInput reference"
+        )
+        assert "elements.heightInput" in js_code, (
+            "initConfigControls must store heightInput reference"
         )
         assert "elements.aspectRatioRadios" in js_code, (
             "initConfigControls must store aspectRatioRadios reference"
@@ -280,14 +288,17 @@ class TestHandleConfigUpdateImplementation:
             "handleConfigUpdate must check for empty string"
         )
 
-    def test_validates_aspect_ratio(self):
-        """handleConfigUpdate must validate aspect ratio against allowed values."""
+    def test_validates_dimensions(self):
+        """handleConfigUpdate must validate width and height dimensions."""
         js_code = load_config_controls_js()
-        assert function_validates_value(js_code, "handleConfigUpdate", "validAspectRatios"), (
-            "handleConfigUpdate must define valid aspect ratios"
+        assert function_validates_value(js_code, "handleConfigUpdate", "width"), (
+            "handleConfigUpdate must validate width"
         )
-        assert function_validates_value(js_code, "handleConfigUpdate", "includes("), (
-            "handleConfigUpdate must check if aspect ratio is in valid list"
+        assert function_validates_value(js_code, "handleConfigUpdate", "height"), (
+            "handleConfigUpdate must validate height"
+        )
+        assert function_validates_value(js_code, "handleConfigUpdate", "isNaN"), (
+            "handleConfigUpdate must check for NaN values"
         )
 
     @given(st.lists(st.sampled_from(["1:1", "16:9", "9:16"]), min_size=3, max_size=3, unique=True))
@@ -316,12 +327,20 @@ class TestHandleConfigUpdateImplementation:
         assert function_validates_value(js_code, "handleConfigUpdate", "state.aspectRatio"), (
             "handleConfigUpdate must compare with state.aspectRatio"
         )
+        assert function_validates_value(js_code, "handleConfigUpdate", "state.width"), (
+            "handleConfigUpdate must compare with state.width"
+        )
+        assert function_validates_value(js_code, "handleConfigUpdate", "state.height"), (
+            "handleConfigUpdate must compare with state.height"
+        )
 
     def test_stores_previous_values(self):
         """handleConfigUpdate must store previous values for rollback on error."""
         js_code = load_config_controls_js()
         assert "previousPrompt" in js_code, "handleConfigUpdate must store previousPrompt"
         assert "previousAspectRatio" in js_code, "handleConfigUpdate must store previousAspectRatio"
+        assert "previousWidth" in js_code, "handleConfigUpdate must store previousWidth"
+        assert "previousHeight" in js_code, "handleConfigUpdate must store previousHeight"
 
     def test_updates_state_before_invoke(self):
         """handleConfigUpdate must update state before calling backend."""
@@ -519,18 +538,14 @@ class TestValidationLogicProperties:
             f"Valid aspect ratio {valid_ratio} must be in validation list"
         )
 
-    @given(
-        st.text(
-            alphabet=st.characters(blacklist_categories=("Cc", "Cs")), min_size=1, max_size=10
-        ).filter(lambda x: x not in ["1:1", "16:9", "9:16"])
-    )
-    def test_invalid_aspect_ratio_rejected_property(self, invalid_ratio):
-        """Invalid aspect ratios must be validated against allowed list."""
+    @given(st.integers(min_value=1, max_value=10000))
+    def test_dimension_bounds_validated_property(self, value):
+        """Dimension bounds must be validated (64-2048)."""
         js_code = load_config_controls_js()
 
-        assert "includes(" in js_code, (
-            f"Validation must check if aspect ratio {invalid_ratio} is in allowed list"
-        )
+        # Check that dimension bounds are defined
+        assert "64" in js_code, "Minimum dimension bound (64) must be defined"
+        assert "2048" in js_code, "Maximum dimension bound (2048) must be defined"
 
     @given(st.integers(min_value=1000, max_value=10000))
     def test_error_timeout_range_property(self, timeout_ms):
@@ -633,9 +648,11 @@ class TestIntegrationProperties:
 
         assert "trim()" in js_code, "Must trim input"
         assert "=== ''" in js_code, "Must check empty"
-        assert "includes(" in js_code, "Must validate aspect ratio"
+        assert "isNaN" in js_code, "Must validate dimensions"
         assert "state.prompt" in js_code, "Must update state.prompt"
         assert "state.aspectRatio" in js_code, "Must update state.aspectRatio"
+        assert "state.width" in js_code, "Must update state.width"
+        assert "state.height" in js_code, "Must update state.height"
         assert "invoke(" in js_code, "Must call invoke"
         assert "try" in js_code and "catch" in js_code, "Must handle errors"
         assert "previousPrompt" in js_code, "Must support rollback"

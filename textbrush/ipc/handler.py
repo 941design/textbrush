@@ -63,7 +63,8 @@ class MessageHandler:
         CONTRACT:
           Inputs:
             - payload: dict with keys: prompt (str), output_path (str|None),
-                       seed (int|None), aspect_ratio (str), format (str)
+                       seed (int|None), aspect_ratio (str), format (str),
+                       width (int|None), height (int|None)
             - server: IPCServer instance for sending events
 
           Outputs: none (starts background processes, sends events)
@@ -86,7 +87,7 @@ class MessageHandler:
             2. Create TextbrushBackend instance with stored config
             3. Define on_ready callback:
                a. Send READY event
-               b. Call backend.start_generation() with prompt, seed, aspect_ratio
+               b. Call backend.start_generation() with prompt, seed, aspect_ratio, width, height
                c. Start image delivery thread
             4. Start background thread to:
                a. Call backend.initialize() (blocks until model loaded)
@@ -117,7 +118,11 @@ class MessageHandler:
             server.send(Message(MessageType.READY))
             logger.info(f"Starting generation: prompt='{cmd.prompt[:50]}...', seed={cmd.seed}")
             self.backend.start_generation(
-                prompt=cmd.prompt, seed=cmd.seed, aspect_ratio=cmd.aspect_ratio
+                prompt=cmd.prompt,
+                seed=cmd.seed,
+                aspect_ratio=cmd.aspect_ratio,
+                width=cmd.width,
+                height=cmd.height,
             )
             logger.info("Starting image delivery")
             self._start_image_delivery(server, cmd.output_path)
@@ -309,7 +314,8 @@ class MessageHandler:
 
         CONTRACT:
           Inputs:
-            - payload: dict with keys: prompt (str), aspect_ratio (str)
+            - payload: dict with keys: prompt (str), aspect_ratio (str),
+                       width (int|None), height (int|None)
             - server: IPCServer instance for sending events
 
           Outputs: none (modifies backend state, sends events)
@@ -318,7 +324,7 @@ class MessageHandler:
             - If backend not initialized: sends non-fatal ERROR event
             - If backend exists:
               * Calls backend.abort() to stop current worker and clear buffer
-              * Calls backend.start_generation() with new prompt and aspect_ratio
+              * Calls backend.start_generation() with new prompt, aspect_ratio, dimensions
               * Sends BUFFER_STATUS event showing reset buffer (count=0)
               * Image delivery thread continues, will deliver new images
 
@@ -329,26 +335,28 @@ class MessageHandler:
             - Seed handling: new generation uses auto-generated seeds (seed=None)
             - Buffer cleared: all pending images from old generation are purged
             - Error handling: sends non-fatal ERROR if backend not initialized
+            - Dimension priority: explicit width/height override aspect_ratio
 
           Algorithm:
             1. Parse payload into UpdateConfigCommand dataclass
             2. If backend is None:
                a. Send non-fatal ERROR event ("Backend not initialized")
                b. Return
-            3. Log config update with truncated prompt
-            4. Call backend.abort():
+            3. Validate aspect_ratio only if no explicit dimensions provided
+            4. Log config update with truncated prompt
+            5. Call backend.abort():
                - Stops current GenerationWorker thread
                - Clears buffer via buffer.clear()
                - Waits for worker to finish
-            5. Call backend.start_generation():
-               - Creates new GenerationWorker with updated prompt, aspect_ratio
+            6. Call backend.start_generation():
+               - Creates new GenerationWorker with updated config
                - Seed is None (auto-generate)
                - Starts new worker thread
-            6. Send BUFFER_STATUS event:
+            7. Send BUFFER_STATUS event:
                - count: 0 (buffer was just cleared)
                - max: backend.buffer.max_size
                - generating: True (new worker started)
-            7. Return (image delivery thread will deliver new images automatically)
+            8. Return (image delivery thread will deliver new images automatically)
 
         Thread Safety:
           - backend.abort() is thread-safe: stops worker, waits for completion
@@ -372,17 +380,22 @@ class MessageHandler:
             )
             return
 
-        valid_aspect_ratios = {"1:1", "16:9", "9:16"}
-        if cmd.aspect_ratio not in valid_aspect_ratios:
-            valid_values = ", ".join(sorted(valid_aspect_ratios))
-            error_msg = f"Invalid aspect_ratio: {cmd.aspect_ratio}. Must be one of: {valid_values}"
-            server.send(
-                Message(
-                    MessageType.ERROR,
-                    dataclass_to_dict(ErrorEvent(message=error_msg, fatal=False)),
+        # Only validate aspect_ratio if using preset (not "custom") and no explicit dimensions
+        if cmd.aspect_ratio != "custom" and cmd.width is None and cmd.height is None:
+            valid_aspect_ratios = {"1:1", "16:9", "9:16"}
+            if cmd.aspect_ratio not in valid_aspect_ratios:
+                valid_values = ", ".join(sorted(valid_aspect_ratios))
+                error_msg = (
+                    f"Invalid aspect_ratio: {cmd.aspect_ratio}. "
+                    f"Must be one of: {valid_values}, or 'custom' with dimensions"
                 )
-            )
-            return
+                server.send(
+                    Message(
+                        MessageType.ERROR,
+                        dataclass_to_dict(ErrorEvent(message=error_msg, fatal=False)),
+                    )
+                )
+                return
 
         if not cmd.prompt or not cmd.prompt.strip():
             server.send(
@@ -393,11 +406,19 @@ class MessageHandler:
             )
             return
 
-        logger.info(
-            f"UPDATE_CONFIG: prompt='{cmd.prompt[:50]}...', aspect_ratio={cmd.aspect_ratio}"
-        )
+        if cmd.width and cmd.height:
+            dims_info = f"width={cmd.width}, height={cmd.height}"
+        else:
+            dims_info = f"aspect_ratio={cmd.aspect_ratio}"
+        logger.info(f"UPDATE_CONFIG: prompt='{cmd.prompt[:50]}...', {dims_info}")
         self.backend.abort()
-        self.backend.start_generation(prompt=cmd.prompt, seed=None, aspect_ratio=cmd.aspect_ratio)
+        self.backend.start_generation(
+            prompt=cmd.prompt,
+            seed=None,
+            aspect_ratio=cmd.aspect_ratio,
+            width=cmd.width,
+            height=cmd.height,
+        )
 
         server.send(
             Message(

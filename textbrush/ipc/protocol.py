@@ -45,17 +45,22 @@ class InitCommand:
     seed: int | None = None
     aspect_ratio: str = "1:1"
     format: str = "png"
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass
 class UpdateConfigCommand:
     """Command to update generation configuration.
 
-    Triggers generation restart with new prompt and/or aspect ratio.
+    Triggers generation restart with new prompt and/or aspect ratio/dimensions.
+    When width and height are provided, they override the aspect_ratio setting.
     """
 
     prompt: str
     aspect_ratio: str = "1:1"
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass

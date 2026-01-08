@@ -1,12 +1,20 @@
-// UI Configuration Controls - Frontend Implementation Stub
+// UI Configuration Controls - Frontend Implementation
 //
 // Responsibilities:
 // 1. Replace read-only prompt display with editable text input
 // 2. Add radio button group for aspect ratio selection
-// 3. Handle blur/Enter events to trigger configuration update
-// 4. Manage local state synchronization
+// 3. Add width/height input fields for custom dimensions
+// 4. Handle blur/Enter events to trigger configuration update
+// 5. Manage local state synchronization
 
 const { invoke } = window.__TAURI__.core;
+
+// Default dimensions for each aspect ratio
+const ASPECT_RATIO_DIMENSIONS = {
+    '1:1': { width: 1024, height: 1024 },
+    '16:9': { width: 1344, height: 768 },
+    '9:16': { width: 768, height: 1344 },
+};
 
 /**
  * Initialize configuration controls in the UI.
@@ -23,9 +31,11 @@ const { invoke } = window.__TAURI__.core;
  *   Invariants:
  *     - Prompt display element (#prompt-display) is replaced with text input
  *     - Aspect ratio radio button group is added to status bar
+ *     - Width/height input fields are added for custom dimensions
  *     - Input fields are populated with initial values
  *     - Event listeners are attached for blur/Enter on prompt input
  *     - Event listeners are attached for change on aspect ratio radios
+ *     - Event listeners are attached for dimension inputs
  *     - State object is updated with current config values
  *
  *   Properties:
@@ -33,29 +43,15 @@ const { invoke } = window.__TAURI__.core;
  *     - Event-driven: config updates triggered by blur or Enter keypress
  *     - Non-blocking: invoke calls return immediately, backend handles restart
  *     - Error handling: validation errors shown inline (prompt non-empty)
+ *     - Dimension sync: changing aspect ratio updates dimension fields
  *
  *   Algorithm:
  *     1. Cache initial config values in local state
- *     2. Replace prompt display with text input:
- *        a. Find #prompt-display element
- *        b. Create text input with initial prompt value
- *        c. Set attributes: id, class, placeholder, title, aria-label
- *        d. Replace element in DOM
- *     3. Create aspect ratio radio button group:
- *        a. Create container div with class "aspect-ratio-controls"
- *        b. Create label "Aspect Ratio:"
- *        c. For each option ("1:1", "16:9", "9:16"):
- *           - Create radio input with name="aspect_ratio", value=option
- *           - Create label for radio
- *           - Set checked state based on initialAspectRatio
- *        d. Insert into status bar after prompt input
- *     4. Attach event listeners:
- *        a. Prompt input:
- *           - blur event → handleConfigUpdate()
- *           - keydown event → if Enter key, blur input (triggers update)
- *        b. Aspect ratio radios:
- *           - change event → handleConfigUpdate()
- *     5. Store references to input elements in state/elements
+ *     2. Replace prompt display with text input
+ *     3. Create aspect ratio radio button group
+ *     4. Create width/height input fields
+ *     5. Attach event listeners for all controls
+ *     6. Store references to input elements in state/elements
  *
  * Integration:
  *   - Called from init() after launch args are retrieved
@@ -65,137 +61,159 @@ const { invoke } = window.__TAURI__.core;
 export function initConfigControls(initialPrompt, initialAspectRatio, state, elements) {
     state.aspectRatio = initialAspectRatio || '1:1';
 
-    const promptInput = document.createElement('input');
-    promptInput.type = 'text';
-    promptInput.id = 'prompt-input';
-    promptInput.className = 'prompt-input';
-    promptInput.value = initialPrompt;
-    promptInput.placeholder = 'Enter prompt...';
-    promptInput.title = 'Image generation prompt';
-    promptInput.setAttribute('aria-label', 'Image generation prompt');
+    // Initialize dimensions from aspect ratio
+    const initialDims = ASPECT_RATIO_DIMENSIONS[state.aspectRatio] || { width: 1024, height: 1024 };
+    state.width = initialDims.width;
+    state.height = initialDims.height;
 
-    if (elements.promptDisplay && elements.promptDisplay.parentNode) {
-        elements.promptDisplay.parentNode.replaceChild(promptInput, elements.promptDisplay);
+    // Get existing HTML elements (they're already in the DOM from index.html)
+    const promptInput = document.getElementById('prompt-input');
+    const widthInput = document.getElementById('width-input');
+    const heightInput = document.getElementById('height-input');
+    const aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+
+    // Set initial values
+    if (promptInput) {
+        promptInput.value = initialPrompt;
+        elements.promptInput = promptInput;
     }
-    elements.promptInput = promptInput;
 
-    const aspectRatioContainer = document.createElement('div');
-    aspectRatioContainer.className = 'aspect-ratio-controls';
+    if (widthInput) {
+        widthInput.value = state.width;
+        elements.widthInput = widthInput;
+    }
 
-    const label = document.createElement('span');
-    label.className = 'aspect-ratio-label';
-    label.textContent = 'Aspect Ratio:';
-    aspectRatioContainer.appendChild(label);
+    if (heightInput) {
+        heightInput.value = state.height;
+        elements.heightInput = heightInput;
+    }
 
-    const ratios = ['1:1', '16:9', '9:16'];
-    const radios = [];
-
-    ratios.forEach(ratio => {
-        const radioWrapper = document.createElement('label');
-        radioWrapper.className = 'aspect-ratio-option';
-
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'aspect_ratio';
-        radio.value = ratio;
-        radio.checked = ratio === state.aspectRatio;
-        radio.setAttribute('aria-label', `Aspect ratio ${ratio}`);
-
-        const labelText = document.createTextNode(ratio);
-
-        radioWrapper.appendChild(radio);
-        radioWrapper.appendChild(labelText);
-        aspectRatioContainer.appendChild(radioWrapper);
-        radios.push(radio);
+    // Convert NodeList to array and set initial checked state
+    const radios = Array.from(aspectRatioRadios);
+    radios.forEach(radio => {
+        radio.checked = radio.value === state.aspectRatio;
     });
-
-    const statusRight = document.querySelector('.status-right');
-    if (statusRight && statusRight.parentNode) {
-        statusRight.parentNode.insertBefore(aspectRatioContainer, statusRight);
-    }
-
-    elements.aspectRatioControls = aspectRatioContainer;
     elements.aspectRatioRadios = radios;
 
-    promptInput.addEventListener('blur', () => {
-        const config = getCurrentConfig(elements);
-        handleConfigUpdate(config.prompt, config.aspectRatio, state);
-    });
+    // Prompt input event listeners
+    if (promptInput) {
+        promptInput.addEventListener('blur', () => {
+            const config = getCurrentConfig(elements);
+            handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+        });
 
-    promptInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            promptInput.blur();
-        }
-    });
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                promptInput.blur();
+            }
+        });
+    }
 
+    // Flag to track whether dimension changes are aspect-ratio-initiated
+    let dimensionChangeFromAspectRatio = false;
+
+    // Aspect ratio radio event listeners
     radios.forEach(radio => {
         radio.addEventListener('change', () => {
+            // Update dimension fields when aspect ratio changes (except for custom)
+            const ratio = radio.value;
+            const dims = ASPECT_RATIO_DIMENSIONS[ratio];
+            if (dims && widthInput && heightInput) {
+                dimensionChangeFromAspectRatio = true;
+                widthInput.value = dims.width;
+                heightInput.value = dims.height;
+                dimensionChangeFromAspectRatio = false;
+            }
             const config = getCurrentConfig(elements);
-            handleConfigUpdate(config.prompt, config.aspectRatio, state);
+            handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
         });
     });
+
+    // Helper to select custom aspect ratio
+    const selectCustomAspectRatio = () => {
+        const customRadio = radios.find(r => r.value === 'custom');
+        if (customRadio && !customRadio.checked) {
+            customRadio.checked = true;
+        }
+    };
+
+    // Dimension input event listeners
+    const handleDimensionChange = () => {
+        // If dimension change was triggered by user (not aspect ratio change), select custom
+        if (!dimensionChangeFromAspectRatio) {
+            selectCustomAspectRatio();
+        }
+        const config = getCurrentConfig(elements);
+        handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+    };
+
+    if (widthInput) {
+        widthInput.addEventListener('blur', handleDimensionChange);
+        widthInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                widthInput.blur();
+            }
+        });
+    }
+
+    if (heightInput) {
+        heightInput.addEventListener('blur', handleDimensionChange);
+        heightInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                heightInput.blur();
+            }
+        });
+    }
 }
 
 /**
- * Handle configuration update (prompt or aspect ratio changed).
+ * Handle configuration update (prompt, aspect ratio, or dimensions changed).
  *
  * CONTRACT:
  *   Inputs:
  *     - promptValue: string, current value from prompt input field
  *     - aspectRatioValue: string, current selected aspect ratio
+ *     - widthValue: number, current width value
+ *     - heightValue: number, current height value
  *     - state: object, application state to update
  *
  *   Outputs: Promise<void> (async operation)
  *
  *   Invariants:
  *     - Prompt must be non-empty (validation)
- *     - Aspect ratio must be one of "1:1", "16:9", "9:16" (validation)
+ *     - Dimensions must be valid (64-2048, divisible by 64)
  *     - If validation fails: show inline error, do not invoke backend
  *     - If validation passes:
  *       * Update local state with new values
- *       * Invoke Rust command: update_generation_config(prompt, aspect_ratio)
+ *       * Invoke Rust command: update_generation_config(prompt, aspect_ratio, width, height)
  *       * Wait for command result
  *       * If error: show error message, revert state
  *     - Backend will send BUFFER_STATUS event when restart complete
  *
  *   Properties:
- *     - Validation: prompt non-empty, aspect ratio valid
+ *     - Validation: prompt non-empty, dimensions in valid range
  *     - Async: returns Promise, uses await for invoke
  *     - Error handling: shows user-friendly error messages
- *     - State sync: updates state.prompt and state.aspectRatio
+ *     - State sync: updates state.prompt, state.aspectRatio, state.width, state.height
  *     - No redundant updates: detect if config actually changed
  *
  *   Algorithm:
- *     1. Validate prompt:
- *        a. Trim whitespace
- *        b. If empty: show error "Prompt cannot be empty", return
- *     2. Validate aspect ratio:
- *        a. Check against allowed values ["1:1", "16:9", "9:16"]
- *        b. If invalid: show error, return
- *     3. Check if config actually changed:
- *        a. Compare with state.prompt and state.aspectRatio
- *        b. If same: no-op, return
- *     4. Update local state:
- *        a. state.prompt = promptValue
- *        b. state.aspectRatio = aspectRatioValue
- *     5. Invoke backend command:
- *        a. Try: await invoke('update_generation_config', { prompt, aspect_ratio })
- *        b. If error:
- *           - Show error message to user
- *           - Revert state to previous values
- *           - Log error
- *        c. If success:
- *           - Log success
- *           - Wait for BUFFER_STATUS event (UI will update automatically)
- *     6. Return
+ *     1. Validate prompt (non-empty)
+ *     2. Validate dimensions (within range)
+ *     3. Check if config actually changed
+ *     4. Update local state
+ *     5. Invoke backend command with all config values
+ *     6. Handle success/error
  *
  * Error Display:
  *   - Show inline error message near input field
  *   - Use aria-live for accessibility
- *   - Auto-clear error after 5 seconds or on next valid input
+ *   - Auto-clear error after 3 seconds
  */
-export async function handleConfigUpdate(promptValue, aspectRatioValue, state) {
+export async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, heightValue, state) {
     const trimmedPrompt = promptValue.trim();
 
     if (trimmedPrompt === '') {
@@ -206,29 +224,50 @@ export async function handleConfigUpdate(promptValue, aspectRatioValue, state) {
         return;
     }
 
-    const validAspectRatios = ['1:1', '16:9', '9:16'];
-    if (!validAspectRatios.includes(aspectRatioValue)) {
-        const aspectRatioControls = document.querySelector('.aspect-ratio-controls');
-        if (aspectRatioControls) {
-            showValidationError('Invalid aspect ratio', aspectRatioControls);
+    // Validate dimensions
+    const width = parseInt(widthValue, 10);
+    const height = parseInt(heightValue, 10);
+
+    if (isNaN(width) || width < 64 || width > 2048) {
+        const widthInput = document.getElementById('width-input');
+        if (widthInput) {
+            showValidationError('Width must be 64-2048', widthInput);
         }
         return;
     }
 
-    if (trimmedPrompt === state.prompt && aspectRatioValue === state.aspectRatio) {
+    if (isNaN(height) || height < 64 || height > 2048) {
+        const heightInput = document.getElementById('height-input');
+        if (heightInput) {
+            showValidationError('Height must be 64-2048', heightInput);
+        }
+        return;
+    }
+
+    // Check if config actually changed
+    if (trimmedPrompt === state.prompt &&
+        aspectRatioValue === state.aspectRatio &&
+        width === state.width &&
+        height === state.height) {
         return;
     }
 
     const previousPrompt = state.prompt;
     const previousAspectRatio = state.aspectRatio;
+    const previousWidth = state.width;
+    const previousHeight = state.height;
 
     state.prompt = trimmedPrompt;
     state.aspectRatio = aspectRatioValue;
+    state.width = width;
+    state.height = height;
 
     try {
         await invoke('update_generation_config', {
             prompt: trimmedPrompt,
-            aspect_ratio: aspectRatioValue
+            aspectRatio: aspectRatioValue,
+            width: width,
+            height: height
         });
         console.log('Configuration updated successfully');
 
@@ -242,6 +281,8 @@ export async function handleConfigUpdate(promptValue, aspectRatioValue, state) {
 
         state.prompt = previousPrompt;
         state.aspectRatio = previousAspectRatio;
+        state.width = previousWidth;
+        state.height = previousHeight;
 
         const promptInput = document.getElementById('prompt-input');
         if (promptInput) {
@@ -306,7 +347,7 @@ export function showValidationError(message, inputElement) {
  *     - elements: object, cached DOM element references
  *
  *   Outputs:
- *     - object with { prompt: string, aspectRatio: string }
+ *     - object with { prompt: string, aspectRatio: string, width: number, height: number }
  *
  *   Invariants:
  *     - Returns current values from input fields
@@ -319,7 +360,8 @@ export function showValidationError(message, inputElement) {
  *   Algorithm:
  *     1. Get prompt from prompt input field
  *     2. Find checked radio button in aspect ratio group
- *     3. Return object with both values
+ *     3. Get width and height from dimension inputs
+ *     4. Return object with all values
  */
 export function getCurrentConfig(elements) {
     const promptValue = elements.promptInput ? elements.promptInput.value : '';
@@ -332,8 +374,13 @@ export function getCurrentConfig(elements) {
         }
     }
 
+    const widthValue = elements.widthInput ? parseInt(elements.widthInput.value, 10) : 1024;
+    const heightValue = elements.heightInput ? parseInt(elements.heightInput.value, 10) : 1024;
+
     return {
         prompt: promptValue,
-        aspectRatio: aspectRatioValue
+        aspectRatio: aspectRatioValue,
+        width: widthValue,
+        height: heightValue
     };
 }

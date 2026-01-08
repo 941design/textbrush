@@ -66,7 +66,12 @@ class TextbrushBackend:
         self.engine.load()
 
     def start_generation(
-        self, prompt: str, seed: int | None = None, aspect_ratio: str = "1:1"
+        self,
+        prompt: str,
+        seed: int | None = None,
+        aspect_ratio: str = "1:1",
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         """Begin background image generation.
 
@@ -74,29 +79,43 @@ class TextbrushBackend:
           Inputs:
             - prompt: non-empty string, text description
             - seed: optional integer seed (None = auto-generate)
-            - aspect_ratio: string, one of "1:1", "16:9", "9:16"
+            - aspect_ratio: string, one of "1:1", "16:9", "9:16", or "custom"
+            - width: optional int, image width in pixels (overrides aspect_ratio)
+            - height: optional int, image height in pixels (overrides aspect_ratio)
 
           Outputs: none (modifies internal state)
 
           Invariants:
+            - Engine must be loaded (initialize() called) before start_generation()
             - Creates GenerationWorker with prompt and options
             - Starts worker thread
             - After start_generation(), worker is filling buffer
+            - If both width and height are provided, they override aspect_ratio
 
           Properties:
             - Non-blocking: returns immediately, generation runs in background
-            - Prerequisites: initialize() must be called first
+            - Prerequisites: initialize() must be called first (raises RuntimeError if not)
             - Worker lifecycle: creates new worker (any existing worker should be stopped first)
+            - Buffer reset: resets shutdown state to allow new images to be delivered
 
           Algorithm:
-            1. Create GenerationOptions with seed and aspect_ratio
-            2. Create GenerationWorker with engine, buffer, prompt, options
-            3. Start worker thread
+            1. Check engine.is_loaded(), raise RuntimeError if not loaded
+            2. Reset buffer shutdown state to allow put/get operations
+            3. Create GenerationOptions with seed, aspect_ratio, and optional dimensions
+            4. Create GenerationWorker with engine, buffer, prompt, options
+            5. Start worker thread
         """
+        if not self.engine.is_loaded():
+            raise RuntimeError("Engine not loaded. Call initialize() before start_generation().")
+
+        self.buffer.reset_shutdown()
+
         options = GenerationOptions(
             seed=seed,
             steps=4,
             aspect_ratio=aspect_ratio,
+            width=width if width is not None else 512,
+            height=height if height is not None else 512,
         )
         self._worker = GenerationWorker(
             engine=self.engine,
