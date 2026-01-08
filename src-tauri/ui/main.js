@@ -17,6 +17,7 @@ const state = {
   bufferCount: 0,
   bufferMax: 8,
   isGenerating: false,
+  isPaused: false,
   isTransitioning: false,
   prompt: '',
   aspectRatio: '1:1',
@@ -50,6 +51,9 @@ const elements = {
   skipButton: null,
   acceptButton: null,
   abortButton: null,
+  pauseButton: null,
+  pauseIcon: null,
+  pauseLabel: null,
   themeToggle: null,
 };
 
@@ -74,6 +78,9 @@ function cacheElements() {
   elements.skipButton = document.getElementById('skip-btn');
   elements.acceptButton = document.getElementById('accept-btn');
   elements.abortButton = document.getElementById('abort-btn');
+  elements.pauseButton = document.getElementById('pause-btn');
+  elements.pauseIcon = document.getElementById('pause-icon');
+  elements.pauseLabel = document.getElementById('pause-label');
   elements.themeToggle = document.getElementById('theme-toggle');
 }
 
@@ -186,6 +193,10 @@ function handleMessage(msg) {
       handleError(msg.payload || {});
       break;
 
+    case 'paused':
+      handlePaused(msg.payload || {});
+      break;
+
     default:
       console.warn('Unknown message type:', msg.type);
   }
@@ -291,6 +302,35 @@ function handleError(payload) {
     setTimeout(() => {
       appWindow.close();
     }, 2000);
+  }
+}
+
+function handlePaused(payload) {
+  state.isPaused = payload.paused || false;
+  updatePauseButton();
+  console.log('Generation', state.isPaused ? 'paused' : 'resumed');
+}
+
+// Update Pause Button UI
+function updatePauseButton() {
+  if (!elements.pauseIcon || !elements.pauseLabel) {
+    return;
+  }
+
+  if (state.isPaused) {
+    elements.pauseIcon.textContent = '\u25B6';  // Play symbol
+    elements.pauseLabel.textContent = 'Resume';
+    if (elements.pauseButton) {
+      elements.pauseButton.title = 'Resume image generation (P)';
+      elements.pauseButton.classList.add('paused');
+    }
+  } else {
+    elements.pauseIcon.textContent = '\u23F8';  // Pause symbol
+    elements.pauseLabel.textContent = 'Pause';
+    if (elements.pauseButton) {
+      elements.pauseButton.title = 'Pause image generation (P)';
+      elements.pauseButton.classList.remove('paused');
+    }
   }
 }
 
@@ -550,6 +590,12 @@ function abort() {
   });
 }
 
+function togglePause() {
+  invoke('pause_generation').catch(err => {
+    console.error('Pause toggle failed:', err);
+  });
+}
+
 // Delete current image from history
 function deleteCurrentImage() {
   if (state.isTransitioning) {
@@ -593,6 +639,10 @@ function setupButtonListeners() {
 
   if (elements.abortButton) {
     elements.abortButton.addEventListener('click', abort);
+  }
+
+  if (elements.pauseButton) {
+    elements.pauseButton.addEventListener('click', togglePause);
   }
 
   if (elements.themeToggle) {
@@ -639,6 +689,11 @@ function setupKeyboardListeners() {
       e.preventDefault();
       deleteCurrentImage();
     }
+    // P = toggle pause
+    else if (e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
+      togglePause();
+    }
   });
 }
 
@@ -657,6 +712,8 @@ if (typeof window !== 'undefined') {
     skip,
     accept,
     abort,
+    togglePause,
+    updatePauseButton,
     deleteCurrentImage,
     cacheElements,
     allElementsPresent,

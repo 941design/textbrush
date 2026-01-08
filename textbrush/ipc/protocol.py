@@ -24,6 +24,7 @@ class MessageType(str, Enum):
     ABORT = "abort"
     STATUS = "status"
     UPDATE_CONFIG = "update_config"
+    PAUSE = "pause"
 
     # Events (Python → Tauri)
     READY = "ready"
@@ -32,6 +33,7 @@ class MessageType(str, Enum):
     ERROR = "error"
     ACCEPTED = "accepted"
     ABORTED = "aborted"
+    PAUSED = "paused"
 
 
 @dataclass
@@ -88,6 +90,13 @@ class ErrorEvent:
 
     message: str
     fatal: bool = False
+
+
+@dataclass
+class PausedEvent:
+    """Event reporting pause state change."""
+
+    paused: bool
 
 
 class Message:

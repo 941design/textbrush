@@ -169,6 +169,8 @@ class IPCServer:
             self.handler.handle_status(self)
         elif message.type == MessageType.UPDATE_CONFIG:
             self.handler.handle_update_config(message.payload, self)
+        elif message.type == MessageType.PAUSE:
+            self.handler.handle_pause(self)
         else:
             logger.warning(f"Unknown message type: {message.type}")
 

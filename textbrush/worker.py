@@ -51,6 +51,8 @@ class GenerationWorker:
         self.options = options
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # Start in running state (set = running)
         self._error_queue: queue.Queue[Exception] = queue.Queue(maxsize=1)
 
     def start(self) -> None:
@@ -103,7 +105,69 @@ class GenerationWorker:
             2. Call buffer.shutdown() to wake thread if blocked
         """
         self._stop_event.set()
+        self._pause_event.set()  # Unblock pause wait if paused
         self.buffer.shutdown()
+
+    def pause(self) -> None:
+        """Pause generation without stopping.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - After pause(), worker blocks before starting next generation
+            - Current generation (if any) completes before pause takes effect
+            - is_paused() returns True after this call
+
+          Properties:
+            - Non-blocking: returns immediately
+            - Graceful: current generation completes
+            - Idempotent: safe to call multiple times
+
+          Algorithm:
+            1. Clear pause_event (thread will block on wait())
+        """
+        logger.info("Pausing generation")
+        self._pause_event.clear()
+
+    def resume(self) -> None:
+        """Resume paused generation.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - After resume(), worker continues generating
+            - is_paused() returns False after this call
+
+          Properties:
+            - Non-blocking: returns immediately
+            - Idempotent: safe to call multiple times
+
+          Algorithm:
+            1. Set pause_event (unblocks waiting thread)
+        """
+        logger.info("Resuming generation")
+        self._pause_event.set()
+
+    def is_paused(self) -> bool:
+        """Check if generation is paused.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs:
+            - True if paused, False if running
+
+          Properties:
+            - Thread-safe: can be called from any thread
+            - Non-blocking: returns immediately
+        """
+        return not self._pause_event.is_set()
 
     def join(self, timeout: float | None = None) -> None:
         """Wait for worker thread to finish.
@@ -217,6 +281,15 @@ class GenerationWorker:
 
         try:
             while not self._stop_event.is_set():
+                # Wait while paused (blocks until resumed or stopped)
+                while not self._pause_event.is_set():
+                    if self._stop_event.is_set():
+                        break
+                    self._pause_event.wait(timeout=0.5)
+
+                if self._stop_event.is_set():
+                    break
+
                 try:
                     result = self.engine.generate(self.prompt, self.options)
 

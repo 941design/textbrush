@@ -79,6 +79,7 @@
     --accent-primary: #3b82f6;
     --accent-success: #22c55e;
     --accent-danger: #ef4444;
+    --accent-warning: #f59e0b;
 
     --border-subtle: #333333;
     --border-focus: #3b82f6;
@@ -115,6 +116,7 @@
     --accent-primary: #2563eb;
     --accent-success: #16a34a;
     --accent-danger: #dc2626;
+    --accent-warning: #d97706;
 
     --border-subtle: #d4d4d4;
     --border-focus: #2563eb;

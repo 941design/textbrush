@@ -162,6 +162,46 @@ pub fn accept_image(state: State<'_, AppState>) -> Result<(), String> {
     }
 }
 
+/// Toggle pause/resume generation.
+///
+/// CONTRACT:
+///   Inputs:
+///     - state: AppState containing sidecar
+///
+///   Outputs:
+///     - Result<(), String>: Ok on success, error message on failure
+///
+///   Invariants:
+///     - If sidecar exists: sends PAUSE command
+///     - If no sidecar: returns error
+///
+///   Properties:
+///     - Synchronous: returns after sending command
+///     - Error handling: returns Result with error if no sidecar
+///
+///   Algorithm:
+///     1. Lock AppState.sidecar mutex
+///     2. If sidecar exists:
+///        a. Send PAUSE message (type: "pause", payload: null)
+///        b. Return Ok
+///     3. If no sidecar:
+///        a. Return Err("No sidecar running")
+#[command]
+pub fn pause_generation(state: State<'_, AppState>) -> Result<(), String> {
+    let sidecar_guard = state.sidecar.lock().unwrap();
+
+    if let Some(sidecar) = sidecar_guard.as_ref() {
+        let message = IpcMessage {
+            msg_type: "pause".to_string(),
+            payload: serde_json::Value::Null,
+        };
+        sidecar.send(&message)?;
+        Ok(())
+    } else {
+        Err("No sidecar running".to_string())
+    }
+}
+
 /// Abort generation and terminate sidecar.
 ///
 /// CONTRACT:

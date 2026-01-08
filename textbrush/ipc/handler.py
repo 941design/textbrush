@@ -18,6 +18,7 @@ from textbrush.ipc.protocol import (
     BufferStatusEvent,
     Message,
     MessageType,
+    PausedEvent,
     dataclass_to_dict,
 )
 
@@ -406,6 +407,79 @@ class MessageHandler:
                         count=0,
                         max=self.backend.buffer.max_size,
                         generating=True,
+                    )
+                ),
+            )
+        )
+
+    def handle_pause(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Handle PAUSE command: toggle pause/resume generation.
+
+        CONTRACT:
+          Inputs:
+            - server: IPCServer instance for sending events
+
+          Outputs: none (modifies backend state, sends event)
+
+          Invariants:
+            - If backend not initialized: sends non-fatal ERROR event
+            - If backend exists:
+              * If currently running: pauses generation
+              * If currently paused: resumes generation
+            - PAUSED event sent with new pause state
+
+          Properties:
+            - Toggle behavior: alternates between paused and running
+            - Non-blocking: returns immediately
+            - Thread-safe: uses backend's thread-safe pause/resume
+
+          Algorithm:
+            1. If backend is None:
+               a. Send non-fatal ERROR event ("Backend not initialized")
+               b. Return
+            2. Check current pause state via backend.is_paused()
+            3. If paused: call backend.resume_generation()
+            4. If running: call backend.pause_generation()
+            5. Send PAUSED event with new state
+            6. Send BUFFER_STATUS event with updated generating flag
+        """
+        from textbrush.ipc.protocol import ErrorEvent
+
+        if not self.backend:
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(ErrorEvent(message="Backend not initialized", fatal=False)),
+                )
+            )
+            return
+
+        is_paused = self.backend.is_paused()
+
+        if is_paused:
+            self.backend.resume_generation()
+            new_paused = False
+        else:
+            self.backend.pause_generation()
+            new_paused = True
+
+        logger.info(f"Generation {'paused' if new_paused else 'resumed'}")
+
+        server.send(
+            Message(
+                MessageType.PAUSED,
+                dataclass_to_dict(PausedEvent(paused=new_paused)),
+            )
+        )
+
+        server.send(
+            Message(
+                MessageType.BUFFER_STATUS,
+                dataclass_to_dict(
+                    BufferStatusEvent(
+                        count=len(self.backend.buffer),
+                        max=self.backend.buffer.max_size,
+                        generating=not new_paused,
                     )
                 ),
             )

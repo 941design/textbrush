@@ -583,6 +583,21 @@ body {
     border-color: var(--accent-primary);
 }
 
+.btn-pause:hover {
+    border-color: var(--accent-warning);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.btn-pause.paused {
+    border-color: var(--accent-success);
+    background: rgba(34, 197, 94, 0.1);
+}
+
+.btn-pause.paused:hover {
+    border-color: var(--accent-success);
+    background: rgba(34, 197, 94, 0.15);
+}
+
 /* ============================================================================
    BUTTON COMPONENT PARTS
    ============================================================================ */

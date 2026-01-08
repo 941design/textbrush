@@ -84,6 +84,7 @@ fn main() {
             commands::skip_image,
             commands::accept_image,
             commands::abort_generation,
+            commands::pause_generation,
             commands_update_config::update_generation_config,
             exit_handlers::print_and_exit,
             exit_handlers::print_paths_and_exit,

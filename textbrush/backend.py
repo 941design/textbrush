@@ -271,6 +271,65 @@ class TextbrushBackend:
             return self._worker.get_error()
         return None
 
+    def pause_generation(self) -> None:
+        """Pause image generation without stopping.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - If worker exists: worker.pause() is called
+            - Current generation completes before pause takes effect
+            - is_paused() returns True after this call (if worker exists)
+
+          Properties:
+            - Non-blocking: returns immediately
+            - Graceful: current generation completes
+            - Idempotent: safe to call multiple times
+            - No-op if no worker exists
+        """
+        if self._worker:
+            self._worker.pause()
+
+    def resume_generation(self) -> None:
+        """Resume paused image generation.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - If worker exists: worker.resume() is called
+            - is_paused() returns False after this call (if worker exists)
+
+          Properties:
+            - Non-blocking: returns immediately
+            - Idempotent: safe to call multiple times
+            - No-op if no worker exists
+        """
+        if self._worker:
+            self._worker.resume()
+
+    def is_paused(self) -> bool:
+        """Check if generation is paused.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs:
+            - True if paused, False if running or no worker
+
+          Properties:
+            - Thread-safe: can be called from any thread
+            - Non-blocking: returns immediately
+        """
+        if self._worker:
+            return self._worker.is_paused()
+        return False
+
     def _generate_output_path(self) -> Path:
         """Generate output path for accepted image.
 
