@@ -431,10 +431,20 @@ class TestLoadingOverlay:
         ]
         assert len(spinners) > 0, "Spinner element not found in loading overlay"
 
-    def test_loading_overlay_contains_loading_text(self):
-        """Loading overlay must contain loading text element."""
-        has_loading_text = "Generating image" in load_html()
-        assert has_loading_text, "Loading text not found in overlay"
+    def test_loading_overlay_contains_loading_caption(self):
+        """Loading overlay must contain loading caption element."""
+        html = load_html()
+        parser = parse_html(html)
+
+        caption_attrs = next(
+            (
+                attrs
+                for tag, attrs in parser.all_elements
+                if tag == "div" and "loading-caption" in attrs.get("class", "")
+            ),
+            None,
+        )
+        assert caption_attrs is not None, "Loading caption not found in overlay"
 
 
 class TestImageContainer:
@@ -496,7 +506,9 @@ class TestCSSClassesUsed:
         "loading-overlay",
         "hidden",
         "spinner",
-        "loading-text",
+        "loading-caption",
+        "loading-label",
+        "loading-prompt",
         "status-bar",
         "status-left",
         "status-right",

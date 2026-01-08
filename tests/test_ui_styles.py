@@ -263,8 +263,8 @@ def test_spinner_animation():
     _, parser = load_css_file()
     assert parser.has_selector(".spinner"), ".spinner not found"
     props = parser.get_selector_properties(".spinner")
-    assert "40px" in props.get("width", "") and "40px" in props.get("height", ""), (
-        ".spinner should be 40px x 40px"
+    assert "48px" in props.get("width", "") and "48px" in props.get("height", ""), (
+        ".spinner should be 48px x 48px"
     )
     assert "var(--border-subtle)" in props.get("border", ""), (
         ".spinner should use var(--border-subtle) border"
@@ -649,7 +649,9 @@ def test_user_select_none_on_body():
             ".current-image",
             ".loading-overlay",
             ".spinner",
-            ".loading-text",
+            ".loading-caption",
+            ".loading-label",
+            ".loading-prompt",
             ".status-bar",
             ".status-left",
             ".status-right",
