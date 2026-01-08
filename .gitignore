@@ -50,3 +50,4 @@ src-tauri/target/
 # Workflow artifacts (temporary)
 .verification-questions.md
 .exploration/
+node_modules/
