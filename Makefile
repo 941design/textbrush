@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all lint format clippy fmt-rust fmt-check build build-python clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust lint format clippy fmt-rust fmt-check build build-python release clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -6,7 +6,7 @@
 help:  ## Show this help message
 	@echo "Textbrush - Development Commands"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_0-9-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 # ============================================================================
 # Setup
@@ -39,6 +39,12 @@ test-all:  ## Run full test suite including slow/integration tests
 	uv run pytest tests -v
 	cd src-tauri && cargo check
 
+test-e2e:  ## Run end-to-end smoke tests
+	uv run pytest tests -m "e2e_smoke" -v
+
+test-rust:  ## Run Rust test suite
+	cd src-tauri && cargo test
+
 lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests
 
@@ -64,6 +70,9 @@ build:  ## Build Tauri application
 
 build-python:  ## Build Python package wheel
 	uv build
+
+release:  ## Build optimized release binary
+	cd src-tauri && cargo build --release
 
 # ============================================================================
 # Cleanup

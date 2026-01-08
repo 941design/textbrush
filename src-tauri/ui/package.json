@@ -1,0 +1,12 @@
+{
+  "name": "textbrush-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Textbrush Tauri UI",
+  "scripts": {
+    "test": "node --test theme-manager.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

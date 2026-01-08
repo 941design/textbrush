@@ -122,20 +122,34 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 
 #### 3.2 Actions
 
-* **Skip**
+* **Skip / Navigate Forward**
 
-  * Discard current image
+  * Navigate to next image (from buffer or history)
   * Immediately show next buffered image if available
+  * All viewed images retained in history
+* **Navigate Backward**
+
+  * Navigate to previous image in history
+  * Stays within bounds (cannot go before first image)
+  * Position indicator updates to show current position
+* **Delete**
+
+  * Remove current image from history
+  * Revoke blob URL for memory cleanup
+  * Navigate to next image after deletion
+  * Show empty state if all images deleted
+  * Deleted images excluded from acceptance
 * **Accept**
 
-  * Save image to disk
-  * Print absolute saved path to stdout
-  * Exit application
+  * Save all retained images (excluding deleted ones)
+  * Print absolute paths to stdout (newline-separated)
+  * Exit application with code 0
+  * Multi-path acceptance when multiple images retained
 * **Abort**
 
   * Discard all images
   * Print nothing to stdout
-  * Exit application
+  * Exit application with code 1
 
 ---
 
@@ -153,13 +167,52 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 
 **Keyboard**
 
-* `Enter`: Accept
-* `Space` or `→`: Skip
+* `Enter`: Accept all retained images
+* `Space` or `→`: Navigate forward (skip to next buffered image)
+* `←`: Navigate to previous image in history
 * `Esc`: Abort
+* `Cmd+Delete` (macOS) / `Ctrl+Delete` (Linux): Delete current image from history
 
 **Mouse**
 
 * On-screen buttons for Accept / Skip / Abort
+* Theme toggle button for dark/light mode switching
+
+#### 4.3 Theme Support
+
+* **Dark theme** (default): #1a1a1a background, light text
+* **Light theme**: #f5f5f5 background, dark text
+* Theme toggle button in UI
+* Preference persisted to localStorage (key: textbrush-theme)
+* System preference detection as default on first launch
+* Smooth CSS transitions between themes
+
+#### 4.4 Image History and Navigation
+
+* **Bidirectional navigation**: Review previously viewed images with ← and → keys
+* **Position indicator**: Shows current position in history (e.g., "[2/5]")
+* **Image history**: All viewed images retained with blob URLs and metadata
+* **Navigation bounds**: Cannot navigate before first or after last image
+* **History persistence**: Images remain in memory until deleted or application exits
+
+#### 4.5 Image Deletion
+
+* **Delete shortcut**: Cmd+Delete (macOS) / Ctrl+Delete (Linux)
+* **Behavior**: Removes current image from history, navigates to next
+* **Memory cleanup**: Blob URLs revoked via URL.revokeObjectURL()
+* **Empty state**: Shown when all images deleted
+* **Multi-path acceptance**: Deleted images excluded from acceptance
+
+#### 4.6 Visual Feedback
+
+* **Button flash animations**: Keyboard shortcuts trigger visual feedback
+* **Animation duration**: 200ms CSS class-based animation
+* **Feedback mapping**:
+  - Space/→: Skip button flash
+  - Enter: Accept button flash
+  - Esc: Abort button flash
+  - Cmd/Ctrl+Delete: Image container flash
+* **CSS class**: btn-pressed (box-shadow animation)
 
 ---
 
@@ -231,11 +284,15 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 
 **Frontend (`src-tauri/ui/`):**
 * Single-page HTML/CSS/JS application
-* Minimal dark theme (#1a1a1a background)
+* Dark/light theme support with toggle button
 * Real-time buffer status visualization
 * GPU-accelerated image transitions
-* Keyboard shortcuts: Space/→ (skip), Enter (accept), Esc (abort)
+* Keyboard shortcuts: Space/→ (skip), ← (previous), Enter (accept), Esc (abort), Cmd/Ctrl+Delete (delete)
 * State machine: idle → loading → ready → action states
+* Modular architecture:
+  - ThemeManager: Theme toggle and persistence
+  - HistoryManager: Image history and navigation
+  - ButtonFlash: Visual feedback for keyboard shortcuts
 
 **Window Configuration:**
 * Fixed size: 800x700 pixels
@@ -341,10 +398,16 @@ On startup:
 
 #### 9.1 CLI Exit Contract
 
-* **Accept**
+* **Accept (Single Image)**
 
   * Exit code: `0`
   * Stdout: absolute image path
+* **Accept (Multiple Images)**
+
+  * Exit code: `0`
+  * Stdout: newline-separated absolute image paths
+  * Paths printed in chronological order (viewing order)
+  * Deleted images excluded from output
 * **Abort / No accept**
 
   * Exit code: non-zero

@@ -160,6 +160,11 @@ class FluxInferenceEngine(InferenceEngine):
         if not self.is_loaded():
             raise RuntimeError("Engine not loaded. Call load() before generate().")
 
+        logger.info(
+            f"Generating image: prompt='{prompt}', "
+            f"seed={options.seed}, steps={options.steps}, aspect_ratio={options.aspect_ratio}"
+        )
+
         width, height = self._resolve_dimensions(options.aspect_ratio)
 
         generator = torch.Generator(self._device)

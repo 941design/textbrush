@@ -2,6 +2,9 @@
 // Handles image review workflow, state management, and user interactions via Tauri IPC
 
 import * as ConfigControls from './config_controls.js';
+import * as ThemeManager from './theme-manager.js';
+import * as HistoryManager from './history-manager.js';
+import * as ButtonFlash from './button-flash.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -47,6 +50,7 @@ const elements = {
   skipButton: null,
   acceptButton: null,
   abortButton: null,
+  themeToggle: null,
 };
 
 function cacheElements() {
@@ -70,6 +74,7 @@ function cacheElements() {
   elements.skipButton = document.getElementById('skip-btn');
   elements.acceptButton = document.getElementById('accept-btn');
   elements.abortButton = document.getElementById('abort-btn');
+  elements.themeToggle = document.getElementById('theme-toggle');
 }
 
 function allElementsPresent() {
@@ -80,6 +85,9 @@ function allElementsPresent() {
 async function init() {
   console.log('Textbrush UI initializing...');
   try {
+    // Initialize theme before DOM manipulation
+    ThemeManager.initTheme();
+
     // Cache all DOM elements
     cacheElements();
 
@@ -218,14 +226,38 @@ function handleBufferStatus(payload) {
   updateBufferDisplay();
 }
 
-function handleAccepted(payload) {
-  const path = payload.path || 'unknown';
+async function handleAccepted(payload) {
+  // Payload contains path for the single image that was just accepted via backend
+  // Store this path in current history entry if it was the current image
+  if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
+    state.imageHistory[state.historyIndex].path = payload.path;
+  }
+
+  // Collect all paths from history (including the one just saved)
+  const allPaths = HistoryManager.getAllRetainedPaths(state);
+
   visualSuccessFeedback();
   setTimeout(async () => {
     try {
-      await invoke('print_and_exit', { path });
+      // Clean up all blob URLs before exit
+      for (const entry of state.imageHistory) {
+        if (entry.blobUrl) {
+          URL.revokeObjectURL(entry.blobUrl);
+        }
+      }
+
+      if (allPaths.length === 0) {
+        // No images retained - exit as abort
+        await invoke('abort_exit');
+      } else if (allPaths.length === 1) {
+        // Single path - use backward-compatible single-path exit
+        await invoke('print_and_exit', { path: allPaths[0] });
+      } else {
+        // Multiple paths - use multi-path exit
+        await invoke('print_paths_and_exit', { paths: allPaths });
+      }
     } catch (err) {
-      console.error('Failed to call print_and_exit:', err);
+      console.error('Failed to call exit handler:', err);
       appWindow.close();
     }
   }, 500);
@@ -234,6 +266,13 @@ function handleAccepted(payload) {
 function handleAborted(payload) {
   setTimeout(async () => {
     try {
+      // Clean up all blob URLs before exit
+      for (const entry of state.imageHistory) {
+        if (entry.blobUrl) {
+          URL.revokeObjectURL(entry.blobUrl);
+        }
+      }
+
       await invoke('abort_exit');
     } catch (err) {
       console.error('Failed to call abort_exit:', err);
@@ -418,17 +457,15 @@ function previous() {
     return;
   }
 
-  // No wrap-around: if at beginning, do nothing
-  if (state.historyIndex <= 0) {
-    console.log('At beginning of history, cannot go back');
-    return;
-  }
+  // Use HistoryManager for navigation
+  const navigated = HistoryManager.navigateToPrevious(state, (entry) => {
+    displayImage(entry, state.historyIndex);
+    updateSeedDisplay(entry.seed);
+  });
 
-  // Navigate to previous image in history
-  state.historyIndex--;
-  const historyItem = state.imageHistory[state.historyIndex];
-  displayImage(historyItem, state.historyIndex);
-  updateSeedDisplay(historyItem.seed);
+  if (!navigated) {
+    console.log('At beginning of history, cannot go back');
+  }
 }
 
 // Navigate to next image (ArrowRight or Space)
@@ -443,35 +480,34 @@ function skip() {
     return;
   }
 
-  // If we're in history (not at the end), navigate forward in history
-  if (state.historyIndex < state.imageHistory.length - 1) {
-    state.historyIndex++;
-    const historyItem = state.imageHistory[state.historyIndex];
-    displayImage(historyItem, state.historyIndex);
-    updateSeedDisplay(historyItem.seed);
-    return;
-  }
+  // Use HistoryManager for navigation - handles both history forward and buffer request
+  const requestNext = () => {
+    state.waitingForNext = true;
+    showLoadingPlaceholder();
 
-  // We're at the newest image - request next from backend
-  // Show loading placeholder (new image with spinner, not overlay on current)
-  state.waitingForNext = true;
-  showLoadingPlaceholder();
+    state.actionQueue = state.actionQueue
+      .then(async () => {
+        await invoke('skip_image');
+      })
+      .catch(err => {
+        console.error('Skip failed:', err);
+        state.waitingForNext = false;
+        if (state.imageHistory.length > 0) {
+          const historyItem = state.imageHistory[state.historyIndex];
+          showLoading(false);
+          displayImage(historyItem, state.historyIndex);
+        }
+      });
+  };
 
-  // Queue skip action to prevent race conditions
-  state.actionQueue = state.actionQueue
-    .then(async () => {
-      await invoke('skip_image');
-    })
-    .catch(err => {
-      console.error('Skip failed:', err);
-      // On error, go back to showing the last image
-      state.waitingForNext = false;
-      if (state.imageHistory.length > 0) {
-        const historyItem = state.imageHistory[state.historyIndex];
-        showLoading(false);
-        displayImage(historyItem, state.historyIndex);
-      }
-    });
+  HistoryManager.navigateToNext(
+    state,
+    (entry) => {
+      displayImage(entry, state.historyIndex);
+      updateSeedDisplay(entry.seed);
+    },
+    requestNext
+  );
 }
 
 // Show loading placeholder (hide current image, show spinner as new view)
@@ -514,6 +550,30 @@ function abort() {
   });
 }
 
+// Delete current image from history
+function deleteCurrentImage() {
+  if (state.isTransitioning) {
+    return;
+  }
+
+  HistoryManager.deleteCurrentImage(
+    state,
+    (entry) => {
+      displayImage(entry, state.historyIndex);
+      updateSeedDisplay(entry.seed);
+    },
+    () => {
+      // Show empty state - hide image, show loading without spinner
+      if (elements.currentImage) {
+        elements.currentImage.classList.add('hidden');
+      }
+      if (elements.seedDisplay) {
+        elements.seedDisplay.textContent = 'Seed: —';
+      }
+    }
+  );
+}
+
 // Enable/Disable Accept Button
 function enableAcceptButton() {
   if (elements.acceptButton) {
@@ -534,6 +594,12 @@ function setupButtonListeners() {
   if (elements.abortButton) {
     elements.abortButton.addEventListener('click', abort);
   }
+
+  if (elements.themeToggle) {
+    elements.themeToggle.addEventListener('click', () => {
+      ThemeManager.toggleTheme();
+    });
+  }
 }
 
 // Keyboard Event Listener
@@ -543,6 +609,10 @@ function setupKeyboardListeners() {
     if (e.target.tagName === 'INPUT' && e.target.type === 'text') {
       return;
     }
+
+    // Flash button for visual feedback
+    const ctrlOrCmd = e.ctrlKey || e.metaKey;
+    ButtonFlash.flashButtonForKey(e.key, ctrlOrCmd);
 
     // Left Arrow = previous
     if (e.key === 'ArrowLeft') {
@@ -564,6 +634,11 @@ function setupKeyboardListeners() {
       e.preventDefault();
       abort();
     }
+    // Cmd/Ctrl+Delete or Cmd/Ctrl+Backspace = delete current image
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && ctrlOrCmd) {
+      e.preventDefault();
+      deleteCurrentImage();
+    }
   });
 }
 
@@ -582,6 +657,7 @@ if (typeof window !== 'undefined') {
     skip,
     accept,
     abort,
+    deleteCurrentImage,
     cacheElements,
     allElementsPresent,
     isHistoryBlobUrl,

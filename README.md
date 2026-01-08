@@ -8,6 +8,11 @@ Text-to-image generation tool with customizable workflows and local model infere
 - **Background image generation** with 8-image FIFO buffer for smooth workflows
 - **Desktop slideshow UI** for rapid image review with keyboard/mouse controls
 - **Real-time buffer visualization** showing generation progress as images are created
+- **Dark/light theme toggle** with persistent preference and smooth transitions
+- **Bidirectional navigation** through image history with position indicator
+- **Image deletion** with Cmd/Ctrl+Delete to curate selections
+- **Multi-image workflows** with batch acceptance of all retained images
+- **Visual feedback** for keyboard shortcuts with button flash animations
 - **Flexible configuration** via CLI arguments, environment variables, or TOML config file
 - **Local model management** with automatic HuggingFace cache discovery
 - **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends
@@ -42,15 +47,19 @@ uv run textbrush "a serene mountain landscape" --output output.png
 # UI opens showing:
 # - First generated image displayed automatically
 # - Buffer indicator showing generation progress (visual dots + count)
+# - Theme toggle button (dark/light mode)
+# - Position indicator showing current image in history (e.g., "[2/5]")
 # - Controls: Abort / Skip / Accept buttons
 
 # Keyboard shortcuts:
-# Space or → : Skip to next image
-# Enter: Accept current image (saves to specified path and exits)
+# ← : Navigate to previous image in history
+# → or Space : Navigate forward or skip to next buffered image
+# Enter: Accept all retained images (prints paths to stdout, exits with code 0)
 # Esc: Abort (exits without saving)
+# Cmd+Delete (macOS) / Ctrl+Delete (Linux): Delete current image from history
 
 # Exit behavior:
-# Accept: prints saved file path to stdout, exits with code 0
+# Accept: prints saved file paths to stdout (newline-separated), exits with code 0
 # Abort: exits with code 1 (empty stdout)
 ```
 
@@ -59,6 +68,11 @@ The UI provides:
 - **Smooth transitions**: GPU-accelerated animations between images (<100ms skip latency)
 - **Memory efficiency**: Uses blob URLs instead of base64 encoding for large images
 - **Exit contracts**: Predictable stdout/exit-code behavior for scripting integration
+- **Theme customization**: Toggle between dark and light themes with persistent preference
+- **Image navigation**: Review previously viewed images with ← and → arrow keys
+- **Image curation**: Delete unwanted images with keyboard shortcut before accepting
+- **Multi-image acceptance**: Accept multiple images from single session (all retained paths printed)
+- **Visual feedback**: Button flash animations confirm keyboard shortcut actions
 
 ### Headless Mode (for CI/Testing)
 

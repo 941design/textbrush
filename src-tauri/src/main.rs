@@ -86,6 +86,7 @@ fn main() {
             commands::abort_generation,
             commands_update_config::update_generation_config,
             exit_handlers::print_and_exit,
+            exit_handlers::print_paths_and_exit,
             exit_handlers::abort_exit,
             launch_args::get_launch_args,
         ])

@@ -571,3 +571,151 @@ Features documented but not yet implemented. See separate feature specifications
 - Manual trigger only (no automatic checks)
 
 **Specification:** See `specs/update-check-spec.md`
+
+---
+
+## Epic: User Experience Enhancements
+
+Enhanced UI features for improved usability, workflow flexibility, and visual feedback.
+
+### [Implemented] Story 9.1: Dark/Light Theme Toggle
+
+**As a** Power User
+**I want** to toggle between dark and light themes
+**So that** I can adapt the UI to my environment and reduce eye strain
+
+**Acceptance Criteria:**
+- Theme toggle button in UI
+- Themes: dark (#1a1a1a background) and light (#f5f5f5 background)
+- Theme preference persisted to localStorage
+- Theme restored on subsequent launches
+- System preference detection as default
+- Smooth CSS transition between themes
+
+**Test Coverage:**
+- Theme initialization with system preference fallback
+- Theme toggle changes data-theme attribute
+- localStorage persistence and restoration
+- CSS variables update correctly for both themes
+
+**Implementation Details:**
+- ThemeManager module (src-tauri/ui/theme-manager.js)
+- CSS custom properties for themeable colors
+- localStorage key: textbrush-theme
+- window.matchMedia for system preference detection
+
+---
+
+### [Implemented] Story 9.2: Bidirectional Image Navigation
+
+**As a** Technical Writer
+**I want** to navigate backward and forward through generated images
+**So that** I can review previous images before deciding which to accept
+
+**Acceptance Criteria:**
+- ← Arrow key navigates to previous image
+- → Arrow key navigates forward through history
+- Navigation stays within bounds (no wrap-around)
+- Position indicator shows current position (e.g., "[2/5]")
+- Previously viewed images retained in memory
+- Navigation available when not at buffer end
+- Image history preserved with blob URLs and metadata
+
+**Test Coverage:**
+- Navigate through history with bound checking
+- Position indicator updates correctly
+- Cannot navigate before first or after last image
+- Display callback invoked with correct image data
+
+**Implementation Details:**
+- HistoryManager module (src-tauri/ui/history-manager.js)
+- imageHistory array stores viewed images with blob URLs
+- historyIndex tracks current position
+- Position indicator format: "[current/total]"
+
+---
+
+### [Implemented] Story 9.3: Image Deletion
+
+**As a** Developer
+**I want** to delete unwanted images from the history
+**So that** I can curate only relevant images before accepting
+
+**Acceptance Criteria:**
+- Cmd+Delete (macOS) / Ctrl+Delete (Linux) deletes current image
+- Deleted image removed from history
+- Blob URL revoked for memory cleanup
+- Navigate to next image after deletion
+- Show empty state if all images deleted
+- Deletion available at any history position
+
+**Test Coverage:**
+- Delete image from middle of history
+- Delete last image triggers empty state
+- Blob URL revocation verified
+- History length and index adjustment correct
+- Empty history shows empty state
+
+**Implementation Details:**
+- Keyboard shortcut: Cmd/Ctrl+Delete
+- Blob URL cleanup via URL.revokeObjectURL()
+- History array splice and index adjustment
+- Empty state shown when history.length === 0
+
+---
+
+### [Implemented] Story 9.4: Visual Feedback for Actions
+
+**As a** Power User
+**I want** visual feedback when I press keyboard shortcuts
+**So that** I know my actions are registered
+
+**Acceptance Criteria:**
+- Button flash animation when keyboard shortcut pressed
+- Space/→ flashes Skip button
+- Enter flashes Accept button
+- Esc flashes Abort button
+- Cmd/Ctrl+Delete flashes image container
+- Animation duration: 200ms
+- CSS class-based animation for performance
+
+**Test Coverage:**
+- Keyboard shortcuts trigger correct button flashes
+- Unmapped keys do not trigger flashes
+- CSS class added and removed correctly
+- Modifier key detection for delete shortcut
+
+**Implementation Details:**
+- ButtonFlash module (src-tauri/ui/button-flash.js)
+- CSS class: btn-pressed (box-shadow animation)
+- 200ms animation duration with automatic cleanup
+- Keyboard-to-button mapping for all actions
+
+---
+
+### [Implemented] Story 9.5: Multi-Image Workflow and Acceptance
+
+**As a** Technical Writer
+**I want** to retain all reviewed images and accept multiple at once
+**So that** I can batch-select images from a single generation session
+
+**Acceptance Criteria:**
+- All viewed images saved to temporary location
+- Accept action collects all retained image paths
+- Multi-path acceptance prints all paths to stdout (newline-separated)
+- Exit code 0 on multi-path acceptance
+- Paths printed in chronological order (viewing order)
+- Deleted images excluded from acceptance
+
+**Test Coverage:**
+- getAllRetainedPaths collects all history paths
+- Paths filtered to exclude null values
+- Empty history returns empty path array
+- Deleted images not included in retained paths
+- Multi-path workflow integration test
+
+**Implementation Details:**
+- getAllRetainedPaths() function in HistoryManager
+- Backend IMAGE_READY event includes path field
+- Multi-path exit via print_paths_and_exit command
+- Newline-separated stdout format for scripting

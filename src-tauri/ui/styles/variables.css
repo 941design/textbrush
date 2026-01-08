@@ -65,7 +65,8 @@
  *   - Keep alphabetical order within groups for maintainability
  */
 
-:root {
+:root,
+:root[data-theme="dark"] {
     /* Colors - Dark Theme */
     --bg-primary: #0d0d0d;
     --bg-secondary: #1a1a1a;
@@ -99,4 +100,25 @@
 
     /* Shadows */
     --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="light"] {
+    /* Colors - Light Theme */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #e0e0e0;
+
+    --text-primary: #1a1a1a;
+    --text-secondary: #4a4a4a;
+    --text-muted: #9a9a9a;
+
+    --accent-primary: #2563eb;
+    --accent-success: #16a34a;
+    --accent-danger: #dc2626;
+
+    --border-subtle: #d4d4d4;
+    --border-focus: #2563eb;
+
+    /* Shadows - lighter, softer for light theme */
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
 }

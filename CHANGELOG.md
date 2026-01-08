@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **UI Enhancements**: Improved user experience with theme customization, navigation, and visual feedback
+  - Dark/light theme toggle with persistent preference and smooth transitions
+  - Bidirectional image navigation with ← and → keys through viewing history
+  - Position indicator showing current image in history (e.g., "[2/5]")
+  - Image deletion with Cmd+Delete (macOS) / Ctrl+Delete (Linux) for curation
+  - Multi-image workflow with batch acceptance of all retained images
+  - Visual button flash animations for keyboard shortcut feedback
+  - Multi-path acceptance: stdout prints newline-separated paths for all retained images
+  - Modular frontend architecture: ThemeManager, HistoryManager, ButtonFlash modules
+  - localStorage persistence for theme preference (key: textbrush-theme)
+  - System theme preference detection on first launch
+  - Blob URL memory cleanup for deleted images
 - **Headless Mode**: CLI operation without UI for CI/CD and automated testing
   - `--headless` flag for non-interactive operation
   - `--auto-accept` to accept first generated image and exit with code 0
