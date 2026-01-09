@@ -1,4 +1,4 @@
-"""Property-based tests for config controls JavaScript module.
+"""Tests for config controls JavaScript module.
 
 Tests verify that config_controls.js meets all specification requirements:
 - Function exports and signatures
@@ -8,16 +8,15 @@ Tests verify that config_controls.js meets all specification requirements:
 - Error handling behavior
 - State synchronization
 
-Uses Hypothesis for property-based test generation and source code analysis
-to validate JavaScript implementation without requiring browser runtime.
+Uses source code analysis to validate JavaScript implementation without
+requiring browser runtime.
 """
 
 import re
 from pathlib import Path
 from typing import List
 
-from hypothesis import given
-from hypothesis import strategies as st
+import pytest
 
 
 def load_config_controls_js() -> str:
@@ -189,10 +188,10 @@ class TestConfigControlsStructure:
         )
 
     def test_get_config_signature(self):
-        """getCurrentConfig must have exactly 1 parameter."""
+        """getCurrentConfig must have exactly 2 parameters."""
         js_code = load_config_controls_js()
-        assert function_has_parameter_count(js_code, "getCurrentConfig", 1), (
-            "getCurrentConfig must accept 1 parameter (elements)"
+        assert function_has_parameter_count(js_code, "getCurrentConfig", 2), (
+            "getCurrentConfig must accept 2 parameters (elements, state)"
         )
 
 
@@ -206,14 +205,17 @@ class TestInitConfigControlsImplementation:
             "initConfigControls must get existing prompt input element"
         )
 
-    def test_gets_dimension_input_elements(self):
-        """initConfigControls must get existing dimension input elements."""
+    def test_gets_resolution_control_elements(self):
+        """initConfigControls must get resolution control elements."""
         js_code = load_config_controls_js()
-        assert "getElementById('width-input')" in js_code, (
-            "initConfigControls must get existing width input element"
+        assert "getElementById('dimension-display')" in js_code, (
+            "initConfigControls must get dimension display element"
         )
-        assert "getElementById('height-input')" in js_code, (
-            "initConfigControls must get existing height input element"
+        assert "getElementById('resolution-decrease')" in js_code, (
+            "initConfigControls must get resolution decrease button"
+        )
+        assert "getElementById('resolution-increase')" in js_code, (
+            "initConfigControls must get resolution increase button"
         )
 
     def test_gets_aspect_ratio_radios(self):
@@ -244,14 +246,13 @@ class TestInitConfigControlsImplementation:
             "initConfigControls must add change event listener for radio buttons"
         )
 
-    @given(st.lists(st.sampled_from(["1:1", "16:9", "9:16"]), min_size=3, max_size=3, unique=True))
-    def test_all_aspect_ratios_created(self, ratios):
+    @pytest.mark.parametrize("ratio", ["1:1", "16:9", "9:16"])
+    def test_all_aspect_ratios_created(self, ratio):
         """All three aspect ratios must be available in the code."""
         js_code = load_config_controls_js()
-        for ratio in ratios:
-            assert f"'{ratio}'" in js_code or f'"{ratio}"' in js_code, (
-                f"Aspect ratio {ratio} must be included in radio options"
-            )
+        assert f"'{ratio}'" in js_code or f'"{ratio}"' in js_code, (
+            f"Aspect ratio {ratio} must be included in radio options"
+        )
 
     def test_updates_state_aspect_ratio(self):
         """initConfigControls must update state.aspectRatio."""
@@ -264,12 +265,6 @@ class TestInitConfigControlsImplementation:
         js_code = load_config_controls_js()
         assert "elements.promptInput" in js_code, (
             "initConfigControls must store promptInput reference"
-        )
-        assert "elements.widthInput" in js_code, (
-            "initConfigControls must store widthInput reference"
-        )
-        assert "elements.heightInput" in js_code, (
-            "initConfigControls must store heightInput reference"
         )
         assert "elements.aspectRatioRadios" in js_code, (
             "initConfigControls must store aspectRatioRadios reference"
@@ -289,25 +284,23 @@ class TestHandleConfigUpdateImplementation:
             "handleConfigUpdate must check for empty string"
         )
 
-    def test_validates_dimensions(self):
-        """handleConfigUpdate must validate width and height dimensions."""
+    def test_handles_dimensions(self):
+        """handleConfigUpdate must handle width and height dimensions."""
         js_code = load_config_controls_js()
+        # Dimensions come from preset resolutions, so we just need to ensure
+        # they are used in the function (passed through to invoke)
         assert function_validates_value(js_code, "handleConfigUpdate", "width"), (
-            "handleConfigUpdate must validate width"
+            "handleConfigUpdate must handle width"
         )
         assert function_validates_value(js_code, "handleConfigUpdate", "height"), (
-            "handleConfigUpdate must validate height"
-        )
-        assert function_validates_value(js_code, "handleConfigUpdate", "isNaN"), (
-            "handleConfigUpdate must check for NaN values"
+            "handleConfigUpdate must handle height"
         )
 
-    @given(st.lists(st.sampled_from(["1:1", "16:9", "9:16"]), min_size=3, max_size=3, unique=True))
-    def test_valid_aspect_ratios_list(self, ratios):
+    @pytest.mark.parametrize("ratio", ["1:1", "16:9", "9:16"])
+    def test_valid_aspect_ratios_list(self, ratio):
         """Valid aspect ratios must include all three standard ratios."""
         js_code = load_config_controls_js()
-        for ratio in ratios:
-            assert f"'{ratio}'" in js_code, f"Valid aspect ratios must include {ratio}"
+        assert f"'{ratio}'" in js_code, f"Valid aspect ratios must include {ratio}"
 
     def test_calls_show_validation_error_on_invalid_prompt(self):
         """handleConfigUpdate must call showValidationError for empty prompt."""
@@ -517,46 +510,34 @@ class TestGetCurrentConfigImplementation:
 
 
 class TestValidationLogicProperties:
-    """Property-based tests for validation logic."""
+    """Tests for validation logic."""
 
-    @given(st.text(alphabet=st.characters(whitelist_categories=("Zs",)), min_size=1, max_size=100))
-    def test_empty_prompt_validation_property(self, whitespace_string):
-        """Prompt validation must reject any whitespace-only string."""
+    def test_empty_prompt_validation(self):
+        """Prompt validation must use trim() and check for empty string."""
         js_code = load_config_controls_js()
+        assert "trim()" in js_code, "Validation must trim whitespace"
+        assert "=== ''" in js_code, "Validation must check for empty string after trimming"
 
-        trimmed = whitespace_string.strip()
-        if trimmed == "":
-            assert "trim()" in js_code, (
-                f"Validation must trim whitespace: '{whitespace_string}' should be rejected"
-            )
-            assert "=== ''" in js_code, "Validation must check for empty string after trimming"
-
-    @given(st.sampled_from(["1:1", "16:9", "9:16"]))
-    def test_valid_aspect_ratios_property(self, valid_ratio):
+    @pytest.mark.parametrize("valid_ratio", ["1:1", "16:9", "9:16"])
+    def test_valid_aspect_ratios_present(self, valid_ratio):
         """All valid aspect ratios must be present in validation list."""
         js_code = load_config_controls_js()
         assert f"'{valid_ratio}'" in js_code or f'"{valid_ratio}"' in js_code, (
             f"Valid aspect ratio {valid_ratio} must be in validation list"
         )
 
-    @given(st.integers(min_value=1, max_value=10000))
-    def test_dimension_bounds_validated_property(self, value):
-        """Dimension bounds must be validated (64-2048)."""
+    def test_preset_resolutions_defined(self):
+        """Preset resolutions must be defined for aspect ratios."""
         js_code = load_config_controls_js()
+        # Check that resolution presets exist (e.g., 256x256, 512x512, etc.)
+        assert "256" in js_code, "Resolution 256 must be defined in presets"
+        assert "512" in js_code, "Resolution 512 must be defined in presets"
+        assert "1024" in js_code, "Resolution 1024 must be defined in presets"
 
-        # Check that dimension bounds are defined
-        assert "64" in js_code, "Minimum dimension bound (64) must be defined"
-        assert "2048" in js_code, "Maximum dimension bound (2048) must be defined"
-
-    @given(st.integers(min_value=1000, max_value=10000))
-    def test_error_timeout_range_property(self, timeout_ms):
-        """Error timeout should be reasonable (3 seconds per spec)."""
+    def test_error_timeout_is_3_seconds(self):
+        """Error timeout must be 3000ms (3 seconds) as per specification."""
         js_code = load_config_controls_js()
-
-        if timeout_ms == 3000:
-            assert "3000" in js_code, (
-                "Error timeout must be 3000ms (3 seconds) as per specification"
-            )
+        assert "3000" in js_code, "Error timeout must be 3000ms (3 seconds)"
 
 
 class TestEventListenerPatterns:
@@ -649,7 +630,6 @@ class TestIntegrationProperties:
 
         assert "trim()" in js_code, "Must trim input"
         assert "=== ''" in js_code, "Must check empty"
-        assert "isNaN" in js_code, "Must validate dimensions"
         assert "state.prompt" in js_code, "Must update state.prompt"
         assert "state.aspectRatio" in js_code, "Must update state.aspectRatio"
         assert "state.width" in js_code, "Must update state.width"

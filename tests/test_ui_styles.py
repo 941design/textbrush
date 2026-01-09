@@ -1,5 +1,5 @@
 """
-Property-based CSS testing for main.css
+CSS testing for main.css
 
 This module verifies CSS implementation against specification invariants:
 - All element IDs and classes exist and have proper styling
@@ -12,8 +12,7 @@ This module verifies CSS implementation against specification invariants:
 import re
 from pathlib import Path
 
-from hypothesis import given
-from hypothesis import strategies as st
+import pytest
 
 
 class CSSParser:
@@ -286,26 +285,25 @@ def test_spinner_keyframe_exists():
 
 
 def test_status_bar_layout():
-    """Status bar should flex row with space-between."""
+    """Status bar should flex row with center alignment."""
     _, parser = load_css_file()
     assert parser.has_selector(".status-bar"), ".status-bar not found"
     props = parser.get_selector_properties(".status-bar")
     assert props.get("display") == "flex", ".status-bar should have display: flex"
-    assert props.get("justify-content") == "space-between", (
-        ".status-bar should have justify-content: space-between"
+    assert props.get("justify-content") == "center", (
+        ".status-bar should have justify-content: center"
     )
     assert "var(--bg-tertiary)" in props.get("background", ""), (
         ".status-bar should use var(--bg-tertiary)"
     )
 
 
-def test_status_left_and_right_sections():
-    """Status left and right sections should exist."""
+def test_status_left_section():
+    """Status left section should exist."""
     _, parser = load_css_file()
     assert parser.has_selector(".status-left"), ".status-left not found"
-    assert parser.has_selector(".status-right"), ".status-right not found"
-    props_right = parser.get_selector_properties(".status-right")
-    assert props_right.get("display") == "flex", ".status-right should use flexbox layout"
+    props = parser.get_selector_properties(".status-left")
+    assert props.get("display") == "flex", ".status-left should use flexbox layout"
 
 
 def test_prompt_display_monospace():
@@ -522,22 +520,21 @@ def test_btn_shortcut_styling():
 # ============================================================================
 
 
-@given(
-    color_property=st.sampled_from(
-        [
-            "bg-primary",
-            "bg-secondary",
-            "bg-tertiary",
-            "text-primary",
-            "text-secondary",
-            "text-muted",
-            "accent-primary",
-            "accent-success",
-            "accent-danger",
-            "border-subtle",
-            "border-focus",
-        ]
-    )
+@pytest.mark.parametrize(
+    "color_property",
+    [
+        "bg-primary",
+        "bg-secondary",
+        "bg-tertiary",
+        "text-primary",
+        "text-secondary",
+        "text-muted",
+        "accent-primary",
+        "accent-success",
+        "accent-danger",
+        "border-subtle",
+        "border-focus",
+    ],
 )
 def test_all_color_variables_used(color_property: str):
     """All color variables should be used in CSS."""
@@ -547,10 +544,9 @@ def test_all_color_variables_used(color_property: str):
     assert len(matches) > 0, f"CSS custom property --{color_property} not used"
 
 
-@given(
-    spacing_property=st.sampled_from(
-        ["spacing-xs", "spacing-sm", "spacing-md", "spacing-lg", "spacing-xl"]
-    )
+@pytest.mark.parametrize(
+    "spacing_property",
+    ["spacing-xs", "spacing-sm", "spacing-md", "spacing-lg", "spacing-xl"],
 )
 def test_all_spacing_variables_used(spacing_property: str):
     """All spacing variables should be used in CSS."""
@@ -560,7 +556,7 @@ def test_all_spacing_variables_used(spacing_property: str):
     assert len(matches) > 0, f"CSS custom property --{spacing_property} not used"
 
 
-@given(transition_property=st.sampled_from(["transition-fast", "transition-normal"]))
+@pytest.mark.parametrize("transition_property", ["transition-fast", "transition-normal"])
 def test_all_transition_variables_used(transition_property: str):
     """Required transition variables should be used in CSS."""
     _, parser = load_css_file()
@@ -640,35 +636,33 @@ def test_user_select_none_on_body():
 # ============================================================================
 
 
-@given(
-    css_class=st.sampled_from(
-        [
-            ".viewer",
-            ".image-container",
-            ".current-image",
-            ".loading-overlay",
-            ".spinner",
-            ".loading-caption",
-            ".loading-label",
-            ".loading-prompt",
-            ".status-bar",
-            ".status-left",
-            ".status-right",
-            ".prompt-display",
-            ".buffer-indicator",
-            ".buffer-dots",
-            ".buffer-dot",
-            ".buffer-text",
-            ".controls",
-            ".control-btn",
-            ".btn-icon",
-            ".btn-label",
-            ".btn-shortcut",
-            ".btn-accept",
-            ".btn-abort",
-            ".btn-skip",
-        ]
-    )
+@pytest.mark.parametrize(
+    "css_class",
+    [
+        ".viewer",
+        ".image-container",
+        ".current-image",
+        ".loading-overlay",
+        ".spinner",
+        ".loading-caption",
+        ".loading-label",
+        ".loading-prompt",
+        ".status-bar",
+        ".status-left",
+        ".prompt-display",
+        ".buffer-indicator",
+        ".buffer-dots",
+        ".buffer-dot",
+        ".buffer-text",
+        ".controls",
+        ".control-btn",
+        ".btn-icon",
+        ".btn-label",
+        ".btn-shortcut",
+        ".btn-accept",
+        ".btn-abort",
+        ".btn-skip",
+    ],
 )
 def test_all_required_css_classes_exist(css_class: str):
     """All CSS classes from spec should be defined."""

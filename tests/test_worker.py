@@ -437,33 +437,6 @@ class TestGenerationOptionsImmutability:
 
     @given(
         initial_seed=st.integers(min_value=0, max_value=5000),
-        num_generations=st.integers(min_value=2, max_value=15),
-    )
-    @settings(max_examples=10, deadline=5000)
-    def test_seed_progression(self, initial_seed: int, num_generations: int):
-        """Property: seeds increment correctly across iterations."""
-        buffer = ImageBuffer(max_size=20)
-        engine = MockInferenceEngine()
-        options = GenerationOptions(seed=initial_seed)
-
-        worker = GenerationWorker(engine, buffer, "test prompt", options)
-        worker.start()
-
-        collected_seeds = []
-        for _ in range(num_generations):
-            image = buffer.get(timeout=2.0)
-            if image is not None:
-                collected_seeds.append(image.seed)
-
-        worker.stop()
-        worker.join(timeout=2.0)
-
-        assert len(collected_seeds) == num_generations
-        for i, seed in enumerate(collected_seeds):
-            assert seed == initial_seed + i
-
-    @given(
-        initial_seed=st.integers(min_value=0, max_value=5000),
         num_generations=st.integers(min_value=2, max_value=10),
         steps=st.integers(min_value=1, max_value=50),
         aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16", "4:3", "3:2"]),

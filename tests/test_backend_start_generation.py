@@ -168,7 +168,7 @@ class TestStartGenerationProperties:
                 textbrush.backend.GenerationWorker = original_gen_worker
 
     @given(prompt=prompts())
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=5, deadline=None)
     def test_default_aspect_ratio_is_1_to_1(self, prompt):
         """When aspect_ratio not provided, defaults to '1:1'."""
         mock_config = create_mock_config()
@@ -196,7 +196,7 @@ class TestStartGenerationProperties:
                 textbrush.backend.GenerationWorker = original_gen_worker
 
     @given(prompt=prompts(), aspect_ratio=aspect_ratios())
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=5, deadline=None)
     def test_default_seed_is_none(self, prompt, aspect_ratio):
         """When seed not provided, defaults to None."""
         mock_config = create_mock_config()

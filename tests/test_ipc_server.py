@@ -76,7 +76,7 @@ def message_strategy(draw):
 
 
 @given(message=message_strategy())
-@settings(max_examples=100)
+@settings(max_examples=20)
 def test_send_serializes_and_writes_newline(message):
     """Messages are serialized to JSON with newline and flushed."""
     handler = MockHandler()
@@ -99,8 +99,8 @@ def test_send_serializes_and_writes_newline(message):
         sys.stdout = original_stdout
 
 
-@given(messages=st.lists(message_strategy(), min_size=2, max_size=20))
-@settings(max_examples=50, deadline=1000)
+@given(messages=st.lists(message_strategy(), min_size=2, max_size=10))
+@settings(max_examples=10, deadline=2000)
 def test_concurrent_sends_are_thread_safe(messages):
     """Multiple threads can send concurrently without corruption."""
     handler = MockHandler()

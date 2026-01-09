@@ -97,7 +97,7 @@ class TestHTMLConfigControls:
         assert "aria-label" in prompt_input, "prompt-input must have aria-label for accessibility"
 
     def test_aspect_ratio_radio_buttons_exist(self):
-        """Aspect ratio radio buttons must exist for all four values (including custom)."""
+        """Aspect ratio radio buttons must exist for all six preset values."""
         html = load_html()
         parser = parse_html(html)
 
@@ -107,13 +107,15 @@ class TestHTMLConfigControls:
             if attrs.get("type") == "radio" and attrs.get("name") == "aspect-ratio"
         ]
 
-        assert len(radio_inputs) == 4, "Must have exactly 4 aspect ratio radio buttons"
+        assert len(radio_inputs) == 6, "Must have exactly 6 aspect ratio radio buttons"
 
         values = [attrs.get("value") for attrs in radio_inputs]
         assert "1:1" in values, "Must have 1:1 aspect ratio option"
         assert "16:9" in values, "Must have 16:9 aspect ratio option"
+        assert "3:1" in values, "Must have 3:1 aspect ratio option"
+        assert "4:1" in values, "Must have 4:1 aspect ratio option"
+        assert "4:5" in values, "Must have 4:5 aspect ratio option"
         assert "9:16" in values, "Must have 9:16 aspect ratio option"
-        assert "custom" in values, "Must have custom aspect ratio option"
 
         checked_radios = [attrs for attrs in radio_inputs if "checked" in attrs]
         assert len(checked_radios) == 1, "Exactly one radio button should be checked by default"
@@ -145,17 +147,18 @@ class TestHTMLConfigControls:
         assert "config-controls" in parser.elements_by_class, "config-controls container must exist"
 
     def test_control_labels_exist(self):
-        """Control labels must exist for prompt and aspect ratio."""
+        """Control labels must exist for prompt and ratio."""
         html = load_html()
 
         label_texts_in_html = []
         html_lower = html.lower()
         if "prompt:" in html_lower:
             label_texts_in_html.append("prompt")
-        if "aspect ratio:" in html_lower:
-            label_texts_in_html.append("aspect_ratio")
+        # The HTML uses shortened "Ratio:" label instead of "Aspect Ratio:"
+        if "ratio:" in html_lower:
+            label_texts_in_html.append("ratio")
 
-        assert len(label_texts_in_html) >= 2, "Must have labels for prompt and aspect ratio"
+        assert len(label_texts_in_html) >= 2, "Must have labels for prompt and ratio"
 
     def test_legacy_prompt_display_hidden(self):
         """Legacy prompt-display should be hidden for backward compatibility."""
@@ -185,9 +188,9 @@ class TestJavaScriptIntegration:
         assert "import" in js, "main.js must use ES6 imports"
         assert "ConfigControls" in js, "ConfigControls must be imported"
         # TypeScript may omit .js extension
-        assert (
-            "from './config_controls.js'" in js or "from './config_controls'" in js
-        ), "Must import from config_controls module"
+        assert "from './config_controls.js'" in js or "from './config_controls'" in js, (
+            "Must import from config_controls module"
+        )
 
         import_lines = [
             line for line in js.split("\n") if "import" in line and "ConfigControls" in line

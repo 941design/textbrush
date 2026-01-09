@@ -518,7 +518,6 @@ class TestCSSClassesUsed:
         "loading-prompt",
         "status-bar",
         "status-left",
-        "status-right",
         "prompt-display",
         "buffer-indicator",
         "buffer-dots",
@@ -568,21 +567,6 @@ class TestStatusBarStructure:
             None,
         )
         assert left_attrs is not None, "Status bar left section not found"
-
-    def test_status_bar_has_status_right(self):
-        """Status bar must contain status-right div."""
-        html = load_html()
-        parser = parse_html(html)
-
-        right_attrs = next(
-            (
-                attrs
-                for tag, attrs in parser.all_elements
-                if tag == "div" and "status-right" in attrs.get("class", "")
-            ),
-            None,
-        )
-        assert right_attrs is not None, "Status bar right section not found"
 
     def test_prompt_display_present(self):
         """Prompt display element must be present."""
