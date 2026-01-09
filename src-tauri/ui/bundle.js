@@ -97,40 +97,113 @@ var Resource = class {
 _Resource_rid = /* @__PURE__ */ new WeakMap();
 
 // config_controls.ts
-var ASPECT_RATIO_DIMENSIONS = {
-  "1:1": { width: 1024, height: 1024 },
-  "16:9": { width: 1344, height: 768 },
-  "9:16": { width: 768, height: 1344 }
+var ASPECT_RATIO_RESOLUTIONS = {
+  "1:1": [
+    { width: 256, height: 256 },
+    { width: 512, height: 512 },
+    { width: 1024, height: 1024 }
+  ],
+  "16:9": [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 }
+  ],
+  "3:1": [
+    { width: 1500, height: 500 },
+    { width: 1800, height: 600 }
+  ],
+  "4:1": [
+    { width: 1600, height: 400 }
+  ],
+  "4:5": [
+    { width: 1080, height: 1350 }
+  ],
+  "9:16": [
+    { width: 1080, height: 1920 }
+  ]
 };
+var SUPPORTED_RATIOS = Object.keys(ASPECT_RATIO_RESOLUTIONS);
+function getDefaultResolution(ratio) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length === 0) {
+    return { width: 256, height: 256 };
+  }
+  const first = resolutions[0];
+  return first ?? { width: 256, height: 256 };
+}
+function getResolutionIndex(ratio, width, height) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return 0;
+  const index = resolutions.findIndex((r) => r.width === width && r.height === height);
+  return index >= 0 ? index : 0;
+}
+function canIncreaseResolution(ratio, width, height) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length <= 1) return false;
+  const index = getResolutionIndex(ratio, width, height);
+  return index < resolutions.length - 1;
+}
+function canDecreaseResolution(ratio, width, height) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length <= 1) return false;
+  const index = getResolutionIndex(ratio, width, height);
+  return index > 0;
+}
+function getNextResolution(ratio, width, height) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return null;
+  const index = getResolutionIndex(ratio, width, height);
+  if (index < resolutions.length - 1) {
+    const next = resolutions[index + 1];
+    return next ?? null;
+  }
+  return null;
+}
+function getPreviousResolution(ratio, width, height) {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return null;
+  const index = getResolutionIndex(ratio, width, height);
+  if (index > 0) {
+    const prev = resolutions[index - 1];
+    return prev ?? null;
+  }
+  return null;
+}
+function updateResolutionButtons(ratio, width, height) {
+  const decreaseBtn = document.getElementById("resolution-decrease");
+  const increaseBtn = document.getElementById("resolution-increase");
+  if (decreaseBtn) {
+    decreaseBtn.disabled = !canDecreaseResolution(ratio, width, height);
+  }
+  if (increaseBtn) {
+    increaseBtn.disabled = !canIncreaseResolution(ratio, width, height);
+  }
+}
 function initConfigControls(initialPrompt, initialAspectRatio, state2, elements2) {
-  state2.aspectRatio = initialAspectRatio || "1:1";
-  const initialDims = ASPECT_RATIO_DIMENSIONS[state2.aspectRatio] || { width: 1024, height: 1024 };
+  state2.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : "1:1";
+  const initialDims = getDefaultResolution(state2.aspectRatio);
   state2.width = initialDims.width;
   state2.height = initialDims.height;
   const promptInput = document.getElementById("prompt-input");
-  const widthInput = document.getElementById("width-input");
-  const heightInput = document.getElementById("height-input");
+  const dimensionDisplay = document.getElementById("dimension-display");
   const aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+  const decreaseBtn = document.getElementById("resolution-decrease");
+  const increaseBtn = document.getElementById("resolution-increase");
   if (promptInput) {
     promptInput.value = initialPrompt;
     elements2.promptInput = promptInput;
   }
-  if (widthInput) {
-    widthInput.value = String(state2.width);
-    elements2.widthInput = widthInput;
-  }
-  if (heightInput) {
-    heightInput.value = String(state2.height);
-    elements2.heightInput = heightInput;
+  if (dimensionDisplay) {
+    dimensionDisplay.textContent = `${state2.width}\xD7${state2.height}`;
   }
   const radios = Array.from(aspectRatioRadios);
   radios.forEach((radio) => {
     radio.checked = radio.value === state2.aspectRatio;
   });
   elements2.aspectRatioRadios = aspectRatioRadios;
+  updateResolutionButtons(state2.aspectRatio, state2.width, state2.height);
   if (promptInput) {
     promptInput.addEventListener("blur", () => {
-      const config = getCurrentConfig(elements2);
+      const config = getCurrentConfig(elements2, state2);
       void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
     });
     promptInput.addEventListener("keydown", (e) => {
@@ -140,49 +213,47 @@ function initConfigControls(initialPrompt, initialAspectRatio, state2, elements2
       }
     });
   }
-  let dimensionChangeFromAspectRatio = false;
   radios.forEach((radio) => {
     radio.addEventListener("change", () => {
       const ratio = radio.value;
-      const dims = ASPECT_RATIO_DIMENSIONS[ratio];
-      if (dims && widthInput && heightInput) {
-        dimensionChangeFromAspectRatio = true;
-        widthInput.value = String(dims.width);
-        heightInput.value = String(dims.height);
-        dimensionChangeFromAspectRatio = false;
+      const dims = getDefaultResolution(ratio);
+      state2.width = dims.width;
+      state2.height = dims.height;
+      if (dimensionDisplay) {
+        dimensionDisplay.textContent = `${dims.width}\xD7${dims.height}`;
       }
-      const config = getCurrentConfig(elements2);
+      updateResolutionButtons(ratio, dims.width, dims.height);
+      const config = getCurrentConfig(elements2, state2);
       void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
     });
   });
-  const selectCustomAspectRatio = () => {
-    const customRadio = radios.find((r) => r.value === "custom");
-    if (customRadio && !customRadio.checked) {
-      customRadio.checked = true;
-    }
-  };
-  const handleDimensionChange = () => {
-    if (!dimensionChangeFromAspectRatio) {
-      selectCustomAspectRatio();
-    }
-    const config = getCurrentConfig(elements2);
-    void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
-  };
-  if (widthInput) {
-    widthInput.addEventListener("blur", handleDimensionChange);
-    widthInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        widthInput.blur();
+  if (decreaseBtn) {
+    decreaseBtn.addEventListener("click", () => {
+      const prevRes = getPreviousResolution(state2.aspectRatio, state2.width, state2.height);
+      if (prevRes) {
+        state2.width = prevRes.width;
+        state2.height = prevRes.height;
+        if (dimensionDisplay) {
+          dimensionDisplay.textContent = `${prevRes.width}\xD7${prevRes.height}`;
+        }
+        updateResolutionButtons(state2.aspectRatio, state2.width, state2.height);
+        const config = getCurrentConfig(elements2, state2);
+        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
       }
     });
   }
-  if (heightInput) {
-    heightInput.addEventListener("blur", handleDimensionChange);
-    heightInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        heightInput.blur();
+  if (increaseBtn) {
+    increaseBtn.addEventListener("click", () => {
+      const nextRes = getNextResolution(state2.aspectRatio, state2.width, state2.height);
+      if (nextRes) {
+        state2.width = nextRes.width;
+        state2.height = nextRes.height;
+        if (dimensionDisplay) {
+          dimensionDisplay.textContent = `${nextRes.width}\xD7${nextRes.height}`;
+        }
+        updateResolutionButtons(state2.aspectRatio, state2.width, state2.height);
+        const config = getCurrentConfig(elements2, state2);
+        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
       }
     });
   }
@@ -198,20 +269,6 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
   }
   const width = widthValue;
   const height = heightValue;
-  if (isNaN(width) || width < 64 || width > 2048) {
-    const widthInput = document.getElementById("width-input");
-    if (widthInput) {
-      showValidationError("Width must be 64-2048", widthInput);
-    }
-    return;
-  }
-  if (isNaN(height) || height < 64 || height > 2048) {
-    const heightInput = document.getElementById("height-input");
-    if (heightInput) {
-      showValidationError("Height must be 64-2048", heightInput);
-    }
-    return;
-  }
   if (trimmedPrompt === state2.prompt && aspectRatioValue === state2.aspectRatio && width === state2.width && height === state2.height) {
     return;
   }
@@ -262,7 +319,7 @@ function showValidationError(message, inputElement) {
     errorElement.remove();
   }, 3e3);
 }
-function getCurrentConfig(elements2) {
+function getCurrentConfig(elements2, state2) {
   const promptValue = elements2.promptInput ? elements2.promptInput.value : "";
   let aspectRatioValue = "1:1";
   if (elements2.aspectRatioRadios) {
@@ -272,13 +329,11 @@ function getCurrentConfig(elements2) {
       aspectRatioValue = checked.value;
     }
   }
-  const widthValue = elements2.widthInput ? parseInt(elements2.widthInput.value, 10) : 1024;
-  const heightValue = elements2.heightInput ? parseInt(elements2.heightInput.value, 10) : 1024;
   return {
     prompt: promptValue,
     aspectRatio: aspectRatioValue,
-    width: widthValue,
-    height: heightValue
+    width: state2.width,
+    height: state2.height
   };
 }
 
@@ -301,6 +356,38 @@ function toggleTheme() {
   document.documentElement.setAttribute("data-theme", newTheme);
   localStorage.setItem("textbrush-theme", newTheme);
   return newTheme;
+}
+
+// font-size-manager.ts
+var FONT_SIZE_KEY = "textbrush-font-size";
+var VALID_SIZES = ["small", "medium", "large"];
+var DEFAULT_SIZE = "medium";
+function initFontSize() {
+  const saved = localStorage.getItem(FONT_SIZE_KEY);
+  if (saved && isValidFontSize(saved)) {
+    applyFontSize(saved);
+    return saved;
+  }
+  applyFontSize(DEFAULT_SIZE);
+  return DEFAULT_SIZE;
+}
+function setFontSize(size) {
+  if (!isValidFontSize(size)) {
+    console.warn(`Invalid font size: ${size}, using default`);
+    size = DEFAULT_SIZE;
+  }
+  applyFontSize(size);
+  localStorage.setItem(FONT_SIZE_KEY, size);
+}
+function getCurrentFontSize() {
+  const size = document.documentElement.getAttribute("data-font-size");
+  return isValidFontSize(size) ? size : DEFAULT_SIZE;
+}
+function isValidFontSize(value) {
+  return typeof value === "string" && VALID_SIZES.includes(value);
+}
+function applyFontSize(size) {
+  document.documentElement.setAttribute("data-font-size", size);
 }
 
 // history-manager.ts
@@ -2479,25 +2566,31 @@ var state = {
 };
 var elements = {
   app: null,
+  headerBar: null,
   viewer: null,
   imageContainer: null,
   currentImage: null,
   loadingOverlay: null,
   loadingSpinner: null,
   loadingPrompt: null,
+  navIndicator: null,
+  navDots: null,
   statusBar: null,
   promptDisplay: null,
   promptInput: null,
   aspectRatioRadios: null,
   aspectRatioControls: null,
-  dimensionControls: null,
-  widthInput: null,
-  heightInput: null,
+  resolutionControls: null,
+  dimensionDisplay: null,
+  resolutionDecrease: null,
+  resolutionIncrease: null,
   validationError: null,
+  fontSizeRadios: null,
   bufferIndicator: null,
   bufferDots: null,
   bufferText: null,
   outputPathDisplay: null,
+  metadataPath: null,
   controls: null,
   skipButton: null,
   acceptButton: null,
@@ -2509,25 +2602,31 @@ var elements = {
 };
 function cacheElements() {
   elements.app = document.getElementById("app");
+  elements.headerBar = document.querySelector(".header-bar");
   elements.viewer = document.querySelector(".viewer");
   elements.imageContainer = document.querySelector(".image-container");
   elements.currentImage = document.querySelector(".current-image");
   elements.loadingOverlay = document.getElementById("loading-overlay");
   elements.loadingSpinner = document.querySelector(".spinner");
   elements.loadingPrompt = document.getElementById("loading-prompt");
+  elements.navIndicator = document.getElementById("nav-indicator");
+  elements.navDots = document.getElementById("nav-dots");
   elements.statusBar = document.querySelector(".status-bar");
   elements.promptDisplay = document.getElementById("prompt-display");
   elements.promptInput = document.getElementById("prompt-input");
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
   elements.aspectRatioControls = document.querySelector(".aspect-ratio-control");
-  elements.dimensionControls = document.querySelector(".dimension-control");
-  elements.widthInput = document.getElementById("width-input");
-  elements.heightInput = document.getElementById("height-input");
+  elements.resolutionControls = document.querySelector(".resolution-control");
+  elements.dimensionDisplay = document.getElementById("dimension-display");
+  elements.resolutionDecrease = document.getElementById("resolution-decrease");
+  elements.resolutionIncrease = document.getElementById("resolution-increase");
   elements.validationError = document.getElementById("validation-error");
+  elements.fontSizeRadios = document.querySelectorAll('input[name="font-size"]');
   elements.bufferIndicator = document.getElementById("buffer-indicator");
   elements.bufferDots = document.getElementById("buffer-dots");
   elements.bufferText = document.getElementById("buffer-text");
   elements.outputPathDisplay = document.getElementById("output-path-display");
+  elements.metadataPath = document.getElementById("metadata-path");
   elements.controls = document.querySelector(".controls");
   elements.skipButton = document.getElementById("skip-btn");
   elements.acceptButton = document.getElementById("accept-btn");
@@ -2544,6 +2643,7 @@ async function init() {
   console.log("Textbrush UI initializing...");
   try {
     initTheme();
+    initFontSize();
     cacheElements();
     if (!allElementsPresent()) {
       const missing = Object.entries(elements).filter(([, el]) => el === null).map(([key]) => key);
@@ -2773,9 +2873,9 @@ async function displayImage(payload, historyIdx = null) {
       }
       const blob = new Blob([bytes], { type: "image/png" });
       state.currentBlobUrl = URL.createObjectURL(blob);
-      const idx = historyIdx !== null ? historyIdx : state.historyIndex;
-      if (idx >= 0 && idx < state.imageHistory.length) {
-        const entry = state.imageHistory[idx];
+      const idx2 = historyIdx !== null ? historyIdx : state.historyIndex;
+      if (idx2 >= 0 && idx2 < state.imageHistory.length) {
+        const entry = state.imageHistory[idx2];
         if (entry) {
           entry.blobUrl = state.currentBlobUrl;
         }
@@ -2801,32 +2901,146 @@ async function displayImage(payload, historyIdx = null) {
       await new Promise((resolve) => setTimeout(resolve, fadeInDuration));
       elements.currentImage.classList.remove("image-enter");
     }
-    updateMetadataPanel(payload);
+    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    updateMetadataPanel(payload, idx);
+    updateNavDots();
   } catch (error) {
     console.error("Error displaying image:", error);
   } finally {
     state.isTransitioning = false;
   }
 }
-function updateMetadataPanel(payload) {
+function updateMetadataPanel(payload, historyIdx = null) {
   const metadataPrompt = document.getElementById("metadata-prompt");
   const metadataModel = document.getElementById("metadata-model");
   const metadataSeed = document.getElementById("metadata-seed");
-  if (!metadataPrompt || !metadataModel || !metadataSeed) {
+  const metadataGeneratedSize = document.getElementById("metadata-generated-size");
+  const metadataFinalSize = document.getElementById("metadata-final-size");
+  if (!metadataPrompt || !metadataModel || !metadataSeed || !metadataGeneratedSize || !metadataFinalSize) {
     return;
   }
   if (payload && payload.image_data) {
     metadataPrompt.textContent = payload.prompt || "\u2014";
     metadataModel.textContent = payload.model_name || "\u2014";
     metadataSeed.textContent = payload.seed !== void 0 ? String(payload.seed) : "\u2014";
+    if (payload.generated_width !== void 0 && payload.generated_height !== void 0) {
+      metadataGeneratedSize.textContent = `${payload.generated_width}\xD7${payload.generated_height}`;
+    } else {
+      metadataGeneratedSize.textContent = "\u2014";
+    }
+    if (payload.final_width !== void 0 && payload.final_height !== void 0) {
+      metadataFinalSize.textContent = `${payload.final_width}\xD7${payload.final_height}`;
+    } else {
+      metadataFinalSize.textContent = "\u2014";
+    }
+    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    if (elements.metadataPath) {
+      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const path = entry?.path || null;
+      elements.metadataPath.textContent = path || "(not saved)";
+      elements.metadataPath.title = path ? `Click to copy: ${path}` : "Image not yet saved";
+    }
   } else {
     metadataPrompt.textContent = "\u2014";
     metadataModel.textContent = "\u2014";
     metadataSeed.textContent = "\u2014";
+    metadataGeneratedSize.textContent = "\u2014";
+    metadataFinalSize.textContent = "\u2014";
+    if (elements.metadataPath) {
+      elements.metadataPath.textContent = "\u2014";
+      elements.metadataPath.title = "";
+    }
   }
 }
 function isHistoryBlobUrl(blobUrl) {
   return state.imageHistory.some((item) => item.blobUrl === blobUrl);
+}
+var MAX_VISIBLE_DOTS = 9;
+function updateNavDots() {
+  if (!elements.navDots) {
+    return;
+  }
+  const total = state.imageHistory.length;
+  const currentIdx = state.historyIndex;
+  elements.navDots.innerHTML = "";
+  if (total === 0) {
+    return;
+  }
+  if (total <= MAX_VISIBLE_DOTS) {
+    for (let i = 0; i < total; i++) {
+      const dot = createNavDot(i, i === currentIdx);
+      elements.navDots.appendChild(dot);
+    }
+    return;
+  }
+  const dotsToShow = [];
+  const leftEdge = 2;
+  const rightEdge = total - 2;
+  for (let i = 0; i < Math.min(leftEdge, total); i++) {
+    dotsToShow.push(i);
+  }
+  const middleStart = Math.max(leftEdge, currentIdx - 1);
+  const middleEnd = Math.min(rightEdge - 1, currentIdx + 1);
+  if (middleStart > leftEdge) {
+    dotsToShow.push("ellipsis");
+  }
+  for (let i = middleStart; i <= middleEnd; i++) {
+    if (!dotsToShow.includes(i)) {
+      dotsToShow.push(i);
+    }
+  }
+  if (middleEnd < rightEdge - 1) {
+    dotsToShow.push("ellipsis");
+  }
+  for (let i = rightEdge; i < total; i++) {
+    if (!dotsToShow.includes(i)) {
+      dotsToShow.push(i);
+    }
+  }
+  for (const item of dotsToShow) {
+    if (item === "ellipsis") {
+      const ellipsis = document.createElement("span");
+      ellipsis.className = "nav-ellipsis";
+      ellipsis.textContent = "...";
+      elements.navDots.appendChild(ellipsis);
+    } else {
+      const dot = createNavDot(item, item === currentIdx);
+      elements.navDots.appendChild(dot);
+    }
+  }
+}
+function createNavDot(index, isActive) {
+  const dot = document.createElement("span");
+  dot.className = "nav-dot";
+  if (isActive) {
+    dot.classList.add("active");
+  }
+  dot.setAttribute("role", "button");
+  dot.setAttribute("aria-label", `Go to image ${index + 1}`);
+  dot.setAttribute("tabindex", "0");
+  dot.addEventListener("click", () => {
+    navigateToIndex(index);
+  });
+  dot.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      navigateToIndex(index);
+    }
+  });
+  return dot;
+}
+function navigateToIndex(index) {
+  if (state.isTransitioning || index < 0 || index >= state.imageHistory.length) {
+    return;
+  }
+  if (index === state.historyIndex) {
+    return;
+  }
+  state.historyIndex = index;
+  const entry = state.imageHistory[index];
+  if (entry) {
+    void displayImage(entry, index);
+  }
 }
 function updateBufferDisplay() {
   if (!elements.bufferDots) {
@@ -2930,6 +3144,7 @@ function showLoadingPlaceholder() {
     elements.loadingOverlay.classList.remove("hidden");
   }
   updateMetadataPanel(null);
+  updateNavDots();
 }
 function accept() {
   if (elements.acceptButton && !state.isTransitioning) {
@@ -2969,6 +3184,7 @@ function deleteCurrentImage2() {
         elements.currentImage.classList.add("hidden");
       }
       updateMetadataPanel(null);
+      updateNavDots();
     }
   );
 }
@@ -2993,6 +3209,39 @@ function setupButtonListeners() {
   if (elements.themeToggle) {
     elements.themeToggle.addEventListener("click", () => {
       toggleTheme();
+    });
+  }
+  if (elements.metadataPath) {
+    elements.metadataPath.addEventListener("click", () => {
+      const idx = state.historyIndex;
+      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const path = entry?.path;
+      if (path) {
+        navigator.clipboard.writeText(path).then(() => {
+          const original = elements.metadataPath?.textContent;
+          if (elements.metadataPath) {
+            elements.metadataPath.textContent = "Copied!";
+            setTimeout(() => {
+              if (elements.metadataPath && original) {
+                elements.metadataPath.textContent = original;
+              }
+            }, 1e3);
+          }
+        }).catch((err) => {
+          console.error("Failed to copy path:", err);
+        });
+      }
+    });
+  }
+  if (elements.fontSizeRadios) {
+    const currentSize = getCurrentFontSize();
+    elements.fontSizeRadios.forEach((radio) => {
+      radio.checked = radio.value === currentSize;
+      radio.addEventListener("change", () => {
+        if (radio.checked) {
+          setFontSize(radio.value);
+        }
+      });
     });
   }
 }
@@ -3033,6 +3282,8 @@ if (typeof window !== "undefined") {
     handleMessage,
     displayImage,
     updateBufferDisplay,
+    updateNavDots,
+    navigateToIndex,
     showLoading,
     showLoadingPlaceholder,
     previous,

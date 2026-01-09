@@ -8,6 +8,10 @@ export interface ImagePayload {
   buffer_max: number;
   prompt?: string;
   model_name?: string;
+  generated_width?: number;  // Dimension passed to model (multiple of 16), optional for backward compat
+  generated_height?: number; // Dimension passed to model (multiple of 16), optional for backward compat
+  final_width?: number;      // Final image width after cropping
+  final_height?: number;     // Final image height after cropping
 }
 
 export interface BufferStatusPayload {
@@ -89,25 +93,31 @@ export interface AppState {
 // DOM element cache
 export interface Elements {
   app: HTMLElement | null;
+  headerBar: HTMLElement | null;
   viewer: HTMLElement | null;
   imageContainer: HTMLElement | null;
   currentImage: HTMLImageElement | null;
   loadingOverlay: HTMLElement | null;
   loadingSpinner: HTMLElement | null;
   loadingPrompt: HTMLElement | null;
+  navIndicator: HTMLElement | null;
+  navDots: HTMLElement | null;
   statusBar: HTMLElement | null;
   promptDisplay: HTMLElement | null;
   promptInput: HTMLInputElement | null;
   aspectRatioRadios: NodeListOf<HTMLInputElement> | null;
   aspectRatioControls: HTMLElement | null;
-  dimensionControls: HTMLElement | null;
-  widthInput: HTMLInputElement | null;
-  heightInput: HTMLInputElement | null;
+  resolutionControls: HTMLElement | null;
+  dimensionDisplay: HTMLElement | null;
+  resolutionDecrease: HTMLButtonElement | null;
+  resolutionIncrease: HTMLButtonElement | null;
   validationError: HTMLElement | null;
+  fontSizeRadios: NodeListOf<HTMLInputElement> | null;
   bufferIndicator: HTMLElement | null;
   bufferDots: HTMLElement | null;
   bufferText: HTMLElement | null;
   outputPathDisplay: HTMLElement | null;
+  metadataPath: HTMLElement | null;
   controls: HTMLElement | null;
   skipButton: HTMLButtonElement | null;
   acceptButton: HTMLButtonElement | null;

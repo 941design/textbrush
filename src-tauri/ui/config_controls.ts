@@ -10,23 +10,117 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AppState, Elements } from './types';
 
-interface Dimensions {
+interface Resolution {
   width: number;
   height: number;
 }
 
-// Default dimensions for each aspect ratio
-const ASPECT_RATIO_DIMENSIONS: Record<string, Dimensions> = {
-  '1:1': { width: 1024, height: 1024 },
-  '16:9': { width: 1344, height: 768 },
-  '9:16': { width: 768, height: 1344 },
+// Supported aspect ratios with their available resolutions (smallest to largest)
+// Must match SUPPORTED_RATIOS in textbrush/cli.py
+const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
+  '1:1': [
+    { width: 256, height: 256 },
+    { width: 512, height: 512 },
+    { width: 1024, height: 1024 },
+  ],
+  '16:9': [
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ],
+  '3:1': [
+    { width: 1500, height: 500 },
+    { width: 1800, height: 600 },
+  ],
+  '4:1': [
+    { width: 1600, height: 400 },
+  ],
+  '4:5': [
+    { width: 1080, height: 1350 },
+  ],
+  '9:16': [
+    { width: 1080, height: 1920 },
+  ],
 };
+
+// Get list of supported aspect ratios
+export const SUPPORTED_RATIOS = Object.keys(ASPECT_RATIO_RESOLUTIONS);
+
+// Get default (first) resolution for an aspect ratio
+function getDefaultResolution(ratio: string): Resolution {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length === 0) {
+    return { width: 256, height: 256 };
+  }
+  const first = resolutions[0];
+  return first ?? { width: 256, height: 256 };
+}
+
+// Get resolution index for current dimensions
+function getResolutionIndex(ratio: string, width: number, height: number): number {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return 0;
+  const index = resolutions.findIndex(r => r.width === width && r.height === height);
+  return index >= 0 ? index : 0;
+}
+
+// Check if we can increase resolution
+export function canIncreaseResolution(ratio: string, width: number, height: number): boolean {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length <= 1) return false;
+  const index = getResolutionIndex(ratio, width, height);
+  return index < resolutions.length - 1;
+}
+
+// Check if we can decrease resolution
+export function canDecreaseResolution(ratio: string, width: number, height: number): boolean {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions || resolutions.length <= 1) return false;
+  const index = getResolutionIndex(ratio, width, height);
+  return index > 0;
+}
+
+// Get next higher resolution
+export function getNextResolution(ratio: string, width: number, height: number): Resolution | null {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return null;
+  const index = getResolutionIndex(ratio, width, height);
+  if (index < resolutions.length - 1) {
+    const next = resolutions[index + 1];
+    return next ?? null;
+  }
+  return null;
+}
+
+// Get next lower resolution
+export function getPreviousResolution(ratio: string, width: number, height: number): Resolution | null {
+  const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+  if (!resolutions) return null;
+  const index = getResolutionIndex(ratio, width, height);
+  if (index > 0) {
+    const prev = resolutions[index - 1];
+    return prev ?? null;
+  }
+  return null;
+}
 
 interface ConfigValues {
   prompt: string;
   aspectRatio: string;
   width: number;
   height: number;
+}
+
+// Update resolution button states based on current dimensions
+function updateResolutionButtons(ratio: string, width: number, height: number): void {
+  const decreaseBtn = document.getElementById('resolution-decrease') as HTMLButtonElement | null;
+  const increaseBtn = document.getElementById('resolution-increase') as HTMLButtonElement | null;
+
+  if (decreaseBtn) {
+    decreaseBtn.disabled = !canDecreaseResolution(ratio, width, height);
+  }
+  if (increaseBtn) {
+    increaseBtn.disabled = !canIncreaseResolution(ratio, width, height);
+  }
 }
 
 /**
@@ -38,18 +132,20 @@ export function initConfigControls(
   state: AppState,
   elements: Elements
 ): void {
-  state.aspectRatio = initialAspectRatio || '1:1';
+  // Validate and set aspect ratio
+  state.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : '1:1';
 
   // Initialize dimensions from aspect ratio
-  const initialDims = ASPECT_RATIO_DIMENSIONS[state.aspectRatio] || { width: 1024, height: 1024 };
+  const initialDims = getDefaultResolution(state.aspectRatio);
   state.width = initialDims.width;
   state.height = initialDims.height;
 
   // Get existing HTML elements (they're already in the DOM from index.html)
   const promptInput = document.getElementById('prompt-input') as HTMLInputElement | null;
-  const widthInput = document.getElementById('width-input') as HTMLInputElement | null;
-  const heightInput = document.getElementById('height-input') as HTMLInputElement | null;
+  const dimensionDisplay = document.getElementById('dimension-display') as HTMLElement | null;
   const aspectRatioRadios = document.querySelectorAll<HTMLInputElement>('input[name="aspect-ratio"]');
+  const decreaseBtn = document.getElementById('resolution-decrease') as HTMLButtonElement | null;
+  const increaseBtn = document.getElementById('resolution-increase') as HTMLButtonElement | null;
 
   // Set initial values
   if (promptInput) {
@@ -57,14 +153,9 @@ export function initConfigControls(
     elements.promptInput = promptInput;
   }
 
-  if (widthInput) {
-    widthInput.value = String(state.width);
-    elements.widthInput = widthInput;
-  }
-
-  if (heightInput) {
-    heightInput.value = String(state.height);
-    elements.heightInput = heightInput;
+  // Update dimension display
+  if (dimensionDisplay) {
+    dimensionDisplay.textContent = `${state.width}×${state.height}`;
   }
 
   // Convert NodeList to array and set initial checked state
@@ -74,10 +165,13 @@ export function initConfigControls(
   });
   elements.aspectRatioRadios = aspectRatioRadios;
 
+  // Initial button state update
+  updateResolutionButtons(state.aspectRatio, state.width, state.height);
+
   // Prompt input event listeners
   if (promptInput) {
     promptInput.addEventListener('blur', () => {
-      const config = getCurrentConfig(elements);
+      const config = getCurrentConfig(elements, state);
       void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
     });
 
@@ -89,60 +183,57 @@ export function initConfigControls(
     });
   }
 
-  // Flag to track whether dimension changes are aspect-ratio-initiated
-  let dimensionChangeFromAspectRatio = false;
-
   // Aspect ratio radio event listeners
   radios.forEach(radio => {
     radio.addEventListener('change', () => {
-      // Update dimension fields when aspect ratio changes (except for custom)
       const ratio = radio.value;
-      const dims = ASPECT_RATIO_DIMENSIONS[ratio];
-      if (dims && widthInput && heightInput) {
-        dimensionChangeFromAspectRatio = true;
-        widthInput.value = String(dims.width);
-        heightInput.value = String(dims.height);
-        dimensionChangeFromAspectRatio = false;
+      const dims = getDefaultResolution(ratio);
+
+      // Update state and display
+      state.width = dims.width;
+      state.height = dims.height;
+      if (dimensionDisplay) {
+        dimensionDisplay.textContent = `${dims.width}×${dims.height}`;
       }
-      const config = getCurrentConfig(elements);
+
+      // Update button states
+      updateResolutionButtons(ratio, dims.width, dims.height);
+
+      const config = getCurrentConfig(elements, state);
       void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
     });
   });
 
-  // Helper to select custom aspect ratio
-  const selectCustomAspectRatio = () => {
-    const customRadio = radios.find(r => r.value === 'custom');
-    if (customRadio && !customRadio.checked) {
-      customRadio.checked = true;
-    }
-  };
-
-  // Dimension input event listeners
-  const handleDimensionChange = () => {
-    // If dimension change was triggered by user (not aspect ratio change), select custom
-    if (!dimensionChangeFromAspectRatio) {
-      selectCustomAspectRatio();
-    }
-    const config = getCurrentConfig(elements);
-    void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
-  };
-
-  if (widthInput) {
-    widthInput.addEventListener('blur', handleDimensionChange);
-    widthInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        widthInput.blur();
+  // Resolution decrease button
+  if (decreaseBtn) {
+    decreaseBtn.addEventListener('click', () => {
+      const prevRes = getPreviousResolution(state.aspectRatio, state.width, state.height);
+      if (prevRes) {
+        state.width = prevRes.width;
+        state.height = prevRes.height;
+        if (dimensionDisplay) {
+          dimensionDisplay.textContent = `${prevRes.width}×${prevRes.height}`;
+        }
+        updateResolutionButtons(state.aspectRatio, state.width, state.height);
+        const config = getCurrentConfig(elements, state);
+        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
       }
     });
   }
 
-  if (heightInput) {
-    heightInput.addEventListener('blur', handleDimensionChange);
-    heightInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        heightInput.blur();
+  // Resolution increase button
+  if (increaseBtn) {
+    increaseBtn.addEventListener('click', () => {
+      const nextRes = getNextResolution(state.aspectRatio, state.width, state.height);
+      if (nextRes) {
+        state.width = nextRes.width;
+        state.height = nextRes.height;
+        if (dimensionDisplay) {
+          dimensionDisplay.textContent = `${nextRes.width}×${nextRes.height}`;
+        }
+        updateResolutionButtons(state.aspectRatio, state.width, state.height);
+        const config = getCurrentConfig(elements, state);
+        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
       }
     });
   }
@@ -168,25 +259,9 @@ export async function handleConfigUpdate(
     return;
   }
 
-  // Validate dimensions
+  // Dimensions are now controlled via predefined resolutions, no validation needed
   const width = widthValue;
   const height = heightValue;
-
-  if (isNaN(width) || width < 64 || width > 2048) {
-    const widthInput = document.getElementById('width-input');
-    if (widthInput) {
-      showValidationError('Width must be 64-2048', widthInput);
-    }
-    return;
-  }
-
-  if (isNaN(height) || height < 64 || height > 2048) {
-    const heightInput = document.getElementById('height-input');
-    if (heightInput) {
-      showValidationError('Height must be 64-2048', heightInput);
-    }
-    return;
-  }
 
   // Check if config actually changed
   if (
@@ -260,9 +335,9 @@ export function showValidationError(message: string, inputElement: Element): voi
 }
 
 /**
- * Get current configuration from UI inputs.
+ * Get current configuration from UI inputs and state.
  */
-export function getCurrentConfig(elements: Elements): ConfigValues {
+export function getCurrentConfig(elements: Elements, state: AppState): ConfigValues {
   const promptValue = elements.promptInput ? elements.promptInput.value : '';
 
   let aspectRatioValue = '1:1';
@@ -274,13 +349,11 @@ export function getCurrentConfig(elements: Elements): ConfigValues {
     }
   }
 
-  const widthValue = elements.widthInput ? parseInt(elements.widthInput.value, 10) : 1024;
-  const heightValue = elements.heightInput ? parseInt(elements.heightInput.value, 10) : 1024;
-
+  // Width and height now come from state (controlled by +/- buttons)
   return {
     prompt: promptValue,
     aspectRatio: aspectRatioValue,
-    width: widthValue,
-    height: heightValue,
+    width: state.width,
+    height: state.height,
   };
 }

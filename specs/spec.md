@@ -55,7 +55,7 @@ Optional:
 
 * `--config /path/to/config.toml`
 * `--seed <int>`
-* `--aspect-ratio 1:1|16:9|9:16`
+* `--aspect-ratio 1:1|16:9|3:1|4:1|4:5|9:16`
 * `--format png|jpg`
 * `--verbose`
 * `--headless` - Run without UI (for CI/CD)
@@ -73,7 +73,7 @@ CLI arguments override config file values.
 * `--out PATH` - Output file path (default: auto-generated in configured directory)
 * `--config PATH` - Config file path (default: `~/.config/textbrush/config.toml`)
 * `--seed INT` - Random seed for reproducibility (must be non-negative)
-* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, or `9:16`
+* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, `3:1`, `4:1`, `4:5`, or `9:16`
 * `--format CHOICE` - Output format: `png` or `jpg`
 * `--verbose` - Enable debug logging (overrides config `logging.verbosity` to `debug`)
 * `--headless` - Run without UI (for CI/CD and automated testing)
@@ -256,7 +256,15 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * `FluxInferenceEngine` implementation for FLUX.1 schnell
 * Hardware auto-detection: CUDA > MPS > CPU
 * Seed-based deterministic generation
-* Aspect ratio presets: 1:1, 16:9, 9:16
+* Aspect ratio presets with predefined resolutions:
+  - 1:1: 256×256, 512×512, 1024×1024
+  - 16:9: 1280×720, 1920×1080
+  - 3:1: 1500×500, 1800×600
+  - 4:1: 1600×400
+  - 4:5: 1080×1350
+  - 9:16: 1080×1920
+* UI provides +/- buttons to cycle through available resolutions per ratio
+* PNG images include metadata: aspect ratio, dimensions, prompt, model, seed
 
 **Model Management (`textbrush.model`):**
 * HuggingFace cache discovery (respects `HF_HOME`, `HF_HUB_CACHE`)

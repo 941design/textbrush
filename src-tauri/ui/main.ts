@@ -3,6 +3,7 @@
 
 import * as ConfigControls from './config_controls';
 import * as ThemeManager from './theme-manager';
+import * as FontSizeManager from './font-size-manager';
 import * as HistoryManager from './history-manager';
 import * as ButtonFlash from './button-flash';
 import { invoke } from '@tauri-apps/api/core';
@@ -49,25 +50,31 @@ const state: AppState = {
 // DOM Element References
 const elements: Elements = {
   app: null,
+  headerBar: null,
   viewer: null,
   imageContainer: null,
   currentImage: null,
   loadingOverlay: null,
   loadingSpinner: null,
   loadingPrompt: null,
+  navIndicator: null,
+  navDots: null,
   statusBar: null,
   promptDisplay: null,
   promptInput: null,
   aspectRatioRadios: null,
   aspectRatioControls: null,
-  dimensionControls: null,
-  widthInput: null,
-  heightInput: null,
+  resolutionControls: null,
+  dimensionDisplay: null,
+  resolutionDecrease: null,
+  resolutionIncrease: null,
   validationError: null,
+  fontSizeRadios: null,
   bufferIndicator: null,
   bufferDots: null,
   bufferText: null,
   outputPathDisplay: null,
+  metadataPath: null,
   controls: null,
   skipButton: null,
   acceptButton: null,
@@ -80,25 +87,31 @@ const elements: Elements = {
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
+  elements.headerBar = document.querySelector('.header-bar');
   elements.viewer = document.querySelector('.viewer');
   elements.imageContainer = document.querySelector('.image-container');
   elements.currentImage = document.querySelector('.current-image') as HTMLImageElement | null;
   elements.loadingOverlay = document.getElementById('loading-overlay');
   elements.loadingSpinner = document.querySelector('.spinner');
   elements.loadingPrompt = document.getElementById('loading-prompt');
+  elements.navIndicator = document.getElementById('nav-indicator');
+  elements.navDots = document.getElementById('nav-dots');
   elements.statusBar = document.querySelector('.status-bar');
   elements.promptDisplay = document.getElementById('prompt-display');
   elements.promptInput = document.getElementById('prompt-input') as HTMLInputElement | null;
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
   elements.aspectRatioControls = document.querySelector('.aspect-ratio-control');
-  elements.dimensionControls = document.querySelector('.dimension-control');
-  elements.widthInput = document.getElementById('width-input') as HTMLInputElement | null;
-  elements.heightInput = document.getElementById('height-input') as HTMLInputElement | null;
+  elements.resolutionControls = document.querySelector('.resolution-control');
+  elements.dimensionDisplay = document.getElementById('dimension-display');
+  elements.resolutionDecrease = document.getElementById('resolution-decrease') as HTMLButtonElement | null;
+  elements.resolutionIncrease = document.getElementById('resolution-increase') as HTMLButtonElement | null;
   elements.validationError = document.getElementById('validation-error');
+  elements.fontSizeRadios = document.querySelectorAll('input[name="font-size"]');
   elements.bufferIndicator = document.getElementById('buffer-indicator');
   elements.bufferDots = document.getElementById('buffer-dots');
   elements.bufferText = document.getElementById('buffer-text');
   elements.outputPathDisplay = document.getElementById('output-path-display');
+  elements.metadataPath = document.getElementById('metadata-path');
   elements.controls = document.querySelector('.controls');
   elements.skipButton = document.getElementById('skip-btn') as HTMLButtonElement | null;
   elements.acceptButton = document.getElementById('accept-btn') as HTMLButtonElement | null;
@@ -117,8 +130,9 @@ function allElementsPresent(): boolean {
 async function init(): Promise<void> {
   console.log('Textbrush UI initializing...');
   try {
-    // Initialize theme before DOM manipulation
+    // Initialize theme and font size before DOM manipulation
     ThemeManager.initTheme();
+    FontSizeManager.initFontSize();
 
     // Cache all DOM elements
     cacheElements();
@@ -377,6 +391,10 @@ interface DisplayPayload {
   seed?: number;
   prompt?: string;
   model_name?: string;
+  generated_width?: number;  // Optional: dimension passed to model (multiple of 16)
+  generated_height?: number; // Optional: dimension passed to model (multiple of 16)
+  final_width?: number;      // Optional: final image width after cropping
+  final_height?: number;     // Optional: final image height after cropping
 }
 
 // Display Image with Transitions
@@ -447,7 +465,9 @@ async function displayImage(payload: DisplayPayload, historyIdx: number | null =
       elements.currentImage.classList.remove('image-enter');
     }
 
-    updateMetadataPanel(payload);
+    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    updateMetadataPanel(payload, idx);
+    updateNavDots();
   } catch (error) {
     console.error('Error displaying image:', error);
   } finally {
@@ -455,12 +475,14 @@ async function displayImage(payload: DisplayPayload, historyIdx: number | null =
   }
 }
 
-function updateMetadataPanel(payload: DisplayPayload | null): void {
+function updateMetadataPanel(payload: DisplayPayload | null, historyIdx: number | null = null): void {
   const metadataPrompt = document.getElementById('metadata-prompt');
   const metadataModel = document.getElementById('metadata-model');
   const metadataSeed = document.getElementById('metadata-seed');
+  const metadataGeneratedSize = document.getElementById('metadata-generated-size');
+  const metadataFinalSize = document.getElementById('metadata-final-size');
 
-  if (!metadataPrompt || !metadataModel || !metadataSeed) {
+  if (!metadataPrompt || !metadataModel || !metadataSeed || !metadataGeneratedSize || !metadataFinalSize) {
     return;
   }
 
@@ -468,15 +490,173 @@ function updateMetadataPanel(payload: DisplayPayload | null): void {
     metadataPrompt.textContent = payload.prompt || '—';
     metadataModel.textContent = payload.model_name || '—';
     metadataSeed.textContent = payload.seed !== undefined ? String(payload.seed) : '—';
+
+    // Update dimension fields
+    // CONTRACT:
+    // - If generated dimensions present: display both generated and final
+    // - If generated dimensions absent: display final only (or "—" if unavailable)
+    // - Format: "width×height"
+    // - Backward compatibility: gracefully handle missing fields
+    if (payload.generated_width !== undefined && payload.generated_height !== undefined) {
+      metadataGeneratedSize.textContent = `${payload.generated_width}×${payload.generated_height}`;
+    } else {
+      metadataGeneratedSize.textContent = '—';
+    }
+
+    if (payload.final_width !== undefined && payload.final_height !== undefined) {
+      metadataFinalSize.textContent = `${payload.final_width}×${payload.final_height}`;
+    } else {
+      metadataFinalSize.textContent = '—';
+    }
+
+    // Update path from history entry if available
+    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    if (elements.metadataPath) {
+      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const path = entry?.path || null;
+      elements.metadataPath.textContent = path || '(not saved)';
+      elements.metadataPath.title = path ? `Click to copy: ${path}` : 'Image not yet saved';
+    }
   } else {
     metadataPrompt.textContent = '—';
     metadataModel.textContent = '—';
     metadataSeed.textContent = '—';
+    metadataGeneratedSize.textContent = '—';
+    metadataFinalSize.textContent = '—';
+    if (elements.metadataPath) {
+      elements.metadataPath.textContent = '—';
+      elements.metadataPath.title = '';
+    }
   }
 }
 
 function isHistoryBlobUrl(blobUrl: string): boolean {
   return state.imageHistory.some(item => item.blobUrl === blobUrl);
+}
+
+// Maximum number of dots to display before using ellipsis
+const MAX_VISIBLE_DOTS = 9;
+
+function updateNavDots(): void {
+  if (!elements.navDots) {
+    return;
+  }
+
+  const total = state.imageHistory.length;
+  const currentIdx = state.historyIndex;
+
+  // Clear existing dots
+  elements.navDots.innerHTML = '';
+
+  if (total === 0) {
+    return;
+  }
+
+  // If total is within limit, show all dots
+  if (total <= MAX_VISIBLE_DOTS) {
+    for (let i = 0; i < total; i++) {
+      const dot = createNavDot(i, i === currentIdx);
+      elements.navDots.appendChild(dot);
+    }
+    return;
+  }
+
+  // Otherwise, use ellipsis in the middle
+  // Pattern: [first few] ... [current area] ... [last few]
+  // We want to show: first 2, current-1, current, current+1, last 2
+  // With ellipsis between groups when there are gaps
+
+  const dotsToShow: Array<number | 'ellipsis'> = [];
+  const leftEdge = 2; // Show first 2 dots
+  const rightEdge = total - 2; // Last 2 dots start here
+
+  // Always show first 2
+  for (let i = 0; i < Math.min(leftEdge, total); i++) {
+    dotsToShow.push(i);
+  }
+
+  // Middle section around current
+  const middleStart = Math.max(leftEdge, currentIdx - 1);
+  const middleEnd = Math.min(rightEdge - 1, currentIdx + 1);
+
+  // Add ellipsis if there's a gap
+  if (middleStart > leftEdge) {
+    dotsToShow.push('ellipsis');
+  }
+
+  // Add middle section
+  for (let i = middleStart; i <= middleEnd; i++) {
+    if (!dotsToShow.includes(i)) {
+      dotsToShow.push(i);
+    }
+  }
+
+  // Add ellipsis if there's a gap before the end
+  if (middleEnd < rightEdge - 1) {
+    dotsToShow.push('ellipsis');
+  }
+
+  // Always show last 2
+  for (let i = rightEdge; i < total; i++) {
+    if (!dotsToShow.includes(i)) {
+      dotsToShow.push(i);
+    }
+  }
+
+  // Render the dots
+  for (const item of dotsToShow) {
+    if (item === 'ellipsis') {
+      const ellipsis = document.createElement('span');
+      ellipsis.className = 'nav-ellipsis';
+      ellipsis.textContent = '...';
+      elements.navDots.appendChild(ellipsis);
+    } else {
+      const dot = createNavDot(item, item === currentIdx);
+      elements.navDots.appendChild(dot);
+    }
+  }
+}
+
+function createNavDot(index: number, isActive: boolean): HTMLElement {
+  const dot = document.createElement('span');
+  dot.className = 'nav-dot';
+  if (isActive) {
+    dot.classList.add('active');
+  }
+  dot.setAttribute('role', 'button');
+  dot.setAttribute('aria-label', `Go to image ${index + 1}`);
+  dot.setAttribute('tabindex', '0');
+
+  // Click handler to navigate to this image
+  dot.addEventListener('click', () => {
+    navigateToIndex(index);
+  });
+
+  // Keyboard handler
+  dot.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigateToIndex(index);
+    }
+  });
+
+  return dot;
+}
+
+function navigateToIndex(index: number): void {
+  if (state.isTransitioning || index < 0 || index >= state.imageHistory.length) {
+    return;
+  }
+
+  if (index === state.historyIndex) {
+    return;
+  }
+
+  state.historyIndex = index;
+  const entry = state.imageHistory[index];
+  if (entry) {
+    void displayImage(entry, index);
+  }
 }
 
 function updateBufferDisplay(): void {
@@ -599,6 +779,7 @@ function showLoadingPlaceholder(): void {
     elements.loadingOverlay.classList.remove('hidden');
   }
   updateMetadataPanel(null);
+  updateNavDots();
 }
 
 function accept(): void {
@@ -644,6 +825,7 @@ function deleteCurrentImage(): void {
         elements.currentImage.classList.add('hidden');
       }
       updateMetadataPanel(null);
+      updateNavDots();
     }
   );
 }
@@ -674,6 +856,45 @@ function setupButtonListeners(): void {
   if (elements.themeToggle) {
     elements.themeToggle.addEventListener('click', () => {
       ThemeManager.toggleTheme();
+    });
+  }
+
+  // Click handler for metadata path to copy to clipboard
+  if (elements.metadataPath) {
+    elements.metadataPath.addEventListener('click', () => {
+      const idx = state.historyIndex;
+      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const path = entry?.path;
+      if (path) {
+        navigator.clipboard.writeText(path).then(() => {
+          // Visual feedback
+          const original = elements.metadataPath?.textContent;
+          if (elements.metadataPath) {
+            elements.metadataPath.textContent = 'Copied!';
+            setTimeout(() => {
+              if (elements.metadataPath && original) {
+                elements.metadataPath.textContent = original;
+              }
+            }, 1000);
+          }
+        }).catch(err => {
+          console.error('Failed to copy path:', err);
+        });
+      }
+    });
+  }
+
+  // Font size radio button listeners
+  if (elements.fontSizeRadios) {
+    // Sync radio buttons with current font size
+    const currentSize = FontSizeManager.getCurrentFontSize();
+    elements.fontSizeRadios.forEach((radio) => {
+      radio.checked = radio.value === currentSize;
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          FontSizeManager.setFontSize(radio.value as FontSizeManager.FontSize);
+        }
+      });
     });
   }
 }
@@ -720,6 +941,8 @@ declare global {
       handleMessage: typeof handleMessage;
       displayImage: typeof displayImage;
       updateBufferDisplay: typeof updateBufferDisplay;
+      updateNavDots: typeof updateNavDots;
+      navigateToIndex: typeof navigateToIndex;
       showLoading: typeof showLoading;
       showLoadingPlaceholder: typeof showLoadingPlaceholder;
       previous: typeof previous;
@@ -744,6 +967,8 @@ if (typeof window !== 'undefined') {
     handleMessage,
     displayImage,
     updateBufferDisplay,
+    updateNavDots,
+    navigateToIndex,
     showLoading,
     showLoadingPlaceholder,
     previous,

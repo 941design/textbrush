@@ -11,6 +11,24 @@ from typing import List
 from .config import Config, load_config
 from .paths import CONFIG_PATH
 
+# Supported aspect ratios with their available resolutions (smallest to largest)
+# Each ratio maps to a list of (width, height) tuples
+SUPPORTED_RATIOS: dict[str, list[tuple[int, int]]] = {
+    "1:1": [(256, 256), (512, 512), (1024, 1024)],
+    "16:9": [(1280, 720), (1920, 1080)],
+    "3:1": [(1500, 500), (1800, 600)],
+    "4:1": [(1600, 400)],
+    "4:5": [(1080, 1350)],
+    "9:16": [(1080, 1920)],
+}
+
+
+def get_default_resolution(aspect_ratio: str) -> tuple[int, int]:
+    """Get the default (first/smallest) resolution for an aspect ratio."""
+    if aspect_ratio not in SUPPORTED_RATIOS:
+        raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
+    return SUPPORTED_RATIOS[aspect_ratio][0]
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for textbrush CLI.
@@ -27,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
           · --out (type: Path)
           · --config (type: Path, default: None)
           · --seed (type: int)
-          · --aspect-ratio (choices: ["1:1", "16:9", "9:16"])
+          · --aspect-ratio (choices: SUPPORTED_RATIOS.keys())
           · --format (choices: ["png", "jpg"])
           · --verbose (flag, default: False)
           · --headless (flag, default: False)
@@ -93,9 +111,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--aspect-ratio",
-        choices=["1:1", "16:9", "9:16"],
+        choices=list(SUPPORTED_RATIOS.keys()),
         default=None,
-        help="Image aspect ratio",
+        help=f"Image aspect ratio (choices: {', '.join(SUPPORTED_RATIOS.keys())})",
     )
 
     parser.add_argument(

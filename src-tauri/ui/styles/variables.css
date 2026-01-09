@@ -95,6 +95,9 @@
     --font-mono: 'SF Mono', 'Menlo', 'Monaco', monospace;
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
+    /* Font Size Scale (medium is default) */
+    --font-scale: 1;
+
     /* Transitions */
     --transition-fast: 100ms ease;
     --transition-normal: 200ms ease;

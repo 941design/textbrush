@@ -65,7 +65,29 @@ class UpdateConfigCommand:
 
 @dataclass
 class ImageReadyEvent:
-    """Event indicating new image is ready for display."""
+    """Event indicating new image is ready for display.
+
+    CONTRACT (dimension fields):
+      Invariants:
+        - final_width and final_height are image dimensions after any cropping
+        - If generated_width is not None, it is divisible by 16
+        - If generated_height is not None, it is divisible by 16
+        - generated_width and generated_height are either both present or both absent
+        - If generated dimensions present: generated_width ≥ final_width,
+          generated_height ≥ final_height
+        - If generated dimensions equal final dimensions, no cropping occurred
+
+      Properties:
+        - Backward compatibility: UI handles missing generated_width/generated_height
+        - Optional: generated dimensions default to None for images without alignment
+        - Semantic: None for generated dimensions means "no dimension alignment performed"
+        - Always present: final_width and final_height always transmitted
+
+      Algorithm (IPC handler):
+        1. Extract final dimensions from buffered_image.image.size
+        2. Extract generated dimensions from buffered_image.generated_width/generated_height
+        3. Populate ImageReadyEvent with all dimension fields
+    """
 
     image_data: str  # Base64 encoded PNG
     seed: int
@@ -73,6 +95,10 @@ class ImageReadyEvent:
     buffer_max: int
     prompt: str = ""
     model_name: str = ""
+    generated_width: int | None = None
+    generated_height: int | None = None
+    final_width: int | None = None
+    final_height: int | None = None
 
 
 @dataclass

@@ -494,6 +494,209 @@ class TestErrorHandling:
         assert payload["fatal"] is False
 
 
+class TestDimensionTransmission:
+    """Property-based tests for dimension field extraction and transmission."""
+
+    @given(
+        generated_width=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
+        generated_height=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
+        crop_x=st.integers(min_value=0, max_value=50),
+        crop_y=st.integers(min_value=0, max_value=50),
+        seed=st.integers(min_value=0, max_value=2**31 - 1),
+    )
+    def test_dimension_extraction_with_cropping(
+        self, generated_width, generated_height, crop_x, crop_y, seed
+    ):
+        """Dimensions extracted correctly when image was cropped."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        final_width = generated_width - crop_x
+        final_height = generated_height - crop_y
+        test_image = Image.new("RGB", (final_width, final_height), color=(100, 150, 200))
+        buffered = BufferedImage(
+            image=test_image,
+            seed=seed,
+            generated_width=generated_width,
+            generated_height=generated_height,
+        )
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
+        mock_backend.check_worker_error = Mock(return_value=None)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.__len__ = Mock(return_value=1)
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        delivery_done = threading.Event()
+
+        def signal_after_delivery():
+            time.sleep(0.1)
+            handler._signal_action()
+            delivery_done.set()
+
+        threading.Thread(target=signal_after_delivery, daemon=True).start()
+
+        handler._start_image_delivery(mock_server, None)
+
+        assert delivery_done.wait(timeout=2.0)
+
+        image_ready_sent = False
+        for call in mock_server.send.call_args_list:
+            msg = call[0][0]
+            if msg.type == MessageType.IMAGE_READY:
+                image_ready_sent = True
+                assert msg.payload["generated_width"] == generated_width
+                assert msg.payload["generated_height"] == generated_height
+                assert msg.payload["final_width"] == final_width
+                assert msg.payload["final_height"] == final_height
+
+        assert image_ready_sent
+
+    @given(
+        width=st.integers(min_value=512, max_value=2048),
+        height=st.integers(min_value=512, max_value=2048),
+        seed=st.integers(min_value=0, max_value=2**31 - 1),
+    )
+    def test_dimension_extraction_without_cropping(self, width, height, seed):
+        """Dimensions extracted correctly when no cropping occurred."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        test_image = Image.new("RGB", (width, height), color=(100, 150, 200))
+        buffered = BufferedImage(
+            image=test_image, seed=seed, generated_width=None, generated_height=None
+        )
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
+        mock_backend.check_worker_error = Mock(return_value=None)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.__len__ = Mock(return_value=1)
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        delivery_done = threading.Event()
+
+        def signal_after_delivery():
+            time.sleep(0.1)
+            handler._signal_action()
+            delivery_done.set()
+
+        threading.Thread(target=signal_after_delivery, daemon=True).start()
+
+        handler._start_image_delivery(mock_server, None)
+
+        assert delivery_done.wait(timeout=2.0)
+
+        image_ready_sent = False
+        for call in mock_server.send.call_args_list:
+            msg = call[0][0]
+            if msg.type == MessageType.IMAGE_READY:
+                image_ready_sent = True
+                assert msg.payload["generated_width"] is None
+                assert msg.payload["generated_height"] is None
+                assert msg.payload["final_width"] == width
+                assert msg.payload["final_height"] == height
+
+        assert image_ready_sent
+
+    @given(
+        generated_width=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
+        generated_height=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
+    )
+    def test_dimension_serialization_json_compatible(self, generated_width, generated_height):
+        """Dimension fields serialize to valid JSON."""
+        from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
+
+        event_with_dims = ImageReadyEvent(
+            image_data="base64data",
+            seed=42,
+            buffer_count=1,
+            buffer_max=8,
+            generated_width=generated_width,
+            generated_height=generated_height,
+            final_width=generated_width - 10,
+            final_height=generated_height - 10,
+        )
+        payload = dataclass_to_dict(event_with_dims)
+
+        assert isinstance(payload["generated_width"], int)
+        assert isinstance(payload["generated_height"], int)
+        assert isinstance(payload["final_width"], int)
+        assert isinstance(payload["final_height"], int)
+        assert payload["generated_width"] == generated_width
+        assert payload["generated_height"] == generated_height
+        assert payload["final_width"] == generated_width - 10
+        assert payload["final_height"] == generated_height - 10
+
+    def test_dimension_serialization_handles_none_values(self):
+        """Serialization handles None dimension values correctly."""
+        from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
+
+        event_with_none = ImageReadyEvent(
+            image_data="base64data",
+            seed=42,
+            buffer_count=1,
+            buffer_max=8,
+            generated_width=None,
+            generated_height=None,
+            final_width=1024,
+            final_height=768,
+        )
+        payload = dataclass_to_dict(event_with_none)
+
+        assert payload["generated_width"] is None
+        assert payload["generated_height"] is None
+        assert payload["final_width"] == 1024
+        assert payload["final_height"] == 768
+
+    @given(
+        width=st.integers(min_value=512, max_value=2048),
+        height=st.integers(min_value=512, max_value=2048),
+    )
+    def test_final_dimensions_match_image_size(self, width, height):
+        """Final dimensions always match PIL Image.size."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        test_image = Image.new("RGB", (width, height), color=(100, 150, 200))
+        buffered = BufferedImage(image=test_image, seed=42)
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
+        mock_backend.check_worker_error = Mock(return_value=None)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.__len__ = Mock(return_value=1)
+        mock_backend.buffer.max_size = 8
+        handler.backend = mock_backend
+
+        delivery_done = threading.Event()
+
+        def signal_after_delivery():
+            time.sleep(0.1)
+            handler._signal_action()
+            delivery_done.set()
+
+        threading.Thread(target=signal_after_delivery, daemon=True).start()
+
+        handler._start_image_delivery(mock_server, None)
+
+        assert delivery_done.wait(timeout=2.0)
+
+        for call in mock_server.send.call_args_list:
+            msg = call[0][0]
+            if msg.type == MessageType.IMAGE_READY:
+                assert msg.payload["final_width"] == width
+                assert msg.payload["final_height"] == height
+                assert msg.payload["final_width"] == test_image.size[0]
+                assert msg.payload["final_height"] == test_image.size[1]
+
+
 class TestUpdateConfigCommand:
     """Property-based tests for UPDATE_CONFIG command handling."""
 

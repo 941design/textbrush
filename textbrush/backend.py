@@ -188,6 +188,7 @@ class TextbrushBackend:
             - Current image (from buffer.peek()) is saved to disk
             - Image remains in buffer (use get_next_image() to advance)
             - If output_path is None, generates path based on seed or timestamp
+            - EXIF metadata includes aspect ratio and dimensions
 
           Properties:
             - Non-blocking: returns after save completes
@@ -198,7 +199,7 @@ class TextbrushBackend:
             1. Peek at current image
             2. If no image: raise RuntimeError
             3. If output_path is None: generate path using _generate_output_path()
-            4. Save image to output_path
+            4. Save image to output_path with EXIF metadata
             5. Return output_path
         """
         current = self.buffer.peek()
@@ -208,8 +209,73 @@ class TextbrushBackend:
         if output_path is None:
             output_path = self._generate_output_path()
 
-        current.image.save(output_path)
+        # Save with EXIF metadata
+        self._save_with_metadata(current, output_path)
         return output_path
+
+    def _save_with_metadata(self, buffered_image: BufferedImage, output_path: Path) -> None:
+        """Save image with EXIF metadata including dimensions and generated dimensions.
+
+        CONTRACT:
+          Inputs:
+            - buffered_image: BufferedImage with image and metadata
+            - output_path: Path where image should be saved
+
+          Outputs: none (writes file to disk)
+
+          Invariants:
+            - Image is saved to output_path
+            - PNG metadata includes: aspect_ratio, width, height, prompt, model, seed
+            - If generated_width/generated_height present, also stored in PNG tEXt chunks
+            - Width/Height in metadata = image.size (final dimensions)
+            - GeneratedWidth/GeneratedHeight = dimensions passed to model (if present)
+
+          Properties:
+            - PNG: metadata stored in tEXt chunks
+            - JPEG: metadata stored in EXIF UserComment (TODO: not yet implemented)
+            - Backward compatibility: GeneratedWidth/GeneratedHeight optional
+            - If generated dimensions absent (None), Width/Height fields sufficient
+
+          Algorithm:
+            1. Extract image, width, height from buffered_image
+            2. Determine format from output_path extension
+            3. If PNG:
+               a. Create PngInfo object
+               b. Add standard metadata: AspectRatio, Width, Height, Prompt, Model, Seed
+               c. If generated_width is not None: add GeneratedWidth
+               d. If generated_height is not None: add GeneratedHeight
+               e. Save with pnginfo
+            4. Else (JPEG, etc.):
+               a. Save without custom metadata (piexif not available)
+        """
+        from PIL import PngImagePlugin
+
+        image = buffered_image.image
+        width, height = image.size
+        aspect_ratio = buffered_image.aspect_ratio
+
+        # Determine format from extension
+        ext = output_path.suffix.lower()
+
+        if ext == ".png":
+            # Use PNG tEXt chunks for metadata
+            pnginfo = PngImagePlugin.PngInfo()
+            pnginfo.add_text("AspectRatio", aspect_ratio)
+            pnginfo.add_text("Width", str(width))
+            pnginfo.add_text("Height", str(height))
+            pnginfo.add_text("Prompt", buffered_image.prompt)
+            pnginfo.add_text("Model", buffered_image.model_name)
+            pnginfo.add_text("Seed", str(buffered_image.seed))
+            if buffered_image.generated_width is not None:
+                pnginfo.add_text("GeneratedWidth", str(buffered_image.generated_width))
+            if buffered_image.generated_height is not None:
+                pnginfo.add_text("GeneratedHeight", str(buffered_image.generated_height))
+            image.save(output_path, pnginfo=pnginfo)
+        else:
+            # For JPEG and other formats, save without custom metadata
+            # (EXIF requires piexif which is not a dependency)
+            image.save(output_path)
+            # TODO: Add EXIF support for JPEG when piexif is added as dependency
 
     def abort(self) -> None:
         """Stop generation and discard all images.

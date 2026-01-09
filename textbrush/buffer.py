@@ -24,6 +24,22 @@ class BufferedImage:
         temp_path: Optional path to temporary file on disk.
         prompt: Text prompt used for generation.
         model_name: Identifier of the model used.
+        aspect_ratio: Aspect ratio string (e.g., "1:1", "16:9").
+        generated_width: Width passed to model (multiple of 16), or None.
+        generated_height: Height passed to model (multiple of 16), or None.
+
+    CONTRACT (generated dimension fields):
+      Invariants:
+        - If generated_width is not None, it is divisible by 16
+        - If generated_height is not None, it is divisible by 16
+        - If generated dimensions present, final dimensions = image.size
+        - If generated_width != image.width, image was cropped after generation
+        - If generated dimensions absent (None), image not cropped (backward compatibility)
+
+      Properties:
+        - Backward compatibility: existing code treats None as "no dimension alignment"
+        - Optional: generated_width and generated_height default to None
+        - Semantic: None means "not applicable" or "legacy image without alignment"
     """
 
     image: Image.Image
@@ -31,6 +47,9 @@ class BufferedImage:
     temp_path: Path | None = None
     prompt: str = ""
     model_name: str = ""
+    aspect_ratio: str = "1:1"
+    generated_width: int | None = None
+    generated_height: int | None = None
 
     def cleanup(self) -> None:
         """Delete temporary file if it exists.

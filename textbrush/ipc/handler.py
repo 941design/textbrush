@@ -587,6 +587,8 @@ class MessageHandler:
                     buffered.image.save(buffer, format="PNG")
                     image_b64 = base64.b64encode(buffer.getvalue()).decode()
 
+                    final_width, final_height = buffered.image.size
+
                     server.send(
                         Message(
                             MessageType.IMAGE_READY,
@@ -598,6 +600,10 @@ class MessageHandler:
                                     buffer_max=self.backend.buffer.max_size,
                                     prompt=buffered.prompt,
                                     model_name=buffered.model_name,
+                                    generated_width=buffered.generated_width,
+                                    generated_height=buffered.generated_height,
+                                    final_width=final_width,
+                                    final_height=final_height,
                                 )
                             ),
                         )

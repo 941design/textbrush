@@ -17,12 +17,29 @@ class GenerationResult:
         seed: Random seed used for generation.
         generation_time: Time taken to generate in seconds.
         model_name: Identifier of the model used.
+        generated_width: Width passed to model (multiple of 16), or None.
+        generated_height: Height passed to model (multiple of 16), or None.
+
+    CONTRACT (generated dimension fields):
+      Invariants:
+        - If generated_width is not None, it is divisible by 16
+        - If generated_height is not None, it is divisible by 16
+        - If generated dimensions differ from image.size, image was cropped after generation
+        - If generated dimensions equal image.size, no cropping occurred
+        - If generated dimensions are None, image not subject to dimension alignment
+
+      Properties:
+        - Backward compatibility: None means "no dimension alignment performed"
+        - Optional: default to None for engines without dimension alignment
+        - Semantic: None indicates legacy behavior or non-FLUX engines
     """
 
     image: Image.Image
     seed: int
     generation_time: float
     model_name: str
+    generated_width: int | None = None
+    generated_height: int | None = None
 
 
 @dataclass

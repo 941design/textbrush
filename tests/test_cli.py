@@ -9,7 +9,9 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from textbrush.cli import (
+    SUPPORTED_RATIOS,
     build_parser,
+    get_default_resolution,
     main,
     merge_cli_args_with_config,
     validate_args,
@@ -78,7 +80,7 @@ class TestBuildParser:
         assert args.format == "jpg"
         assert args.verbose is True
 
-    @pytest.mark.parametrize("ratio", ["1:1", "16:9", "9:16"])
+    @pytest.mark.parametrize("ratio", ["1:1", "16:9", "3:1", "4:1", "4:5", "9:16"])
     def test_parser_aspect_ratio_choices(self, ratio: str):
         """Parser accepts valid aspect ratio choices."""
         parser = build_parser()
@@ -132,6 +134,56 @@ class TestBuildParser:
         assert args.seed is None
         assert args.aspect_ratio is None
         assert args.format is None
+
+
+class TestSupportedRatios:
+    """Test SUPPORTED_RATIOS constant and get_default_resolution()."""
+
+    def test_supported_ratios_contains_expected_ratios(self):
+        """SUPPORTED_RATIOS contains all expected aspect ratios."""
+        expected = {"1:1", "16:9", "3:1", "4:1", "4:5", "9:16"}
+        assert set(SUPPORTED_RATIOS.keys()) == expected
+
+    def test_each_ratio_has_at_least_one_resolution(self):
+        """Each aspect ratio has at least one resolution."""
+        for ratio, resolutions in SUPPORTED_RATIOS.items():
+            assert len(resolutions) >= 1, f"Ratio {ratio} has no resolutions"
+
+    def test_resolutions_are_tuples_of_two_integers(self):
+        """All resolutions are (width, height) tuples."""
+        for ratio, resolutions in SUPPORTED_RATIOS.items():
+            for res in resolutions:
+                assert isinstance(res, tuple), f"Resolution {res} for {ratio} is not a tuple"
+                assert len(res) == 2, f"Resolution {res} for {ratio} has wrong length"
+                assert isinstance(res[0], int), f"Width in {res} for {ratio} is not int"
+                assert isinstance(res[1], int), f"Height in {res} for {ratio} is not int"
+
+    def test_1_1_has_three_resolutions(self):
+        """1:1 ratio has exactly three resolutions."""
+        assert len(SUPPORTED_RATIOS["1:1"]) == 3
+        assert SUPPORTED_RATIOS["1:1"] == [(256, 256), (512, 512), (1024, 1024)]
+
+    def test_16_9_has_two_resolutions(self):
+        """16:9 ratio has exactly two resolutions."""
+        assert len(SUPPORTED_RATIOS["16:9"]) == 2
+        assert SUPPORTED_RATIOS["16:9"] == [(1280, 720), (1920, 1080)]
+
+    def test_4_1_has_single_resolution(self):
+        """4:1 ratio has exactly one resolution."""
+        assert len(SUPPORTED_RATIOS["4:1"]) == 1
+        assert SUPPORTED_RATIOS["4:1"] == [(1600, 400)]
+
+    def test_get_default_resolution_returns_first_resolution(self):
+        """get_default_resolution returns first resolution for each ratio."""
+        for ratio, resolutions in SUPPORTED_RATIOS.items():
+            expected = resolutions[0]
+            actual = get_default_resolution(ratio)
+            assert actual == expected, f"Default for {ratio}: expected {expected}, got {actual}"
+
+    def test_get_default_resolution_raises_for_invalid_ratio(self):
+        """get_default_resolution raises ValueError for invalid ratio."""
+        with pytest.raises(ValueError, match="Unsupported aspect ratio"):
+            get_default_resolution("invalid")
 
 
 class TestValidateArgs:

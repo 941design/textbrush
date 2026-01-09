@@ -128,7 +128,7 @@ class FluxInferenceEngine(InferenceEngine):
             self._pipeline = self._pipeline.to(self._device)
 
     def generate(self, prompt: str, options: GenerationOptions) -> GenerationResult:
-        """Generate image using FLUX.1 Schnell.
+        """Generate image using FLUX.1 Schnell with dimension alignment.
 
         CONTRACT:
           Inputs:
@@ -137,46 +137,77 @@ class FluxInferenceEngine(InferenceEngine):
 
           Outputs:
             - GenerationResult containing image, seed, time, model_name
+            - Returned image dimensions exactly match options.width × options.height
+            - If requested dimensions not divisible by 16, image generated at rounded-up
+              dimensions and cropped back to requested size
 
           Invariants:
             - is_loaded() must be True before calling (else RuntimeError)
             - Returned seed matches options.seed if provided, else is auto-generated
-            - Returned image has dimensions from options.width/height if non-default,
-              otherwise from aspect_ratio lookup
+            - final_width, final_height: requested dimensions (from options)
+            - generated_width, generated_height: rounded-up dimensions passed to pipeline
+            - Final image size = (final_width, final_height) exactly
             - generation_time is non-negative
 
           Properties:
+            - Dimension rounding: generated_dim = ((requested_dim + 15) // 16) * 16
+            - Rounding idempotent: if requested_dim divisible by 16, generated_dim = requested_dim
+            - Rounding direction: always rounds UP, never down
+            - Center cropping: left_offset = (generated_width - final_width) // 2
+                              top_offset = (generated_height - final_height) // 2
+            - Crop bounds: (left, top, left + final_width, top + final_height)
             - Deterministic: same prompt + seed → same image (within numerical precision)
             - Seed handling: use options.seed if provided, else random.randint(0, 2**32 - 1)
             - Dimension priority: "custom" or explicit width/height > aspect_ratio lookup
 
           Algorithm:
             1. Check is_loaded(), raise RuntimeError if not loaded
-            2. Determine dimensions:
+            2. Determine final (requested) dimensions:
                - If aspect_ratio is "custom", use options.width/height directly
                - If options.width != 512 or options.height != 512, use those
                - Otherwise resolve from options.aspect_ratio using ASPECT_RATIOS
-            3. Create torch.Generator(self._device)
-            4. Determine seed: options.seed if not None, else random.randint(0, 2**32 - 1)
-            5. Set generator.manual_seed(seed)
-            6. Record start time
-            7. Call self._pipeline(prompt, width, height, num_inference_steps, generator)
-            8. Record elapsed time
-            9. Return GenerationResult with result.images[0], seed, elapsed, MODEL_ID
+            3. Round dimensions to multiples of 16:
+               - generated_width = ((final_width + 15) // 16) * 16
+               - generated_height = ((final_height + 15) // 16) * 16
+            4. Create torch.Generator(self._device)
+            5. Determine seed: options.seed if not None, else random.randint(0, 2**32 - 1)
+            6. Set generator.manual_seed(seed)
+            7. Acquire _generate_lock (thread safety)
+            8. Reset scheduler state if present
+            9. Record start time
+            10. Call self._pipeline(prompt, generated_width, generated_height, steps, generator)
+            11. Record elapsed time
+            12. If generated dimensions differ from final dimensions:
+                a. Calculate crop offsets (center crop):
+                   - left = (generated_width - final_width) // 2
+                   - top = (generated_height - final_height) // 2
+                b. Crop image: result.images[0].crop((left, top, left + final_width,
+                                                       top + final_height))
+            13. Return GenerationResult with (cropped) image, seed, elapsed, MODEL_ID
+
+        IMPLEMENTATION NOTE:
+        The dimension alignment logic must be implemented between step 2 and step 10.
+        Steps 1-2 and 4-9 already exist in the current implementation.
+        New steps: 3 (rounding), 12 (cropping).
         """
         if not self.is_loaded():
             raise RuntimeError("Engine not loaded. Call load() before generate().")
 
         # Use explicit dimensions if "custom" aspect ratio or dimensions differ from defaults
         if options.aspect_ratio == "custom" or options.width != 512 or options.height != 512:
-            width, height = options.width, options.height
+            final_width, final_height = options.width, options.height
         else:
-            width, height = self._resolve_dimensions(options.aspect_ratio)
+            final_width, final_height = self._resolve_dimensions(options.aspect_ratio)
+
+        # Round dimensions to multiples of 16 (required by FLUX model)
+        generated_width = ((final_width + 15) // 16) * 16
+        generated_height = ((final_height + 15) // 16) * 16
 
         logger.info(
             f"Generating image: prompt='{prompt}', "
             f"seed={options.seed}, steps={options.steps}, "
-            f"width={width}, height={height}"
+            f"final_dimensions={final_width}×{final_height}, "
+            f"generated_dimensions={generated_width}×{generated_height}"
         )
 
         generator = torch.Generator(self._device)
@@ -193,18 +224,29 @@ class FluxInferenceEngine(InferenceEngine):
             start_time = time.perf_counter()
             result = self._pipeline(
                 prompt=prompt,
-                width=width,
-                height=height,
+                width=generated_width,
+                height=generated_height,
                 num_inference_steps=options.steps,
                 generator=generator,
             )
             generation_time = time.perf_counter() - start_time
 
+        # Apply center cropping if dimensions were rounded
+        image = result.images[0]
+        if generated_width != final_width or generated_height != final_height:
+            left = (generated_width - final_width) // 2
+            top = (generated_height - final_height) // 2
+            right = left + final_width
+            bottom = top + final_height
+            image = image.crop((left, top, right, bottom))
+
         return GenerationResult(
-            image=result.images[0],
+            image=image,
             seed=seed,
             generation_time=generation_time,
             model_name=self.MODEL_ID,
+            generated_width=generated_width,
+            generated_height=generated_height,
         )
 
     def is_loaded(self) -> bool:

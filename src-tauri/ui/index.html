@@ -10,6 +10,90 @@
 </head>
 <body>
     <main id="app">
+        <!-- Header Section with Config Controls -->
+        <header class="header-bar">
+            <div class="config-controls">
+                <div class="prompt-control">
+                    <label for="prompt-input" class="control-label">Prompt:</label>
+                    <input
+                        type="text"
+                        class="prompt-input"
+                        id="prompt-input"
+                        placeholder="Enter generation prompt"
+                        title="Generation prompt"
+                        aria-label="Generation prompt"
+                    />
+                </div>
+                <div class="aspect-ratio-control">
+                    <span class="control-label">Ratio:</span>
+                    <div class="aspect-ratio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="1:1" checked />
+                            <span>1:1</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="16:9" />
+                            <span>16:9</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="3:1" />
+                            <span>3:1</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="4:1" />
+                            <span>4:1</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="4:5" />
+                            <span>4:5</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="aspect-ratio" value="9:16" />
+                            <span>9:16</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="resolution-control">
+                    <span class="control-label">Size:</span>
+                    <div class="resolution-group">
+                        <button
+                            type="button"
+                            class="resolution-btn"
+                            id="resolution-decrease"
+                            title="Decrease resolution"
+                            aria-label="Decrease resolution"
+                        >−</button>
+                        <span class="dimension-display" id="dimension-display">256×256</span>
+                        <button
+                            type="button"
+                            class="resolution-btn"
+                            id="resolution-increase"
+                            title="Increase resolution"
+                            aria-label="Increase resolution"
+                        >+</button>
+                    </div>
+                </div>
+                <div class="font-size-control">
+                    <span class="control-label">Font:</span>
+                    <div class="font-size-group" id="font-size-group" role="radiogroup" aria-label="Font size">
+                        <label class="radio-label font-size-option">
+                            <input type="radio" name="font-size" value="small" />
+                            <span>S</span>
+                        </label>
+                        <label class="radio-label font-size-option">
+                            <input type="radio" name="font-size" value="medium" checked />
+                            <span>M</span>
+                        </label>
+                        <label class="radio-label font-size-option">
+                            <input type="radio" name="font-size" value="large" />
+                            <span>L</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="validation-error hidden" id="validation-error" role="alert" aria-live="polite"></div>
+        </header>
+
         <!-- Image Viewer Section -->
         <section class="viewer">
             <div class="image-panel">
@@ -29,6 +113,10 @@
                         </div>
                     </div>
                 </div>
+                <!-- Navigation Dots (under image) -->
+                <div class="nav-indicator" id="nav-indicator" role="status" aria-label="Image navigation">
+                    <div class="nav-dots" id="nav-dots"></div>
+                </div>
             </div>
             <aside class="metadata-panel" id="metadata-panel">
                 <h2 class="metadata-title">Image Details</h2>
@@ -41,90 +129,22 @@
 
                     <dt class="metadata-label">Seed:</dt>
                     <dd class="metadata-value" id="metadata-seed">—</dd>
+
+                    <dt class="metadata-label">Generated Size:</dt>
+                    <dd class="metadata-value" id="metadata-generated-size">—</dd>
+
+                    <dt class="metadata-label">Final Size:</dt>
+                    <dd class="metadata-value" id="metadata-final-size">—</dd>
+
+                    <dt class="metadata-label">Path:</dt>
+                    <dd class="metadata-value metadata-path" id="metadata-path" title="Click to copy path">—</dd>
                 </dl>
             </aside>
         </section>
 
         <!-- Status Bar -->
         <section class="status-bar">
-            <button
-                class="theme-toggle"
-                id="theme-toggle"
-                type="button"
-                title="Toggle light/dark theme"
-                aria-label="Toggle theme"
-            >
-                <span class="theme-icon" aria-hidden="true">◐</span>
-            </button>
             <div class="status-left">
-                <div class="config-controls">
-                    <div class="prompt-control">
-                        <label for="prompt-input" class="control-label">Prompt:</label>
-                        <input
-                            type="text"
-                            class="prompt-input"
-                            id="prompt-input"
-                            placeholder="Enter generation prompt"
-                            title="Generation prompt"
-                            aria-label="Generation prompt"
-                        />
-                    </div>
-                    <div class="aspect-ratio-control">
-                        <span class="control-label">Aspect Ratio:</span>
-                        <div class="aspect-ratio-group">
-                            <label class="radio-label">
-                                <input type="radio" name="aspect-ratio" value="1:1" checked />
-                                <span>1:1</span>
-                            </label>
-                            <label class="radio-label">
-                                <input type="radio" name="aspect-ratio" value="16:9" />
-                                <span>16:9</span>
-                            </label>
-                            <label class="radio-label">
-                                <input type="radio" name="aspect-ratio" value="9:16" />
-                                <span>9:16</span>
-                            </label>
-                            <label class="radio-label">
-                                <input type="radio" name="aspect-ratio" value="custom" />
-                                <span>Custom</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="dimension-control">
-                        <span class="control-label">Size:</span>
-                        <div class="dimension-group">
-                            <input
-                                type="number"
-                                class="dimension-input"
-                                id="width-input"
-                                value="1024"
-                                min="64"
-                                max="2048"
-                                step="64"
-                                title="Image width in pixels"
-                                aria-label="Image width"
-                            />
-                            <span class="dimension-separator">×</span>
-                            <input
-                                type="number"
-                                class="dimension-input"
-                                id="height-input"
-                                value="1024"
-                                min="64"
-                                max="2048"
-                                step="64"
-                                title="Image height in pixels"
-                                aria-label="Image height"
-                            />
-                        </div>
-                    </div>
-                </div>
-                <div class="validation-error hidden" id="validation-error" role="alert" aria-live="polite"></div>
-                <div class="prompt-display" id="prompt-display" style="display: none;" title="Generation prompt">
-                    Ready for generation
-                </div>
-            </div>
-            <div class="status-right">
                 <div class="buffer-indicator" id="buffer-indicator">
                     <div class="buffer-dots" id="buffer-dots" role="status" aria-label="Buffer status">
                         <span class="buffer-dot" aria-label="Buffer slot 1"></span>
@@ -140,6 +160,9 @@
                 </div>
                 <div class="output-path-display" id="output-path-display" title="Output directory">
                     path: —
+                </div>
+                <div class="prompt-display" id="prompt-display" style="display: none;" title="Generation prompt">
+                    Ready for generation
                 </div>
             </div>
         </section>
@@ -189,6 +212,15 @@
                 <span class="btn-icon" aria-hidden="true">✓</span>
                 <span class="btn-label">Accept</span>
                 <span class="btn-shortcut">Enter</span>
+            </button>
+            <button
+                class="theme-toggle"
+                id="theme-toggle"
+                type="button"
+                title="Toggle light/dark theme"
+                aria-label="Toggle theme"
+            >
+                <span class="theme-icon" aria-hidden="true">◐</span>
             </button>
         </section>
     </main>

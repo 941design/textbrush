@@ -162,15 +162,18 @@ class TestGenerateAspectRatio:
         engine._pipeline = Mock()
         engine._device = "cpu"
 
-        mock_image = Image.new("RGB", (width, height))
+        rounded_width = ((width + 15) // 16) * 16
+        rounded_height = ((height + 15) // 16) * 16
+
+        mock_image = Image.new("RGB", (rounded_width, rounded_height))
         engine._pipeline.return_value = Mock(images=[mock_image])
 
         options = GenerationOptions(aspect_ratio="custom", width=width, height=height)
         engine.generate("test", options)
 
         call_kwargs = engine._pipeline.call_args.kwargs
-        assert call_kwargs["width"] == width
-        assert call_kwargs["height"] == height
+        assert call_kwargs["width"] == rounded_width
+        assert call_kwargs["height"] == rounded_height
 
     def test_custom_aspect_ratio_with_default_dimensions_does_not_raise(self):
         """Custom aspect ratio with default dimensions (512x512) should not raise KeyError."""
@@ -344,17 +347,18 @@ class TestGenerateResultInvariants:
     @given(options=generation_options_strategy())
     @settings(max_examples=10)
     def test_result_image_from_pipeline_first_output(self, options):
-        """Result image is first image from pipeline output."""
+        """Result image is first image from pipeline output (or cropped version)."""
         engine = FluxInferenceEngine()
         engine._pipeline = Mock()
         engine._device = "cpu"
 
-        mock_image = Image.new("RGB", (512, 512))
+        expected_dims = FluxInferenceEngine.ASPECT_RATIOS[options.aspect_ratio]
+        mock_image = Image.new("RGB", expected_dims)
         engine._pipeline.return_value = Mock(images=[mock_image])
 
         result = engine.generate("test", options)
 
-        assert result.image is mock_image
+        assert result.image.size == expected_dims
 
 
 class TestGenerateDeterminism:
@@ -392,6 +396,131 @@ class TestGenerateDeterminism:
 
         assert len(seeds_used) == 2
         assert seeds_used[0] == seeds_used[1] == seed
+
+
+class TestDimensionRoundingAndCropping:
+    """Property-based tests for dimension rounding and center cropping."""
+
+    @given(
+        width=st.integers(min_value=256, max_value=2048),
+        height=st.integers(min_value=256, max_value=2048),
+    )
+    @settings(max_examples=50)
+    def test_dimension_rounding_property(self, width, height):
+        """Generated dimensions are always multiples of 16."""
+        engine = FluxInferenceEngine()
+        engine._pipeline = Mock()
+        engine._device = "cpu"
+
+        mock_image = Image.new("RGB", (((width + 15) // 16) * 16, ((height + 15) // 16) * 16))
+        engine._pipeline.return_value = Mock(images=[mock_image])
+
+        options = GenerationOptions(aspect_ratio="custom", width=width, height=height)
+        result = engine.generate("test", options)
+
+        assert result.generated_width % 16 == 0
+        assert result.generated_height % 16 == 0
+
+    @given(
+        width=st.integers(min_value=256, max_value=2048),
+        height=st.integers(min_value=256, max_value=2048),
+    )
+    @settings(max_examples=50)
+    def test_center_crop_restores_dimensions(self, width, height):
+        """Final image dimensions match requested dimensions exactly."""
+        engine = FluxInferenceEngine()
+        engine._pipeline = Mock()
+        engine._device = "cpu"
+
+        rounded_width = ((width + 15) // 16) * 16
+        rounded_height = ((height + 15) // 16) * 16
+
+        mock_image = Image.new("RGB", (rounded_width, rounded_height))
+        engine._pipeline.return_value = Mock(images=[mock_image])
+
+        options = GenerationOptions(aspect_ratio="custom", width=width, height=height)
+        result = engine.generate("test", options)
+
+        assert result.image.size == (width, height)
+
+    def test_no_crop_when_aligned(self):
+        """No cropping occurs when dimensions already aligned to 16."""
+        engine = FluxInferenceEngine()
+        engine._pipeline = Mock()
+        engine._device = "cpu"
+
+        mock_image = Image.new("RGB", (1024, 1024))
+        engine._pipeline.return_value = Mock(images=[mock_image])
+
+        options = GenerationOptions(aspect_ratio="custom", width=1024, height=1024)
+        result = engine.generate("test", options)
+
+        assert result.generated_width == 1024
+        assert result.generated_height == 1024
+        assert result.image.size == (1024, 1024)
+
+    @given(
+        width_offset=st.integers(min_value=1, max_value=15),
+        height_offset=st.integers(min_value=1, max_value=15),
+    )
+    @settings(max_examples=30)
+    def test_crop_distribution_property(self, width_offset, height_offset):
+        """Cropping is evenly distributed (center crop) with at most 1 pixel difference."""
+        base_width = 1024
+        base_height = 1024
+        width = base_width - width_offset
+        height = base_height - height_offset
+
+        engine = FluxInferenceEngine()
+        engine._pipeline = Mock()
+        engine._device = "cpu"
+
+        rounded_width = ((width + 15) // 16) * 16
+        rounded_height = ((height + 15) // 16) * 16
+
+        mock_image = Image.new("RGB", (rounded_width, rounded_height))
+        engine._pipeline.return_value = Mock(images=[mock_image])
+
+        options = GenerationOptions(aspect_ratio="custom", width=width, height=height)
+        engine.generate("test", options)
+
+        width_diff = rounded_width - width
+        height_diff = rounded_height - height
+
+        left_crop = (rounded_width - width) // 2
+        right_crop = width_diff - left_crop
+
+        top_crop = (rounded_height - height) // 2
+        bottom_crop = height_diff - top_crop
+
+        assert left_crop + right_crop == width_diff
+        assert top_crop + bottom_crop == height_diff
+        assert abs(left_crop - right_crop) <= 1
+        assert abs(top_crop - bottom_crop) <= 1
+
+    def test_specific_odd_pixel_crop(self):
+        """Specific test for 1001×1001 dimensions requiring 7 pixel crop."""
+        engine = FluxInferenceEngine()
+        engine._pipeline = Mock()
+        engine._device = "cpu"
+
+        width, height = 1001, 1001
+        rounded_width = 1008
+        rounded_height = 1008
+
+        mock_image = Image.new("RGB", (rounded_width, rounded_height))
+        engine._pipeline.return_value = Mock(images=[mock_image])
+
+        options = GenerationOptions(aspect_ratio="custom", width=width, height=height)
+        result = engine.generate("test", options)
+
+        assert result.generated_width == 1008
+        assert result.generated_height == 1008
+        assert result.image.size == (1001, 1001)
+
+        left_crop = (rounded_width - width) // 2
+        assert left_crop == 3
+        assert (rounded_width - width - left_crop) == 4
 
 
 class TestSchedulerStateReset:
@@ -513,6 +642,4 @@ class TestSchedulerStateReset:
         # With serialization: starts[0] < ends[0] < starts[1] < ends[1]
         assert len(starts) == 2 and len(ends) == 2, "Should have exactly 2 start/end pairs"
         assert starts[0] < ends[0], "First call should end before anything else"
-        assert ends[0] < starts[1], (
-            f"Calls should be serialized (no overlap). Log: {execution_log}"
-        )
+        assert ends[0] < starts[1], f"Calls should be serialized (no overlap). Log: {execution_log}"

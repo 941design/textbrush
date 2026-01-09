@@ -298,6 +298,9 @@ class GenerationWorker:
                         seed=result.seed,
                         prompt=self.prompt,
                         model_name=result.model_name,
+                        aspect_ratio=self.options.aspect_ratio,
+                        generated_width=result.generated_width,
+                        generated_height=result.generated_height,
                     )
 
                     put_success = self.buffer.put(buffered_image, timeout=1.0)
