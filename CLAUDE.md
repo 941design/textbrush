@@ -1,6 +1,7 @@
 # General Guidelines
 
 - MUST use `uv` for package management and virtual environment.
+- When removing functions, ALWAYS search for all call sites and exports (grep the function name across the codebase).
 - ALWAYS cleanup temporary files after implementation. That accounts for markdown files, as well as temporary backups of code.
 - Do NOT create markdown documents for results unless absolutely necessary (e.g. for resuming a task) or when asked to.
 - ALL implementation guides you create MUST be optimized for/addressed at AI coding agents.

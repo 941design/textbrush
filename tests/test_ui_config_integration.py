@@ -229,16 +229,18 @@ class TestConfigUpdateProperties:
 
     @given(
         aspect_ratio=st.text(min_size=1, max_size=10).filter(
-            lambda s: s not in ["1:1", "16:9", "9:16"]
+            lambda s: s not in ["1:1", "16:9", "9:16", "custom"]
         )
     )
     def test_invalid_aspect_ratios_always_rejected(self, aspect_ratio):
         """Property: Invalid aspect ratios never trigger restart.
 
-        For any aspect_ratio not in {1:1, 16:9, 9:16}:
+        For any aspect_ratio not in {1:1, 16:9, 9:16, custom}:
         - ERROR event sent
         - abort() NOT called
         - start_generation() NOT called
+
+        Note: "custom" is a valid special value that allows explicit dimensions.
         """
         handler = self._create_handler_with_backend()
         mock_server = Mock()

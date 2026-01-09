@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "identifier": "com.textbrush.app",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeDevCommand": "cd ui && npm run build",
+    "beforeBuildCommand": "cd ui && npm run build",
     "frontendDist": "../src-tauri/ui"
   },
   "bundle": {

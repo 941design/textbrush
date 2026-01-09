@@ -719,3 +719,35 @@ Enhanced UI features for improved usability, workflow flexibility, and visual fe
 - Backend IMAGE_READY event includes path field
 - Multi-path exit via print_paths_and_exit command
 - Newline-separated stdout format for scripting
+
+---
+
+### [Implemented] Story 9.6: Image Metadata Display Panel
+
+**As a** Technical Writer
+**I want** to see generation metadata (prompt, model, seed) alongside each image
+**So that** I can understand the context and parameters used for each generated image
+
+**Acceptance Criteria:**
+- Split-view layout with image on left and metadata panel on right
+- Metadata panel displays: prompt, model name, and seed
+- Fixed-width panel (350px) with scrollable content for long prompts
+- Metadata panel hidden when no image is loaded
+- Metadata updates automatically when navigating through history
+- Metadata persists for each image in history
+- Responsive layout stacks vertically on narrow viewports (<820px)
+
+**Test Coverage:**
+- Metadata panel visibility toggling based on image state
+- Metadata synchronization across navigation (forward/backward)
+- Metadata persistence through history deletion
+- IPC contract tests for prompt/model_name propagation
+- Frontend display tests for all three metadata fields
+- Responsive layout tests for narrow viewports
+
+**Implementation Details:**
+- Backend: Extended ImageReadyEvent with prompt and model_name fields
+- Frontend: Split-view flexbox layout with image-panel and metadata-panel
+- State: imageHistory stores metadata alongside image data
+- CSS: Fixed 350px width with responsive media query for <820px viewports
+- Metadata panel uses CSS custom properties for theme compatibility

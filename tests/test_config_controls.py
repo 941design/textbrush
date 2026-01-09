@@ -33,8 +33,9 @@ def extract_function_names(js_code: str) -> List[str]:
 
 
 def extract_const_imports(js_code: str) -> List[str]:
-    """Extract const destructuring imports from Tauri."""
-    pattern = r"const\s+\{([^}]+)\}\s*=\s*window\.__TAURI__\.(\w+)"
+    """Extract ES6 imports from Tauri API modules."""
+    # Match ES6 import pattern: import { foo } from '@tauri-apps/api/module'
+    pattern = r"import\s+\{([^}]+)\}\s+from\s+['\"]@tauri-apps/api/(\w+)['\"]"
     matches = re.findall(pattern, js_code)
     imports = []
     for destructured, module in matches:
@@ -603,10 +604,10 @@ class TestCSSStyles:
         css_code = self.load_css()
         assert ".prompt-input" in css_code, "CSS must define .prompt-input class"
 
-    def test_aspect_ratio_controls_style_exists(self):
-        """CSS must define .aspect-ratio-controls style."""
+    def test_aspect_ratio_control_style_exists(self):
+        """CSS must define .aspect-ratio-control style (used in HTML)."""
         css_code = self.load_css()
-        assert ".aspect-ratio-controls" in css_code, "CSS must define .aspect-ratio-controls class"
+        assert ".aspect-ratio-control" in css_code, "CSS must define .aspect-ratio-control class"
 
     def test_validation_error_style_exists(self):
         """CSS must define .validation-error style."""

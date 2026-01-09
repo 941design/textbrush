@@ -184,7 +184,10 @@ class TestJavaScriptIntegration:
         js = load_javascript()
         assert "import" in js, "main.js must use ES6 imports"
         assert "ConfigControls" in js, "ConfigControls must be imported"
-        assert "from './config_controls.js'" in js, "Must import from config_controls.js"
+        # TypeScript may omit .js extension
+        assert (
+            "from './config_controls.js'" in js or "from './config_controls'" in js
+        ), "Must import from config_controls module"
 
         import_lines = [
             line for line in js.split("\n") if "import" in line and "ConfigControls" in line
@@ -286,9 +289,14 @@ class TestJavaScriptIntegration:
         assert keyboard_func, "setupKeyboardListeners function must exist"
 
         keyboard_content = keyboard_func.group(1)
-        assert "e.target.tagName" in keyboard_content or "e.target.type" in keyboard_content, (
-            "Must check event target to avoid conflicts with input"
+        # Check for target.tagName pattern (may use e.target or const target = e.target)
+        has_target_check = (
+            "e.target.tagName" in keyboard_content
+            or "e.target.type" in keyboard_content
+            or "target.tagName" in keyboard_content
+            or "target.type" in keyboard_content
         )
+        assert has_target_check, "Must check event target to avoid conflicts with input"
         assert "INPUT" in keyboard_content, "Must specifically check for INPUT elements"
         assert "return" in keyboard_content, "Must return early when typing in input"
 

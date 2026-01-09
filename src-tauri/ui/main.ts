@@ -1,17 +1,32 @@
 // Textbrush UI Application Logic
 // Handles image review workflow, state management, and user interactions via Tauri IPC
 
-import * as ConfigControls from './config_controls.js';
-import * as ThemeManager from './theme-manager.js';
-import * as HistoryManager from './history-manager.js';
-import * as ButtonFlash from './button-flash.js';
+import * as ConfigControls from './config_controls';
+import * as ThemeManager from './theme-manager';
+import * as HistoryManager from './history-manager';
+import * as ButtonFlash from './button-flash';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type {
+  AppState,
+  Elements,
+  LaunchArgs,
+  SidecarMessage,
+  ImagePayload,
+  BufferStatusPayload,
+  AcceptedPayload,
+  ErrorPayload,
+  PausedPayload,
+  ReadyPayload,
+  HistoryEntry,
+} from './types';
 
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
-const { appWindow } = window.__TAURI__.window;
+// Get current window reference
+const appWindow = getCurrentWindow();
 
 // State Management
-const state = {
+const state: AppState = {
   currentImage: null,
   currentSeed: null,
   bufferCount: 0,
@@ -23,16 +38,16 @@ const state = {
   aspectRatio: '1:1',
   width: 1024,
   height: 1024,
+  outputPath: null,
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
-  // Navigation history
-  imageHistory: [],       // Array of {image_data, seed, blobUrl}
-  historyIndex: -1,       // Current position in history (-1 = none)
-  waitingForNext: false,  // True when at loading placeholder
+  imageHistory: [],
+  historyIndex: -1,
+  waitingForNext: false,
 };
 
 // DOM Element References
-const elements = {
+const elements: Elements = {
   app: null,
   viewer: null,
   imageContainer: null,
@@ -52,7 +67,7 @@ const elements = {
   bufferIndicator: null,
   bufferDots: null,
   bufferText: null,
-  seedDisplay: null,
+  outputPathDisplay: null,
   controls: null,
   skipButton: null,
   acceptButton: null,
@@ -63,43 +78,43 @@ const elements = {
   themeToggle: null,
 };
 
-function cacheElements() {
+function cacheElements(): void {
   elements.app = document.getElementById('app');
   elements.viewer = document.querySelector('.viewer');
   elements.imageContainer = document.querySelector('.image-container');
-  elements.currentImage = document.querySelector('.current-image');
+  elements.currentImage = document.querySelector('.current-image') as HTMLImageElement | null;
   elements.loadingOverlay = document.getElementById('loading-overlay');
   elements.loadingSpinner = document.querySelector('.spinner');
   elements.loadingPrompt = document.getElementById('loading-prompt');
   elements.statusBar = document.querySelector('.status-bar');
   elements.promptDisplay = document.getElementById('prompt-display');
-  elements.promptInput = document.getElementById('prompt-input');
+  elements.promptInput = document.getElementById('prompt-input') as HTMLInputElement | null;
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
   elements.aspectRatioControls = document.querySelector('.aspect-ratio-control');
   elements.dimensionControls = document.querySelector('.dimension-control');
-  elements.widthInput = document.getElementById('width-input');
-  elements.heightInput = document.getElementById('height-input');
+  elements.widthInput = document.getElementById('width-input') as HTMLInputElement | null;
+  elements.heightInput = document.getElementById('height-input') as HTMLInputElement | null;
   elements.validationError = document.getElementById('validation-error');
   elements.bufferIndicator = document.getElementById('buffer-indicator');
   elements.bufferDots = document.getElementById('buffer-dots');
   elements.bufferText = document.getElementById('buffer-text');
-  elements.seedDisplay = document.getElementById('seed-display');
+  elements.outputPathDisplay = document.getElementById('output-path-display');
   elements.controls = document.querySelector('.controls');
-  elements.skipButton = document.getElementById('skip-btn');
-  elements.acceptButton = document.getElementById('accept-btn');
-  elements.abortButton = document.getElementById('abort-btn');
-  elements.pauseButton = document.getElementById('pause-btn');
+  elements.skipButton = document.getElementById('skip-btn') as HTMLButtonElement | null;
+  elements.acceptButton = document.getElementById('accept-btn') as HTMLButtonElement | null;
+  elements.abortButton = document.getElementById('abort-btn') as HTMLButtonElement | null;
+  elements.pauseButton = document.getElementById('pause-btn') as HTMLButtonElement | null;
   elements.pauseIcon = document.getElementById('pause-icon');
   elements.pauseLabel = document.getElementById('pause-label');
-  elements.themeToggle = document.getElementById('theme-toggle');
+  elements.themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement | null;
 }
 
-function allElementsPresent() {
+function allElementsPresent(): boolean {
   return Object.values(elements).every(el => el !== null);
 }
 
 // Initialize Application
-async function init() {
+async function init(): Promise<void> {
   console.log('Textbrush UI initializing...');
   try {
     // Initialize theme before DOM manipulation
@@ -118,11 +133,23 @@ async function init() {
 
     console.log('DOM elements cached, getting launch args...');
     // Get launch arguments from invoke call
-    const launchArgs = await invoke('get_launch_args');
+    const launchArgs = await invoke<LaunchArgs>('get_launch_args');
     console.log('Launch args received:', launchArgs);
     state.prompt = launchArgs.prompt || '';
     state.aspectRatio = launchArgs.aspect_ratio || '1:1';
     state.bufferMax = launchArgs.buffer_max || 8;
+    state.outputPath = launchArgs.output_path || null;
+
+    // Display the output path
+    if (elements.outputPathDisplay) {
+      if (state.outputPath) {
+        elements.outputPathDisplay.textContent = `path: ${state.outputPath}`;
+        elements.outputPathDisplay.title = state.outputPath;
+      } else {
+        elements.outputPathDisplay.textContent = 'path: (default)';
+        elements.outputPathDisplay.title = 'Using default output directory';
+      }
+    }
 
     // Display the prompt (legacy support if config controls not initialized)
     if (elements.promptDisplay) {
@@ -154,15 +181,15 @@ async function init() {
   } catch (error) {
     console.error('Initialization failed:', error);
     if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = `Error: ${error.message}`;
+      elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 }
 
 // Message Event Listener
-function setupMessageListener() {
+function setupMessageListener(): void {
   console.log('Setting up sidecar message listener...');
-  listen('sidecar-message', (event) => {
+  listen<SidecarMessage>('sidecar-message', (event) => {
     const msg = event.payload;
     console.log('Received sidecar message:', msg.type, msg);
     handleMessage(msg);
@@ -172,7 +199,7 @@ function setupMessageListener() {
 }
 
 // Message Handler with Type Dispatch
-function handleMessage(msg) {
+function handleMessage(msg: SidecarMessage): void {
   if (!msg || !msg.type) {
     console.warn('Invalid message format:', msg);
     return;
@@ -180,31 +207,31 @@ function handleMessage(msg) {
 
   switch (msg.type) {
     case 'ready':
-      handleReady(msg.payload || {});
+      handleReady(msg.payload as ReadyPayload);
       break;
 
     case 'image_ready':
-      handleImageReady(msg.payload || {});
+      handleImageReady(msg.payload as ImagePayload);
       break;
 
     case 'buffer_status':
-      handleBufferStatus(msg.payload || {});
+      handleBufferStatus(msg.payload as BufferStatusPayload);
       break;
 
     case 'accepted':
-      handleAccepted(msg.payload || {});
+      void handleAccepted(msg.payload as AcceptedPayload);
       break;
 
     case 'aborted':
-      handleAborted(msg.payload || {});
+      handleAborted();
       break;
 
     case 'error':
-      handleError(msg.payload || {});
+      handleError(msg.payload as ErrorPayload);
       break;
 
     case 'paused':
-      handlePaused(msg.payload || {});
+      handlePaused(msg.payload as PausedPayload);
       break;
 
     default:
@@ -213,13 +240,13 @@ function handleMessage(msg) {
 }
 
 // Message Handlers
-function handleReady(payload) {
+function handleReady(payload: ReadyPayload): void {
   state.isGenerating = true;
   state.bufferCount = payload.buffer_count || 0;
   updateBufferDisplay();
 }
 
-function handleImageReady(payload) {
+function handleImageReady(payload: ImagePayload): void {
   state.currentImage = payload;
   state.currentSeed = payload.seed || null;
   state.bufferCount = payload.buffer_count || 0;
@@ -229,80 +256,80 @@ function handleImageReady(payload) {
   state.imageHistory.push({
     image_data: payload.image_data,
     seed: payload.seed,
-    blobUrl: null,  // Will be set when displayed
+    blobUrl: null,
+    prompt: payload.prompt || '',
+    model_name: payload.model_name || '',
   });
   state.historyIndex = state.imageHistory.length - 1;
   state.waitingForNext = false;
 
-  displayImage(payload);
+  void displayImage(payload);
   updateBufferDisplay();
-  // Always hide loading overlay when we have an image to display
   showLoading(false);
   enableAcceptButton();
 }
 
-function handleBufferStatus(payload) {
+function handleBufferStatus(payload: BufferStatusPayload): void {
   state.bufferCount = payload.count || 0;
   state.isGenerating = payload.generating || false;
   updateBufferDisplay();
 }
 
-async function handleAccepted(payload) {
-  // Payload contains path for the single image that was just accepted via backend
-  // Store this path in current history entry if it was the current image
+async function handleAccepted(payload: AcceptedPayload): Promise<void> {
   if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
-    state.imageHistory[state.historyIndex].path = payload.path;
+    const entry = state.imageHistory[state.historyIndex];
+    if (entry) {
+      entry.path = payload.path;
+    }
   }
 
-  // Collect all paths from history (including the one just saved)
   const allPaths = HistoryManager.getAllRetainedPaths(state);
 
   visualSuccessFeedback();
-  setTimeout(async () => {
-    try {
-      // Clean up all blob URLs before exit
-      for (const entry of state.imageHistory) {
-        if (entry.blobUrl) {
-          URL.revokeObjectURL(entry.blobUrl);
+  setTimeout(() => {
+    void (async () => {
+      try {
+        for (const entry of state.imageHistory) {
+          if (entry.blobUrl) {
+            URL.revokeObjectURL(entry.blobUrl);
+          }
         }
-      }
 
-      if (allPaths.length === 0) {
-        // No images retained - exit as abort
+        if (allPaths.length === 0) {
+          await invoke('abort_exit');
+        } else if (allPaths.length === 1) {
+          await invoke('print_and_exit', { path: allPaths[0] });
+        } else {
+          await invoke('print_paths_and_exit', { paths: allPaths });
+        }
+      } catch (err) {
+        console.error('Failed to call exit handler:', err);
+        await appWindow.close();
+      }
+    })();
+  }, 500);
+}
+
+function handleAborted(): void {
+  setTimeout(() => {
+    void (async () => {
+      try {
+        for (const entry of state.imageHistory) {
+          if (entry.blobUrl) {
+            URL.revokeObjectURL(entry.blobUrl);
+          }
+        }
+
         await invoke('abort_exit');
-      } else if (allPaths.length === 1) {
-        // Single path - use backward-compatible single-path exit
-        await invoke('print_and_exit', { path: allPaths[0] });
-      } else {
-        // Multiple paths - use multi-path exit
-        await invoke('print_paths_and_exit', { paths: allPaths });
+      } catch (err) {
+        console.error('Failed to call abort_exit:', err);
+        await appWindow.close();
       }
-    } catch (err) {
-      console.error('Failed to call exit handler:', err);
-      appWindow.close();
-    }
+    })();
   }, 500);
 }
 
-function handleAborted(payload) {
-  setTimeout(async () => {
-    try {
-      // Clean up all blob URLs before exit
-      for (const entry of state.imageHistory) {
-        if (entry.blobUrl) {
-          URL.revokeObjectURL(entry.blobUrl);
-        }
-      }
-
-      await invoke('abort_exit');
-    } catch (err) {
-      console.error('Failed to call abort_exit:', err);
-      appWindow.close();
-    }
-  }, 500);
-}
-
-function handleError(payload) {
+function handleError(payload: ErrorPayload): void {
   const message = payload.message || 'Unknown error';
   const fatal = payload.fatal || false;
 
@@ -310,32 +337,32 @@ function handleError(payload) {
 
   if (fatal) {
     setTimeout(() => {
-      appWindow.close();
+      void appWindow.close();
     }, 2000);
   }
 }
 
-function handlePaused(payload) {
+function handlePaused(payload: PausedPayload): void {
   state.isPaused = payload.paused || false;
   updatePauseButton();
   console.log('Generation', state.isPaused ? 'paused' : 'resumed');
 }
 
 // Update Pause Button UI
-function updatePauseButton() {
+function updatePauseButton(): void {
   if (!elements.pauseIcon || !elements.pauseLabel) {
     return;
   }
 
   if (state.isPaused) {
-    elements.pauseIcon.textContent = '\u25B6';  // Play symbol
+    elements.pauseIcon.textContent = '\u25B6';
     elements.pauseLabel.textContent = 'Resume';
     if (elements.pauseButton) {
       elements.pauseButton.title = 'Resume image generation (P)';
       elements.pauseButton.classList.add('paused');
     }
   } else {
-    elements.pauseIcon.textContent = '\u23F8';  // Pause symbol
+    elements.pauseIcon.textContent = '\u23F8';
     elements.pauseLabel.textContent = 'Pause';
     if (elements.pauseButton) {
       elements.pauseButton.title = 'Pause image generation (P)';
@@ -344,8 +371,16 @@ function updatePauseButton() {
   }
 }
 
+interface DisplayPayload {
+  image_data?: string;
+  blobUrl?: string | null;
+  seed?: number;
+  prompt?: string;
+  model_name?: string;
+}
+
 // Display Image with Transitions
-async function displayImage(payload, historyIdx = null) {
+async function displayImage(payload: DisplayPayload, historyIdx: number | null = null): Promise<void> {
   console.log('displayImage called, seed:', payload.seed, 'data length:', payload.image_data?.length);
   if (state.isTransitioning) {
     console.log('Skipping - already transitioning');
@@ -355,12 +390,10 @@ async function displayImage(payload, historyIdx = null) {
   state.isTransitioning = true;
 
   try {
-    // Skip animations when buffer has multiple images (performance optimization)
     const skipAnimations = state.bufferCount > 1;
     const fadeOutDuration = skipAnimations ? 0 : 100;
     const fadeInDuration = skipAnimations ? 0 : 200;
 
-    // Fade out current image
     if (elements.currentImage && elements.currentImage.src) {
       if (!skipAnimations) {
         elements.currentImage.classList.add('image-exit');
@@ -368,13 +401,11 @@ async function displayImage(payload, historyIdx = null) {
       await new Promise(resolve => setTimeout(resolve, fadeOutDuration));
     }
 
-    // Revoke previous blob URL to prevent memory leak (only if not in history)
     if (state.currentBlobUrl && !isHistoryBlobUrl(state.currentBlobUrl)) {
       URL.revokeObjectURL(state.currentBlobUrl);
       state.currentBlobUrl = null;
     }
 
-    // Update image source using blob URL
     if (elements.currentImage && payload.image_data) {
       console.log('Creating blob from base64 data...');
       const binaryString = atob(payload.image_data);
@@ -385,16 +416,17 @@ async function displayImage(payload, historyIdx = null) {
       const blob = new Blob([bytes], { type: 'image/png' });
       state.currentBlobUrl = URL.createObjectURL(blob);
 
-      // Store blob URL in history if we have a valid history index
       const idx = historyIdx !== null ? historyIdx : state.historyIndex;
       if (idx >= 0 && idx < state.imageHistory.length) {
-        state.imageHistory[idx].blobUrl = state.currentBlobUrl;
+        const entry = state.imageHistory[idx];
+        if (entry) {
+          entry.blobUrl = state.currentBlobUrl;
+        }
       }
 
       console.log('Setting image src to blob URL:', state.currentBlobUrl);
       elements.currentImage.src = state.currentBlobUrl;
     } else if (elements.currentImage && payload.blobUrl) {
-      // Use existing blob URL from history
       console.log('Using existing blob URL from history:', payload.blobUrl);
       state.currentBlobUrl = payload.blobUrl;
       elements.currentImage.src = payload.blobUrl;
@@ -402,11 +434,10 @@ async function displayImage(payload, historyIdx = null) {
       console.warn('Cannot display image - missing element or data:', {
         hasElement: !!elements.currentImage,
         hasData: !!payload.image_data,
-        hasBlobUrl: !!payload.blobUrl
+        hasBlobUrl: !!payload.blobUrl,
       });
     }
 
-    // Fade in new image
     if (elements.currentImage) {
       elements.currentImage.classList.remove('image-exit');
       if (!skipAnimations) {
@@ -416,10 +447,7 @@ async function displayImage(payload, historyIdx = null) {
       elements.currentImage.classList.remove('image-enter');
     }
 
-    // Update seed display
-    if (elements.seedDisplay && payload.seed !== undefined) {
-      elements.seedDisplay.textContent = `Seed: ${payload.seed}`;
-    }
+    updateMetadataPanel(payload);
   } catch (error) {
     console.error('Error displaying image:', error);
   } finally {
@@ -427,90 +455,95 @@ async function displayImage(payload, historyIdx = null) {
   }
 }
 
-// Check if a blob URL is stored in history (should not be revoked)
-function isHistoryBlobUrl(blobUrl) {
+function updateMetadataPanel(payload: DisplayPayload | null): void {
+  const metadataPrompt = document.getElementById('metadata-prompt');
+  const metadataModel = document.getElementById('metadata-model');
+  const metadataSeed = document.getElementById('metadata-seed');
+
+  if (!metadataPrompt || !metadataModel || !metadataSeed) {
+    return;
+  }
+
+  if (payload && payload.image_data) {
+    metadataPrompt.textContent = payload.prompt || '—';
+    metadataModel.textContent = payload.model_name || '—';
+    metadataSeed.textContent = payload.seed !== undefined ? String(payload.seed) : '—';
+  } else {
+    metadataPrompt.textContent = '—';
+    metadataModel.textContent = '—';
+    metadataSeed.textContent = '—';
+  }
+}
+
+function isHistoryBlobUrl(blobUrl: string): boolean {
   return state.imageHistory.some(item => item.blobUrl === blobUrl);
 }
 
-// Update Buffer Display
-function updateBufferDisplay() {
+function updateBufferDisplay(): void {
   if (!elements.bufferDots) {
     return;
   }
 
-  // Update existing buffer dots
   const dots = elements.bufferDots.querySelectorAll('.buffer-dot');
   for (let i = 0; i < dots.length; i++) {
     if (i < state.bufferCount) {
-      dots[i].classList.add('filled');
+      dots[i]?.classList.add('filled');
     } else {
-      dots[i].classList.remove('filled');
+      dots[i]?.classList.remove('filled');
     }
   }
 
-  // Update buffer text
   if (elements.bufferText) {
     elements.bufferText.textContent = `${state.bufferCount}/${state.bufferMax}`;
   }
 
-  // Only show loading if we're waiting for next AND buffer is empty
-  // Don't auto-show loading when browsing history
   if (state.waitingForNext && state.bufferCount === 0) {
     showLoading(true);
   }
 }
 
-// Show/Hide Loading Overlay
-function showLoading(show) {
+function showLoading(show: boolean): void {
   if (!elements.loadingOverlay) {
     return;
   }
 
   if (show) {
     elements.loadingOverlay.classList.remove('hidden');
-    // Hide current image when showing loading placeholder
     if (elements.currentImage) {
       elements.currentImage.classList.add('hidden');
     }
   } else {
     elements.loadingOverlay.classList.add('hidden');
-    // Show current image when hiding loading
     if (elements.currentImage) {
       elements.currentImage.classList.remove('hidden');
     }
   }
 }
 
-// Visual Feedback for Accept
-function visualSuccessFeedback() {
+function visualSuccessFeedback(): void {
   if (elements.imageContainer) {
-    elements.imageContainer.style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.5)';
+    (elements.imageContainer as HTMLElement).style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.5)';
   }
 }
 
-// Action Functions
-
-// Navigate to previous image in history (ArrowLeft)
-function previous() {
+function previous(): void {
   if (state.isTransitioning) {
     return;
   }
 
-  // If we're at the loading placeholder, go back to the last image
   if (state.waitingForNext && state.imageHistory.length > 0) {
     state.waitingForNext = false;
     state.historyIndex = state.imageHistory.length - 1;
     const historyItem = state.imageHistory[state.historyIndex];
     showLoading(false);
-    displayImage(historyItem, state.historyIndex);
-    updateSeedDisplay(historyItem.seed);
+    if (historyItem) {
+      void displayImage(historyItem, state.historyIndex);
+    }
     return;
   }
 
-  // Use HistoryManager for navigation
-  const navigated = HistoryManager.navigateToPrevious(state, (entry) => {
-    displayImage(entry, state.historyIndex);
-    updateSeedDisplay(entry.seed);
+  const navigated = HistoryManager.navigateToPrevious(state, (entry: HistoryEntry) => {
+    void displayImage(entry, state.historyIndex);
   });
 
   if (!navigated) {
@@ -518,19 +551,16 @@ function previous() {
   }
 }
 
-// Navigate to next image (ArrowRight or Space)
-function skip() {
+function skip(): void {
   if (state.isTransitioning) {
     return;
   }
 
-  // If already waiting for next image, do nothing
   if (state.waitingForNext) {
     console.log('Already waiting for next image');
     return;
   }
 
-  // Use HistoryManager for navigation - handles both history forward and buffer request
   const requestNext = () => {
     state.waitingForNext = true;
     showLoadingPlaceholder();
@@ -545,52 +575,45 @@ function skip() {
         if (state.imageHistory.length > 0) {
           const historyItem = state.imageHistory[state.historyIndex];
           showLoading(false);
-          displayImage(historyItem, state.historyIndex);
+          if (historyItem) {
+            void displayImage(historyItem, state.historyIndex);
+          }
         }
       });
   };
 
   HistoryManager.navigateToNext(
     state,
-    (entry) => {
-      displayImage(entry, state.historyIndex);
-      updateSeedDisplay(entry.seed);
+    (entry: HistoryEntry) => {
+      void displayImage(entry, state.historyIndex);
     },
     requestNext
   );
 }
 
-// Show loading placeholder (hide current image, show spinner as new view)
-function showLoadingPlaceholder() {
+function showLoadingPlaceholder(): void {
   if (elements.currentImage) {
     elements.currentImage.classList.add('hidden');
   }
   if (elements.loadingOverlay) {
     elements.loadingOverlay.classList.remove('hidden');
   }
-  if (elements.seedDisplay) {
-    elements.seedDisplay.textContent = 'Seed: —';
-  }
+  updateMetadataPanel(null);
 }
 
-// Update seed display helper
-function updateSeedDisplay(seed) {
-  if (elements.seedDisplay) {
-    elements.seedDisplay.textContent = seed !== undefined ? `Seed: ${seed}` : 'Seed: —';
-  }
-}
-
-function accept() {
+function accept(): void {
   if (elements.acceptButton && !state.isTransitioning) {
     elements.acceptButton.disabled = true;
     invoke('accept_image').catch(err => {
       console.error('Accept failed:', err);
-      elements.acceptButton.disabled = false;
+      if (elements.acceptButton) {
+        elements.acceptButton.disabled = false;
+      }
     });
   }
 }
 
-function abort() {
+function abort(): void {
   if (state.isTransitioning) {
     return;
   }
@@ -600,45 +623,38 @@ function abort() {
   });
 }
 
-function togglePause() {
+function togglePause(): void {
   invoke('pause_generation').catch(err => {
     console.error('Pause toggle failed:', err);
   });
 }
 
-// Delete current image from history
-function deleteCurrentImage() {
+function deleteCurrentImage(): void {
   if (state.isTransitioning) {
     return;
   }
 
   HistoryManager.deleteCurrentImage(
     state,
-    (entry) => {
-      displayImage(entry, state.historyIndex);
-      updateSeedDisplay(entry.seed);
+    (entry: HistoryEntry) => {
+      void displayImage(entry, state.historyIndex);
     },
     () => {
-      // Show empty state - hide image, show loading without spinner
       if (elements.currentImage) {
         elements.currentImage.classList.add('hidden');
       }
-      if (elements.seedDisplay) {
-        elements.seedDisplay.textContent = 'Seed: —';
-      }
+      updateMetadataPanel(null);
     }
   );
 }
 
-// Enable/Disable Accept Button
-function enableAcceptButton() {
+function enableAcceptButton(): void {
   if (elements.acceptButton) {
     elements.acceptButton.disabled = false;
   }
 }
 
-// Button Event Listeners
-function setupButtonListeners() {
+function setupButtonListeners(): void {
   if (elements.skipButton) {
     elements.skipButton.addEventListener('click', skip);
   }
@@ -662,45 +678,32 @@ function setupButtonListeners() {
   }
 }
 
-// Keyboard Event Listener
-function setupKeyboardListeners() {
-  document.addEventListener('keydown', (e) => {
-    // Ignore keyboard shortcuts when user is typing in input field
-    if (e.target.tagName === 'INPUT' && e.target.type === 'text') {
+function setupKeyboardListeners(): void {
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text') {
       return;
     }
 
-    // Flash button for visual feedback
     const ctrlOrCmd = e.ctrlKey || e.metaKey;
     ButtonFlash.flashButtonForKey(e.key, ctrlOrCmd);
 
-    // Left Arrow = previous
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       previous();
-    }
-    // Space or Right Arrow = skip/next
-    else if (e.key === ' ' || e.key === 'ArrowRight') {
+    } else if (e.key === ' ' || e.key === 'ArrowRight') {
       e.preventDefault();
       skip();
-    }
-    // Enter = accept
-    else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       accept();
-    }
-    // Escape = abort
-    else if (e.key === 'Escape') {
+    } else if (e.key === 'Escape') {
       e.preventDefault();
       abort();
-    }
-    // Cmd/Ctrl+Delete or Cmd/Ctrl+Backspace = delete current image
-    else if ((e.key === 'Delete' || e.key === 'Backspace') && ctrlOrCmd) {
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && ctrlOrCmd) {
       e.preventDefault();
       deleteCurrentImage();
-    }
-    // P = toggle pause
-    else if (e.key === 'p' || e.key === 'P') {
+    } else if (e.key === 'p' || e.key === 'P') {
       e.preventDefault();
       togglePause();
     }
@@ -708,6 +711,31 @@ function setupKeyboardListeners() {
 }
 
 // Expose for testing
+declare global {
+  interface Window {
+    textbrushApp?: {
+      state: AppState;
+      elements: Elements;
+      init: typeof init;
+      handleMessage: typeof handleMessage;
+      displayImage: typeof displayImage;
+      updateBufferDisplay: typeof updateBufferDisplay;
+      showLoading: typeof showLoading;
+      showLoadingPlaceholder: typeof showLoadingPlaceholder;
+      previous: typeof previous;
+      skip: typeof skip;
+      accept: typeof accept;
+      abort: typeof abort;
+      togglePause: typeof togglePause;
+      updatePauseButton: typeof updatePauseButton;
+      deleteCurrentImage: typeof deleteCurrentImage;
+      cacheElements: typeof cacheElements;
+      allElementsPresent: typeof allElementsPresent;
+      isHistoryBlobUrl: typeof isHistoryBlobUrl;
+    };
+  }
+}
+
 if (typeof window !== 'undefined') {
   window.textbrushApp = {
     state,
@@ -728,13 +756,12 @@ if (typeof window !== 'undefined') {
     cacheElements,
     allElementsPresent,
     isHistoryBlobUrl,
-    updateSeedDisplay,
   };
 }
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => void init());
 } else {
-  init();
+  void init();
 }

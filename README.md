@@ -13,6 +13,7 @@ Text-to-image generation tool with customizable workflows and local model infere
 - **Image deletion** with Cmd/Ctrl+Delete to curate selections
 - **Multi-image workflows** with batch acceptance of all retained images
 - **Visual feedback** for keyboard shortcuts with button flash animations
+- **Image metadata display** with split-view panel showing prompt, model, and seed for each image
 - **Flexible configuration** via CLI arguments, environment variables, or TOML config file
 - **Local model management** with automatic HuggingFace cache discovery
 - **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends

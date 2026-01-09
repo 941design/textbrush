@@ -71,6 +71,8 @@ class ImageReadyEvent:
     seed: int
     buffer_count: int
     buffer_max: int
+    prompt: str = ""
+    model_name: str = ""
 
 
 @dataclass

@@ -293,7 +293,12 @@ class GenerationWorker:
                 try:
                     result = self.engine.generate(self.prompt, self.options)
 
-                    buffered_image = BufferedImage(image=result.image, seed=result.seed)
+                    buffered_image = BufferedImage(
+                        image=result.image,
+                        seed=result.seed,
+                        prompt=self.prompt,
+                        model_name=result.model_name,
+                    )
 
                     put_success = self.buffer.put(buffered_image, timeout=1.0)
 

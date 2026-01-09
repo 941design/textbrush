@@ -22,11 +22,15 @@ class BufferedImage:
         image: PIL Image object.
         seed: Random seed used for generation.
         temp_path: Optional path to temporary file on disk.
+        prompt: Text prompt used for generation.
+        model_name: Identifier of the model used.
     """
 
     image: Image.Image
     seed: int
     temp_path: Path | None = None
+    prompt: str = ""
+    model_name: str = ""
 
     def cleanup(self) -> None:
         """Delete temporary file if it exists.

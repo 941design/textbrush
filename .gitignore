@@ -51,3 +51,11 @@ src-tauri/target/
 .verification-questions.md
 .exploration/
 node_modules/
+
+# TypeScript compiled modules (for testing, not bundle.js)
+src-tauri/ui/button-flash.js
+src-tauri/ui/config_controls.js
+src-tauri/ui/history-manager.js
+src-tauri/ui/main.js
+src-tauri/ui/theme-manager.js
+src-tauri/ui/types.js

@@ -187,14 +187,13 @@ def test_app_layout_flex_column():
 
 
 def test_viewer_section_layout():
-    """Viewer section should flex: 1 and center content."""
+    """Viewer section should flex: 1 and contain split panels."""
     _, parser = load_css_file()
     assert parser.has_selector(".viewer"), ".viewer selector not found"
     props = parser.get_selector_properties(".viewer")
     assert "flex" in props and "1" in props["flex"], ".viewer should have flex: 1"
     assert props.get("display") == "flex", ".viewer should have display: flex"
-    assert props.get("align-items") == "center", ".viewer should center vertically"
-    assert props.get("justify-content") == "center", ".viewer should center horizontally"
+    assert props.get("flex-direction") == "row", ".viewer should use row layout for split view"
 
 
 # ============================================================================
@@ -660,7 +659,6 @@ def test_user_select_none_on_body():
             ".buffer-dots",
             ".buffer-dot",
             ".buffer-text",
-            ".seed-display",
             ".controls",
             ".control-btn",
             ".btn-icon",

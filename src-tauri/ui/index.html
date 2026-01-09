@@ -12,22 +12,37 @@
     <main id="app">
         <!-- Image Viewer Section -->
         <section class="viewer">
-            <div class="image-container">
-                <img
-                    class="current-image"
-                    id="current-image"
-                    src=""
-                    alt="Generated image"
-                    title="Generated image preview"
-                />
-                <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
-                    <div class="spinner" aria-hidden="true"></div>
-                    <div class="loading-caption" id="loading-caption">
-                        <span class="loading-label">generating:</span>
-                        <span class="loading-prompt" id="loading-prompt"></span>
+            <div class="image-panel">
+                <div class="image-container">
+                    <img
+                        class="current-image"
+                        id="current-image"
+                        src=""
+                        alt="Generated image"
+                        title="Generated image preview"
+                    />
+                    <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <div class="loading-caption" id="loading-caption">
+                            <span class="loading-label">generating:</span>
+                            <span class="loading-prompt" id="loading-prompt"></span>
+                        </div>
                     </div>
                 </div>
             </div>
+            <aside class="metadata-panel" id="metadata-panel">
+                <h2 class="metadata-title">Image Details</h2>
+                <dl class="metadata-fields">
+                    <dt class="metadata-label">Prompt:</dt>
+                    <dd class="metadata-value" id="metadata-prompt">—</dd>
+
+                    <dt class="metadata-label">Model:</dt>
+                    <dd class="metadata-value" id="metadata-model">—</dd>
+
+                    <dt class="metadata-label">Seed:</dt>
+                    <dd class="metadata-value" id="metadata-seed">—</dd>
+                </dl>
+            </aside>
         </section>
 
         <!-- Status Bar -->
@@ -123,8 +138,8 @@
                     </div>
                     <div class="buffer-text" id="buffer-text">0/8</div>
                 </div>
-                <div class="seed-display" id="seed-display" title="Generation seed">
-                    seed: —
+                <div class="output-path-display" id="output-path-display" title="Output directory">
+                    path: —
                 </div>
             </div>
         </section>
@@ -178,6 +193,6 @@
         </section>
     </main>
 
-    <script type="module" src="/main.js"></script>
+    <script type="module" src="/bundle.js"></script>
 </body>
 </html>

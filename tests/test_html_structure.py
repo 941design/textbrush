@@ -139,9 +139,17 @@ class TestCSSLinking:
         module_scripts = [s for s in parser.script_tags if s.get("type") == "module"]
         assert len(module_scripts) >= 1, "At least one script with type='module' required"
 
-        main_script = next((s for s in parser.script_tags if "main.js" in s.get("src", "")), None)
-        assert main_script is not None, "Script tag for main.js must be present"
-        assert main_script.get("type") == "module", "main.js script must have type='module'"
+        # Accept either main.js (development) or bundle.js (production build)
+        main_script = next(
+            (
+                s
+                for s in parser.script_tags
+                if "main.js" in s.get("src", "") or "bundle.js" in s.get("src", "")
+            ),
+            None,
+        )
+        assert main_script is not None, "Script tag for main.js or bundle.js must be present"
+        assert main_script.get("type") == "module", "Main script must have type='module'"
 
 
 class TestRequiredElementIDs:
@@ -155,7 +163,6 @@ class TestRequiredElementIDs:
         "buffer-indicator": "div",
         "buffer-dots": "div",
         "buffer-text": "div",
-        "seed-display": "div",
         "abort-btn": "button",
         "skip-btn": "button",
         "accept-btn": "button",
@@ -517,7 +524,6 @@ class TestCSSClassesUsed:
         "buffer-dots",
         "buffer-dot",
         "buffer-text",
-        "seed-display",
         "controls",
         "control-btn",
         "btn-abort",
@@ -628,20 +634,30 @@ class TestStatusBarStructure:
         )
         assert text_attrs is not None, "Buffer text element not found"
 
-    def test_seed_display_present(self):
-        """Seed display element must be present."""
+    def test_metadata_panel_present(self):
+        """Metadata panel must be present (seed now displayed in metadata panel)."""
         html = load_html()
         parser = parse_html(html)
 
-        seed_attrs = next(
+        metadata_panel = next(
             (
                 attrs
                 for tag, attrs in parser.all_elements
-                if tag == "div" and attrs.get("id") == "seed-display"
+                if tag == "aside" and attrs.get("id") == "metadata-panel"
             ),
             None,
         )
-        assert seed_attrs is not None, "Seed display not found"
+        assert metadata_panel is not None, "Metadata panel not found"
+
+        metadata_seed = next(
+            (
+                attrs
+                for tag, attrs in parser.all_elements
+                if tag == "dd" and attrs.get("id") == "metadata-seed"
+            ),
+            None,
+        )
+        assert metadata_seed is not None, "Metadata seed element not found"
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust lint format clippy fmt-rust fmt-check build build-python release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust lint lint-ui format clippy fmt-rust fmt-check build build-ui build-python release clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -25,10 +25,10 @@ download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
 dev:  ## Run textbrush CLI with --help
 	uv run textbrush --help
 
-run:  ## Run Tauri application
+run: build-ui  ## Run Tauri application
 	cd src-tauri && cargo run
 
-run-debug:  ## Run Tauri application with debug logging
+run-debug: build-ui  ## Run Tauri application with debug logging
 	cd src-tauri && RUST_LOG=debug cargo run
 
 test:  ## Run test suite with pytest (excludes slow/integration tests)
@@ -48,6 +48,9 @@ test-rust:  ## Run Rust test suite
 lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests
 
+lint-ui:  ## Check TypeScript code quality with ESLint
+	cd src-tauri/ui && npm run lint
+
 format:  ## Format Python code with ruff
 	uv run ruff format textbrush tests
 
@@ -65,7 +68,10 @@ fmt-check:  ## Verify all code is formatted (for CI)
 # Build
 # ============================================================================
 
-build:  ## Build Tauri application
+build-ui:  ## Build UI TypeScript bundle
+	cd src-tauri/ui && npm run build
+
+build: build-ui  ## Build Tauri application (includes UI)
 	cd src-tauri && cargo build
 
 build-python:  ## Build Python package wheel

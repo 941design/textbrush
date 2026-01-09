@@ -596,6 +596,8 @@ class MessageHandler:
                                     seed=buffered.seed,
                                     buffer_count=len(self.backend.buffer),
                                     buffer_max=self.backend.buffer.max_size,
+                                    prompt=buffered.prompt,
+                                    model_name=buffered.model_name,
                                 )
                             ),
                         )
