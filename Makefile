@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust lint lint-ui format clippy fmt-rust fmt-check build build-ui build-python release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build build-ui build-python release clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -45,14 +45,43 @@ test-e2e:  ## Run end-to-end smoke tests
 test-rust:  ## Run Rust test suite
 	cd src-tauri && cargo test
 
+test-ui:  ## Run UI TypeScript tests
+	cd src-tauri/ui && npm run test
+
 lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests
 
 lint-ui:  ## Check TypeScript code quality with ESLint
 	cd src-tauri/ui && npm run lint
 
+typecheck-ui:  ## Type-check TypeScript code
+	cd src-tauri/ui && npm run typecheck
+
+check-ui:  ## Run all UI checks (typecheck + lint)
+	cd src-tauri/ui && npm run check
+
+check-all:  ## Run all code quality checks (format-check + lint + clippy + typecheck)
+	@echo "Running format checks..."
+	@$(MAKE) -s fmt-check
+	@echo "Running Python linting..."
+	@$(MAKE) -s lint
+	@echo "Running UI linting..."
+	@$(MAKE) -s lint-ui
+	@echo "Running Rust clippy..."
+	@$(MAKE) -s clippy
+	@echo "Running UI type checking..."
+	@$(MAKE) -s typecheck-ui
+	@echo "✓ All checks passed!"
+
 format:  ## Format Python code with ruff
 	uv run ruff format textbrush tests
+
+format-all:  ## Format all code (Python + Rust)
+	@echo "Formatting Python code..."
+	@$(MAKE) -s format
+	@echo "Formatting Rust code..."
+	@$(MAKE) -s fmt-rust
+	@echo "✓ All code formatted!"
 
 clippy:  ## Check Rust code quality with clippy
 	cd src-tauri && cargo clippy -- -D warnings
