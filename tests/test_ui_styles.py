@@ -411,10 +411,28 @@ def test_btn_abort_variant():
     )
 
 
-def test_btn_skip_variant():
-    """Skip button should exist with proper styling."""
+def test_btn_prev_variant():
+    """Prev button should exist with proper styling."""
     _, parser = load_css_file()
-    assert parser.has_selector(".btn-skip:hover"), ".btn-skip:hover not found"
+    assert parser.has_selector(".btn-prev:hover"), ".btn-prev:hover not found"
+
+
+def test_btn_next_variant():
+    """Next button should exist with proper styling."""
+    _, parser = load_css_file()
+    assert parser.has_selector(".btn-next:hover"), ".btn-next:hover not found"
+
+
+def test_btn_pause_variant():
+    """Pause button should exist with proper styling."""
+    _, parser = load_css_file()
+    assert parser.has_selector(".btn-pause:hover"), ".btn-pause:hover not found"
+
+
+def test_btn_delete_variant():
+    """Delete button should exist with proper styling."""
+    _, parser = load_css_file()
+    assert parser.has_selector(".btn-delete:hover"), ".btn-delete:hover not found"
 
 
 # ============================================================================
@@ -590,9 +608,12 @@ def test_user_select_none_on_body():
         ".btn-icon",
         ".btn-label",
         ".btn-shortcut",
+        ".btn-prev",
+        ".btn-next",
+        ".btn-pause",
+        ".btn-delete",
         ".btn-accept",
         ".btn-abort",
-        ".btn-skip",
     ],
 )
 def test_all_required_css_classes_exist(css_class: str):

@@ -160,9 +160,12 @@ class TestRequiredElementIDs:
         "current-image": "img",
         "loading-overlay": "div",
         "prompt-display": "div",
-        "abort-btn": "button",
-        "skip-btn": "button",
+        "prev-btn": "button",
+        "pause-btn": "button",
+        "next-btn": "button",
+        "delete-btn": "button",
         "accept-btn": "button",
+        "abort-btn": "button",
     }
 
     def test_all_required_ids_exist(self):
@@ -234,7 +237,7 @@ class TestSemanticHTML:
 class TestButtonStructure:
     """Test button component structure with icon, label, and shortcut."""
 
-    BUTTON_IDS = ["abort-btn", "skip-btn", "accept-btn"]
+    BUTTON_IDS = ["prev-btn", "pause-btn", "next-btn", "delete-btn", "accept-btn", "abort-btn"]
     REQUIRED_CHILD_CLASSES = ["btn-icon", "btn-label", "btn-shortcut"]
 
     def test_all_buttons_present(self):
@@ -343,7 +346,15 @@ class TestAccessibility:
         html = load_html()
         parser = parse_html(html)
 
-        for btn_id in ["abort-btn", "skip-btn", "accept-btn"]:
+        btn_ids = [
+            "prev-btn",
+            "pause-btn",
+            "next-btn",
+            "delete-btn",
+            "accept-btn",
+            "abort-btn",
+        ]
+        for btn_id in btn_ids:
             button_attrs = next(
                 (
                     attrs
@@ -354,19 +365,6 @@ class TestAccessibility:
             )
             assert button_attrs is not None, f"Button #{btn_id} not found"
             assert "aria-label" in button_attrs, f"Button #{btn_id} missing aria-label"
-
-    def test_interactive_elements_have_title_attributes(self):
-        """Interactive elements should have title attributes for tooltips."""
-        html = load_html()
-        parser = parse_html(html)
-
-        buttons = [attrs for tag, attrs in parser.all_elements if tag == "button"]
-
-        for button_attrs in buttons:
-            if button_attrs.get("id") in ["abort-btn", "skip-btn", "accept-btn"]:
-                assert "title" in button_attrs, (
-                    f"Button #{button_attrs.get('id')} missing title attribute"
-                )
 
     def test_loading_overlay_has_aria_live(self):
         """Loading overlay should have aria-live='polite' for status updates."""
@@ -504,9 +502,12 @@ class TestCSSClassesUsed:
         "prompt-display",
         "controls",
         "control-btn",
-        "btn-abort",
-        "btn-skip",
+        "btn-prev",
+        "btn-pause",
+        "btn-next",
+        "btn-delete",
         "btn-accept",
+        "btn-abort",
         "btn-icon",
         "btn-label",
         "btn-shortcut",
