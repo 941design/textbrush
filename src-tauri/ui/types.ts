@@ -134,9 +134,11 @@ export interface Elements {
   previousButton: HTMLButtonElement | null;
   skipButton: HTMLButtonElement | null;
   acceptButton: HTMLButtonElement | null;
+  deleteButton: HTMLButtonElement | null;
   abortButton: HTMLButtonElement | null;
   pauseButton: HTMLButtonElement | null;
   pauseIcon: HTMLElement | null;
   pauseLabel: HTMLElement | null;
   themeToggle: HTMLButtonElement | null;
+  magnifierLens: HTMLElement | null;
 }

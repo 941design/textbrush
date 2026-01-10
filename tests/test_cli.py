@@ -163,15 +163,15 @@ class TestSupportedRatios:
         assert len(SUPPORTED_RATIOS["1:1"]) == 3
         assert SUPPORTED_RATIOS["1:1"] == [(256, 256), (512, 512), (1024, 1024)]
 
-    def test_16_9_has_two_resolutions(self):
-        """16:9 ratio has exactly two resolutions."""
-        assert len(SUPPORTED_RATIOS["16:9"]) == 2
-        assert SUPPORTED_RATIOS["16:9"] == [(1280, 720), (1920, 1080)]
+    def test_16_9_has_three_resolutions(self):
+        """16:9 ratio has exactly three resolutions."""
+        assert len(SUPPORTED_RATIOS["16:9"]) == 3
+        assert SUPPORTED_RATIOS["16:9"] == [(640, 360), (1280, 720), (1920, 1080)]
 
-    def test_4_1_has_single_resolution(self):
-        """4:1 ratio has exactly one resolution."""
-        assert len(SUPPORTED_RATIOS["4:1"]) == 1
-        assert SUPPORTED_RATIOS["4:1"] == [(1600, 400)]
+    def test_4_1_has_two_resolutions(self):
+        """4:1 ratio has exactly two resolutions."""
+        assert len(SUPPORTED_RATIOS["4:1"]) == 2
+        assert SUPPORTED_RATIOS["4:1"] == [(1200, 300), (1600, 400)]
 
     def test_get_default_resolution_returns_first_resolution(self):
         """get_default_resolution returns first resolution for each ratio."""

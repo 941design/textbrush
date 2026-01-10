@@ -53,12 +53,7 @@ export function flashButtonForKey(key: string, ctrlOrCmd = false): boolean {
     case 'Delete':
     case 'Backspace':
       if (ctrlOrCmd) {
-        const imageContainer = document.getElementById('image-container');
-        if (imageContainer) {
-          flashButton(imageContainer);
-          return true;
-        }
-        return false;
+        return flashButtonById('delete-btn');
       }
       return false;
 

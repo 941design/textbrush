@@ -24,20 +24,25 @@ const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
     { width: 1024, height: 1024 },
   ],
   '16:9': [
+    { width: 640, height: 360 },
     { width: 1280, height: 720 },
     { width: 1920, height: 1080 },
   ],
   '3:1': [
+    { width: 900, height: 300 },
     { width: 1500, height: 500 },
     { width: 1800, height: 600 },
   ],
   '4:1': [
+    { width: 1200, height: 300 },
     { width: 1600, height: 400 },
   ],
   '4:5': [
+    { width: 540, height: 675 },
     { width: 1080, height: 1350 },
   ],
   '9:16': [
+    { width: 360, height: 640 },
     { width: 1080, height: 1920 },
   ],
 };
@@ -300,9 +305,17 @@ export async function handleConfigUpdate(
       height: height,
     });
     console.log('Configuration updated successfully');
-    // Note: Loading prompt is NOT updated here. It updates when an image arrives
-    // with the new prompt, confirming the backend is actually generating with it.
-    // This prevents showing the new prompt while old images are still in the buffer.
+
+    // Update generationPrompt since backend clears buffer on config update.
+    // Any new images will use the new prompt, so spinner should reflect this.
+    state.generationPrompt = trimmedPrompt;
+
+    // Update loading prompt immediately if overlay is visible
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingPrompt = document.getElementById('loading-prompt');
+    if (loadingOverlay && !loadingOverlay.classList.contains('hidden') && loadingPrompt) {
+      loadingPrompt.textContent = trimmedPrompt;
+    }
   } catch (error) {
     console.error('Configuration update failed:', error);
 

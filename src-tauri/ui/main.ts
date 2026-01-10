@@ -81,12 +81,19 @@ const elements: Elements = {
   previousButton: null,
   skipButton: null,
   acceptButton: null,
+  deleteButton: null,
   abortButton: null,
   pauseButton: null,
   pauseIcon: null,
   pauseLabel: null,
   themeToggle: null,
+  magnifierLens: null,
 };
+
+// Magnifier state
+let magnifierActive = false;
+const MAGNIFIER_SIZE = 200;
+const MAGNIFICATION = 3;
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
@@ -118,11 +125,13 @@ function cacheElements(): void {
   elements.previousButton = document.getElementById('previous-btn') as HTMLButtonElement | null;
   elements.skipButton = document.getElementById('skip-btn') as HTMLButtonElement | null;
   elements.acceptButton = document.getElementById('accept-btn') as HTMLButtonElement | null;
+  elements.deleteButton = document.getElementById('delete-btn') as HTMLButtonElement | null;
   elements.abortButton = document.getElementById('abort-btn') as HTMLButtonElement | null;
   elements.pauseButton = document.getElementById('pause-btn') as HTMLButtonElement | null;
   elements.pauseIcon = document.getElementById('pause-icon');
   elements.pauseLabel = document.getElementById('pause-label');
   elements.themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement | null;
+  elements.magnifierLens = document.getElementById('magnifier-lens');
 }
 
 function allElementsPresent(): boolean {
@@ -406,6 +415,12 @@ function handlePaused(payload: PausedPayload): void {
   state.isPaused = payload.paused || false;
   updatePauseButton();
   updateLoadingOverlayForPause();
+
+  // Flash the pause button when generation is paused to draw attention
+  if (state.isPaused && elements.pauseButton) {
+    ButtonFlash.flashButton(elements.pauseButton);
+  }
+
   console.log('Generation', state.isPaused ? 'paused' : 'resumed');
 }
 
@@ -447,14 +462,12 @@ function updatePauseButton(): void {
     elements.pauseIcon.textContent = '\u25B6';
     elements.pauseLabel.textContent = 'Resume';
     if (elements.pauseButton) {
-      elements.pauseButton.title = 'Resume image generation (Space)';
       elements.pauseButton.classList.add('paused');
     }
   } else {
     elements.pauseIcon.textContent = '\u23F8';
     elements.pauseLabel.textContent = 'Pause';
     if (elements.pauseButton) {
-      elements.pauseButton.title = 'Pause image generation (Space)';
       elements.pauseButton.classList.remove('paused');
     }
   }
@@ -554,9 +567,6 @@ function updateMetadataPanelFromRecord(record: ImageRecord | null, _listIdx: num
     if (elements.pathText) {
       elements.pathText.textContent = displayPathStr;
     }
-    if (elements.imagePathDisplay) {
-      elements.imagePathDisplay.title = absolutePath || 'Current image path';
-    }
     if (elements.copyPathBtn) {
       elements.copyPathBtn.style.display = absolutePath ? 'inline-flex' : 'none';
     }
@@ -568,9 +578,6 @@ function updateMetadataPanelFromRecord(record: ImageRecord | null, _listIdx: num
     metadataFinalSize.textContent = '—';
     if (elements.pathText) {
       elements.pathText.textContent = '—';
-    }
-    if (elements.imagePathDisplay) {
-      elements.imagePathDisplay.title = 'Current image path';
     }
     if (elements.copyPathBtn) {
       elements.copyPathBtn.style.display = 'none';
@@ -586,7 +593,9 @@ function clearMetadataPanel(): void {
 const MAX_VISIBLE_DOTS = 9;
 
 function updateNavDots(): void {
+  console.log('updateNavDots called, imageList.length:', state.imageList.length, 'navDots element:', elements.navDots);
   if (!elements.navDots) {
+    console.warn('updateNavDots: navDots element is null!');
     return;
   }
 
@@ -595,6 +604,7 @@ function updateNavDots(): void {
 
   // Clear existing dots
   elements.navDots.innerHTML = '';
+  console.log('updateNavDots: cleared dots, total:', total, 'currentIdx:', currentIdx);
 
   if (total === 0) {
     return;
@@ -606,6 +616,7 @@ function updateNavDots(): void {
       const dot = createNavDot(i, i === currentIdx);
       elements.navDots.appendChild(dot);
     }
+    console.log('updateNavDots: added', total, 'dots, navDots.children.length:', elements.navDots.children.length);
     return;
   }
 
@@ -723,6 +734,88 @@ function showLoading(show: boolean): void {
       elements.currentImage.classList.remove('hidden');
     }
   }
+}
+
+// Magnifier functions
+function isMagnifierActive(): boolean {
+  return magnifierActive;
+}
+
+function toggleMagnifier(): void {
+  if (!elements.magnifierLens || !elements.currentImage) {
+    return;
+  }
+
+  // Don't toggle if no image is displayed
+  if (!elements.currentImage.src || elements.currentImage.classList.contains('hidden')) {
+    return;
+  }
+
+  magnifierActive = !magnifierActive;
+
+  if (!magnifierActive) {
+    elements.magnifierLens.classList.add('hidden');
+  }
+}
+
+function updateMagnifierPosition(e: MouseEvent): void {
+  if (!magnifierActive || !elements.magnifierLens || !elements.currentImage || !elements.imageContainer) {
+    return;
+  }
+
+  // Get image and container bounds
+  const imgRect = elements.currentImage.getBoundingClientRect();
+  const containerRect = elements.imageContainer.getBoundingClientRect();
+
+  // Calculate cursor position relative to the image
+  const mouseX = e.clientX - imgRect.left;
+  const mouseY = e.clientY - imgRect.top;
+
+  // Check if cursor is within image bounds
+  if (mouseX < 0 || mouseX > imgRect.width || mouseY < 0 || mouseY > imgRect.height) {
+    elements.magnifierLens.classList.add('hidden');
+    return;
+  }
+
+  // Show magnifier
+  elements.magnifierLens.classList.remove('hidden');
+
+  // Calculate lens position relative to container (centered on cursor)
+  const lensRadius = MAGNIFIER_SIZE / 2;
+  const lensX = (e.clientX - containerRect.left) - lensRadius;
+  const lensY = (e.clientY - containerRect.top) - lensRadius;
+
+  // Position the lens
+  elements.magnifierLens.style.left = `${lensX}px`;
+  elements.magnifierLens.style.top = `${lensY}px`;
+
+  // Set background image to current image
+  elements.magnifierLens.style.backgroundImage = `url(${elements.currentImage.src})`;
+
+  // Calculate the magnified background position
+  // The background should be scaled by MAGNIFICATION and positioned so the point
+  // under the cursor appears at the center of the lens
+  const bgWidth = imgRect.width * MAGNIFICATION;
+  const bgHeight = imgRect.height * MAGNIFICATION;
+
+  // Position the background so the cursor point is centered in the lens
+  const bgX = (mouseX / imgRect.width) * bgWidth - lensRadius;
+  const bgY = (mouseY / imgRect.height) * bgHeight - lensRadius;
+
+  elements.magnifierLens.style.backgroundSize = `${bgWidth}px ${bgHeight}px`;
+  elements.magnifierLens.style.backgroundPosition = `-${bgX}px -${bgY}px`;
+}
+
+function hideMagnifier(): void {
+  if (!elements.magnifierLens) {
+    return;
+  }
+  elements.magnifierLens.classList.add('hidden');
+}
+
+function deactivateMagnifier(): void {
+  magnifierActive = false;
+  hideMagnifier();
 }
 
 function visualSuccessFeedback(): void {
@@ -881,6 +974,10 @@ function setupButtonListeners(): void {
     elements.acceptButton.addEventListener('click', accept);
   }
 
+  if (elements.deleteButton) {
+    elements.deleteButton.addEventListener('click', deleteCurrentImage);
+  }
+
   if (elements.abortButton) {
     elements.abortButton.addEventListener('click', abort);
   }
@@ -893,6 +990,17 @@ function setupButtonListeners(): void {
     elements.themeToggle.addEventListener('click', () => {
       ThemeManager.toggleTheme();
     });
+  }
+
+  // Click handler for magnifier toggle
+  if (elements.currentImage) {
+    elements.currentImage.addEventListener('click', toggleMagnifier);
+  }
+
+  // Mouse move handler for magnifier
+  if (elements.imageContainer) {
+    elements.imageContainer.addEventListener('mousemove', updateMagnifierPosition);
+    elements.imageContainer.addEventListener('mouseleave', hideMagnifier);
   }
 
   // Click handler for copy path button
@@ -957,7 +1065,12 @@ function setupKeyboardListeners(): void {
       accept();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      abort();
+      // Deactivate magnifier if active, otherwise abort
+      if (isMagnifierActive()) {
+        deactivateMagnifier();
+      } else {
+        abort();
+      }
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && ctrlOrCmd) {
       e.preventDefault();
       deleteCurrentImage();
@@ -990,6 +1103,9 @@ declare global {
       deleteCurrentImage: typeof deleteCurrentImage;
       cacheElements: typeof cacheElements;
       allElementsPresent: typeof allElementsPresent;
+      isMagnifierActive: typeof isMagnifierActive;
+      toggleMagnifier: typeof toggleMagnifier;
+      deactivateMagnifier: typeof deactivateMagnifier;
     };
   }
 }
@@ -1014,6 +1130,9 @@ if (typeof window !== 'undefined') {
     deleteCurrentImage,
     cacheElements,
     allElementsPresent,
+    isMagnifierActive,
+    toggleMagnifier,
+    deactivateMagnifier,
   };
 }
 

@@ -260,11 +260,11 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * Seed-based deterministic generation
 * Aspect ratio presets with predefined resolutions:
   - 1:1: 256×256, 512×512, 1024×1024
-  - 16:9: 1280×720, 1920×1080
-  - 3:1: 1500×500, 1800×600
-  - 4:1: 1600×400
-  - 4:5: 1080×1350
-  - 9:16: 1080×1920
+  - 16:9: 640×360, 1280×720, 1920×1080
+  - 3:1: 900×300, 1500×500, 1800×600
+  - 4:1: 1200×300, 1600×400
+  - 4:5: 540×675, 1080×1350
+  - 9:16: 360×640, 1080×1920
 * UI provides +/- buttons to cycle through available resolutions per ratio
 * PNG images include metadata: aspect ratio, dimensions, prompt, model, seed
 

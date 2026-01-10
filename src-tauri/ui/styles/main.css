@@ -199,9 +199,9 @@ body {
     flex: 1;
     display: flex;
     flex-direction: row;
-    padding: var(--spacing-lg);
+    padding: var(--spacing-sm);
     background: var(--bg-secondary);
-    gap: var(--spacing-lg);
+    gap: var(--spacing-sm);
     min-height: 0;
     overflow: hidden;
 }
@@ -437,6 +437,7 @@ body {
    ============================================================================ */
 
 .theme-toggle {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -452,6 +453,27 @@ body {
     font-size: 18px;
     flex-shrink: 0;
     margin-left: auto;
+}
+
+.theme-toggle::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 8px;
+    background: var(--accent-primary);
+    opacity: 0;
+    filter: blur(6px);
+    transition: opacity var(--transition-fast);
+    z-index: -1;
+    pointer-events: none;
+}
+
+.theme-toggle:hover::before {
+    opacity: 0.25;
+}
+
+.theme-toggle:active::before {
+    opacity: 0.35;
 }
 
 .theme-toggle:hover {
@@ -497,12 +519,30 @@ body {
 }
 
 .nav-dot {
+    position: relative;
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: var(--border-subtle);
     transition: all var(--transition-fast);
     cursor: pointer;
+}
+
+.nav-dot::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    opacity: 0;
+    filter: blur(4px);
+    transition: opacity var(--transition-fast);
+    z-index: -1;
+    pointer-events: none;
+}
+
+.nav-dot:hover::before {
+    opacity: 0.2;
 }
 
 .nav-dot:hover {
@@ -513,6 +553,10 @@ body {
 .nav-dot.active {
     background: var(--accent-primary);
     transform: scale(1.25);
+}
+
+.nav-dot.active::before {
+    opacity: 0.25;
 }
 
 .nav-ellipsis {
@@ -634,6 +678,7 @@ body {
 }
 
 .resolution-btn {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -649,6 +694,27 @@ body {
     cursor: pointer;
     transition: all var(--transition-fast);
     user-select: none;
+}
+
+.resolution-btn::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 6px;
+    background: var(--accent-primary);
+    opacity: 0;
+    filter: blur(6px);
+    transition: opacity var(--transition-fast);
+    z-index: -1;
+    pointer-events: none;
+}
+
+.resolution-btn:hover:not(:disabled)::before {
+    opacity: 0.3;
+}
+
+.resolution-btn:active:not(:disabled)::before {
+    opacity: 0.4;
 }
 
 .resolution-btn:hover:not(:disabled) {
@@ -674,7 +740,6 @@ body {
     min-width: 90px;
     text-align: center;
     font-family: var(--font-mono);
-    font-size: 12px;
     color: var(--text-primary);
     padding: 2px 8px;
     background: var(--bg-tertiary);
@@ -716,6 +781,7 @@ body {
 }
 
 .radio-label {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -723,6 +789,30 @@ body {
     color: var(--text-secondary);
     font-size: 11px;
     transition: color var(--transition-fast);
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: 4px;
+}
+
+.radio-label::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 6px;
+    background: var(--accent-primary);
+    opacity: 0;
+    filter: blur(6px);
+    transition: opacity var(--transition-fast);
+    z-index: -1;
+    pointer-events: none;
+}
+
+.radio-label:hover::before {
+    opacity: 0.2;
+}
+
+.radio-label:has(input:checked)::before {
+    opacity: 0.15;
 }
 
 .radio-label:hover {
@@ -764,17 +854,30 @@ body {
 
 .font-size-group {
     display: flex;
+    flex-direction: column;
     gap: 2px;
 }
 
 .font-size-option {
     padding: 2px 6px;
-    min-width: 24px;
     text-align: center;
 }
 
 .font-size-option span {
     font-weight: 600;
+}
+
+/* Each font size option displays in its own size */
+.font-size-small span {
+    font-size: 11px;
+}
+
+.font-size-medium span {
+    font-size: 13px;
+}
+
+.font-size-large span {
+    font-size: 15px;
 }
 
 /* Font Size Scale - applied to :root via data-font-size attribute */
@@ -790,10 +893,8 @@ body {
     --font-scale: 1.15;
 }
 
-/* Apply scaling to UI text elements */
+/* Apply scaling to UI text elements (1em-based) */
 .radio-label,
-.btn-label,
-.btn-shortcut,
 .metadata-label,
 .metadata-value,
 .buffer-text,
@@ -817,6 +918,22 @@ body {
     font-size: calc(var(--font-scale) * 16px);
 }
 
+.dimension-display {
+    font-size: calc(var(--font-scale) * 15px);
+}
+
+.btn-icon {
+    font-size: calc(var(--font-scale) * 20px);
+}
+
+.btn-label {
+    font-size: calc(var(--font-scale) * 13px);
+}
+
+.btn-shortcut {
+    font-size: calc(var(--font-scale) * 10px);
+}
+
 /* ============================================================================
    CONTROLS SECTION
    ============================================================================ */
@@ -836,12 +953,13 @@ body {
    ============================================================================ */
 
 .control-btn {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--spacing-xs);
     padding: var(--spacing-md) var(--spacing-xl);
-    min-width: 100px;
+    width: 110px;
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     background: var(--bg-secondary);
@@ -849,6 +967,31 @@ body {
     cursor: pointer;
     transition: all var(--transition-fast);
     font-family: var(--font-sans);
+}
+
+.control-btn::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 10px;
+    background: var(--accent-primary);
+    opacity: 0;
+    filter: blur(8px);
+    transition: opacity var(--transition-fast);
+    z-index: -1;
+    pointer-events: none;
+}
+
+.control-btn:hover::before {
+    animation: hoverGlowPulse 300ms ease-out forwards;
+}
+
+.control-btn:active::before {
+    opacity: 0.5;
+}
+
+.control-btn.btn-pressed::before {
+    animation: btnPressGlow 150ms ease-out forwards;
 }
 
 .control-btn:hover {
@@ -879,9 +1022,29 @@ body {
     background: rgba(34, 197, 94, 0.1);
 }
 
+.btn-accept:hover::before,
+.btn-accept.btn-pressed::before {
+    background: var(--accent-success);
+}
+
 .btn-abort:hover {
     border-color: var(--accent-danger);
     background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-abort:hover::before,
+.btn-abort.btn-pressed::before {
+    background: var(--accent-danger);
+}
+
+.btn-delete:hover {
+    border-color: var(--accent-danger);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-delete:hover::before,
+.btn-delete.btn-pressed::before {
+    background: var(--accent-danger);
 }
 
 .btn-prev:hover,
@@ -894,9 +1057,19 @@ body {
     background: rgba(245, 158, 11, 0.1);
 }
 
+.btn-pause:hover::before,
+.btn-pause.btn-pressed::before {
+    background: var(--accent-warning);
+}
+
 .btn-pause.paused {
     border-color: var(--accent-success);
     background: rgba(34, 197, 94, 0.1);
+}
+
+.btn-pause.paused::before {
+    background: var(--accent-success);
+    opacity: 0.2;
 }
 
 .btn-pause.paused:hover {
@@ -904,21 +1077,23 @@ body {
     background: rgba(34, 197, 94, 0.15);
 }
 
+.btn-pause.paused:hover::before {
+    opacity: 0.3;
+}
+
 /* ============================================================================
    BUTTON COMPONENT PARTS
    ============================================================================ */
 
 .btn-icon {
-    font-size: 20px;
+    /* font-size set in font scaling section */
 }
 
 .btn-label {
-    font-size: 13px;
     font-weight: 500;
 }
 
 .btn-shortcut {
-    font-size: 10px;
     color: var(--text-muted);
     font-family: var(--font-mono);
 }
@@ -929,7 +1104,6 @@ body {
 
 .prompt-input {
     font-family: var(--font-mono);
-    font-size: 15px;
     color: var(--text-primary);
     background: var(--bg-secondary);
     border: 1px solid var(--border-subtle);
@@ -1031,4 +1205,39 @@ body {
     .image-panel {
         min-height: 300px;
     }
+}
+
+/* ============================================================================
+   MAGNIFIER LENS
+   ============================================================================ */
+
+.magnifier-lens {
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.3),
+        0 4px 20px rgba(0, 0, 0, 0.4),
+        inset 0 0 40px rgba(255, 255, 255, 0.1);
+    pointer-events: none;
+    background-repeat: no-repeat;
+    z-index: 100;
+    opacity: 1;
+    transition: opacity var(--transition-fast);
+    overflow: hidden;
+}
+
+.magnifier-lens.hidden {
+    opacity: 0;
+}
+
+.current-image {
+    cursor: crosshair;
+    -webkit-user-drag: none;
+    user-drag: none;
+    -webkit-user-select: none;
+    user-select: none;
+    pointer-events: auto;
 }

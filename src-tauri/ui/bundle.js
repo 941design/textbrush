@@ -107,20 +107,25 @@ var ASPECT_RATIO_RESOLUTIONS = {
     { width: 1024, height: 1024 }
   ],
   "16:9": [
+    { width: 640, height: 360 },
     { width: 1280, height: 720 },
     { width: 1920, height: 1080 }
   ],
   "3:1": [
+    { width: 900, height: 300 },
     { width: 1500, height: 500 },
     { width: 1800, height: 600 }
   ],
   "4:1": [
+    { width: 1200, height: 300 },
     { width: 1600, height: 400 }
   ],
   "4:5": [
+    { width: 540, height: 675 },
     { width: 1080, height: 1350 }
   ],
   "9:16": [
+    { width: 360, height: 640 },
     { width: 1080, height: 1920 }
   ]
 };
@@ -286,6 +291,12 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
       height
     });
     console.log("Configuration updated successfully");
+    state2.generationPrompt = trimmedPrompt;
+    const loadingOverlay = document.getElementById("loading-overlay");
+    const loadingPrompt = document.getElementById("loading-prompt");
+    if (loadingOverlay && !loadingOverlay.classList.contains("hidden") && loadingPrompt) {
+      loadingPrompt.textContent = trimmedPrompt;
+    }
   } catch (error) {
     console.error("Configuration update failed:", error);
     state2.prompt = previousPrompt;
@@ -467,12 +478,7 @@ function flashButtonForKey(key, ctrlOrCmd = false) {
     case "Delete":
     case "Backspace":
       if (ctrlOrCmd) {
-        const imageContainer = document.getElementById("image-container");
-        if (imageContainer) {
-          flashButton(imageContainer);
-          return true;
-        }
-        return false;
+        return flashButtonById("delete-btn");
       }
       return false;
     default:
@@ -9017,12 +9023,17 @@ var elements = {
   previousButton: null,
   skipButton: null,
   acceptButton: null,
+  deleteButton: null,
   abortButton: null,
   pauseButton: null,
   pauseIcon: null,
   pauseLabel: null,
-  themeToggle: null
+  themeToggle: null,
+  magnifierLens: null
 };
+var magnifierActive = false;
+var MAGNIFIER_SIZE = 200;
+var MAGNIFICATION = 3;
 function cacheElements() {
   elements.app = document.getElementById("app");
   elements.headerBar = document.querySelector(".header-bar");
@@ -9053,11 +9064,13 @@ function cacheElements() {
   elements.previousButton = document.getElementById("previous-btn");
   elements.skipButton = document.getElementById("skip-btn");
   elements.acceptButton = document.getElementById("accept-btn");
+  elements.deleteButton = document.getElementById("delete-btn");
   elements.abortButton = document.getElementById("abort-btn");
   elements.pauseButton = document.getElementById("pause-btn");
   elements.pauseIcon = document.getElementById("pause-icon");
   elements.pauseLabel = document.getElementById("pause-label");
   elements.themeToggle = document.getElementById("theme-toggle");
+  elements.magnifierLens = document.getElementById("magnifier-lens");
 }
 function allElementsPresent() {
   return Object.values(elements).every((el) => el !== null);
@@ -9269,6 +9282,9 @@ function handlePaused(payload) {
   state.isPaused = payload.paused || false;
   updatePauseButton();
   updateLoadingOverlayForPause();
+  if (state.isPaused && elements.pauseButton) {
+    flashButton(elements.pauseButton);
+  }
   console.log("Generation", state.isPaused ? "paused" : "resumed");
 }
 function updateLoadingOverlayForPause() {
@@ -9302,14 +9318,12 @@ function updatePauseButton() {
     elements.pauseIcon.textContent = "\u25B6";
     elements.pauseLabel.textContent = "Resume";
     if (elements.pauseButton) {
-      elements.pauseButton.title = "Resume image generation (Space)";
       elements.pauseButton.classList.add("paused");
     }
   } else {
     elements.pauseIcon.textContent = "\u23F8";
     elements.pauseLabel.textContent = "Pause";
     if (elements.pauseButton) {
-      elements.pauseButton.title = "Pause image generation (Space)";
       elements.pauseButton.classList.remove("paused");
     }
   }
@@ -9386,9 +9400,6 @@ function updateMetadataPanelFromRecord(record, _listIdx = null) {
     if (elements.pathText) {
       elements.pathText.textContent = displayPathStr;
     }
-    if (elements.imagePathDisplay) {
-      elements.imagePathDisplay.title = absolutePath || "Current image path";
-    }
     if (elements.copyPathBtn) {
       elements.copyPathBtn.style.display = absolutePath ? "inline-flex" : "none";
     }
@@ -9401,9 +9412,6 @@ function updateMetadataPanelFromRecord(record, _listIdx = null) {
     if (elements.pathText) {
       elements.pathText.textContent = "\u2014";
     }
-    if (elements.imagePathDisplay) {
-      elements.imagePathDisplay.title = "Current image path";
-    }
     if (elements.copyPathBtn) {
       elements.copyPathBtn.style.display = "none";
     }
@@ -9414,12 +9422,15 @@ function clearMetadataPanel() {
 }
 var MAX_VISIBLE_DOTS = 9;
 function updateNavDots() {
+  console.log("updateNavDots called, imageList.length:", state.imageList.length, "navDots element:", elements.navDots);
   if (!elements.navDots) {
+    console.warn("updateNavDots: navDots element is null!");
     return;
   }
   const total = state.imageList.length;
   const currentIdx = state.currentIndex;
   elements.navDots.innerHTML = "";
+  console.log("updateNavDots: cleared dots, total:", total, "currentIdx:", currentIdx);
   if (total === 0) {
     return;
   }
@@ -9428,6 +9439,7 @@ function updateNavDots() {
       const dot = createNavDot(i, i === currentIdx);
       elements.navDots.appendChild(dot);
     }
+    console.log("updateNavDots: added", total, "dots, navDots.children.length:", elements.navDots.children.length);
     return;
   }
   const dotsToShow = [];
@@ -9514,6 +9526,57 @@ function showLoading(show) {
       elements.currentImage.classList.remove("hidden");
     }
   }
+}
+function isMagnifierActive() {
+  return magnifierActive;
+}
+function toggleMagnifier() {
+  if (!elements.magnifierLens || !elements.currentImage) {
+    return;
+  }
+  if (!elements.currentImage.src || elements.currentImage.classList.contains("hidden")) {
+    return;
+  }
+  magnifierActive = !magnifierActive;
+  if (!magnifierActive) {
+    elements.magnifierLens.classList.add("hidden");
+  }
+}
+function updateMagnifierPosition(e) {
+  if (!magnifierActive || !elements.magnifierLens || !elements.currentImage || !elements.imageContainer) {
+    return;
+  }
+  const imgRect = elements.currentImage.getBoundingClientRect();
+  const containerRect = elements.imageContainer.getBoundingClientRect();
+  const mouseX = e.clientX - imgRect.left;
+  const mouseY = e.clientY - imgRect.top;
+  if (mouseX < 0 || mouseX > imgRect.width || mouseY < 0 || mouseY > imgRect.height) {
+    elements.magnifierLens.classList.add("hidden");
+    return;
+  }
+  elements.magnifierLens.classList.remove("hidden");
+  const lensRadius = MAGNIFIER_SIZE / 2;
+  const lensX = e.clientX - containerRect.left - lensRadius;
+  const lensY = e.clientY - containerRect.top - lensRadius;
+  elements.magnifierLens.style.left = `${lensX}px`;
+  elements.magnifierLens.style.top = `${lensY}px`;
+  elements.magnifierLens.style.backgroundImage = `url(${elements.currentImage.src})`;
+  const bgWidth = imgRect.width * MAGNIFICATION;
+  const bgHeight = imgRect.height * MAGNIFICATION;
+  const bgX = mouseX / imgRect.width * bgWidth - lensRadius;
+  const bgY = mouseY / imgRect.height * bgHeight - lensRadius;
+  elements.magnifierLens.style.backgroundSize = `${bgWidth}px ${bgHeight}px`;
+  elements.magnifierLens.style.backgroundPosition = `-${bgX}px -${bgY}px`;
+}
+function hideMagnifier() {
+  if (!elements.magnifierLens) {
+    return;
+  }
+  elements.magnifierLens.classList.add("hidden");
+}
+function deactivateMagnifier() {
+  magnifierActive = false;
+  hideMagnifier();
 }
 function visualSuccessFeedback() {
   if (elements.imageContainer) {
@@ -9647,6 +9710,9 @@ function setupButtonListeners() {
   if (elements.acceptButton) {
     elements.acceptButton.addEventListener("click", accept);
   }
+  if (elements.deleteButton) {
+    elements.deleteButton.addEventListener("click", deleteCurrentImage2);
+  }
   if (elements.abortButton) {
     elements.abortButton.addEventListener("click", abort);
   }
@@ -9657,6 +9723,13 @@ function setupButtonListeners() {
     elements.themeToggle.addEventListener("click", () => {
       toggleTheme();
     });
+  }
+  if (elements.currentImage) {
+    elements.currentImage.addEventListener("click", toggleMagnifier);
+  }
+  if (elements.imageContainer) {
+    elements.imageContainer.addEventListener("mousemove", updateMagnifierPosition);
+    elements.imageContainer.addEventListener("mouseleave", hideMagnifier);
   }
   if (elements.copyPathBtn) {
     elements.copyPathBtn.addEventListener("click", () => {
@@ -9711,7 +9784,11 @@ function setupKeyboardListeners() {
       accept();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      abort();
+      if (isMagnifierActive()) {
+        deactivateMagnifier();
+      } else {
+        abort();
+      }
     } else if ((e.key === "Delete" || e.key === "Backspace") && ctrlOrCmd) {
       e.preventDefault();
       deleteCurrentImage2();
@@ -9740,7 +9817,10 @@ if (typeof window !== "undefined") {
     updatePauseButton,
     deleteCurrentImage: deleteCurrentImage2,
     cacheElements,
-    allElementsPresent
+    allElementsPresent,
+    isMagnifierActive,
+    toggleMagnifier,
+    deactivateMagnifier
   };
 }
 if (document.readyState === "loading") {

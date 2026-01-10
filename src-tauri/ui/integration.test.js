@@ -23,7 +23,8 @@ describe('UI Enhancements Integration Tests', () => {
           <button id="previous-btn">Prev</button>
           <button id="pause-btn">Pause</button>
           <button id="skip-btn">Next</button>
-          <button id="accept-btn">Accept</button>
+          <button id="delete-btn">Delete</button>
+          <button id="accept-btn">Done</button>
           <button id="abort-btn">Abort</button>
           <div id="image-container"></div>
         </body>
@@ -262,19 +263,19 @@ describe('UI Enhancements Integration Tests', () => {
       assert.strictEqual(unmappedResult, false, 'Unmapped key returns false');
     });
 
-    it('should flash image container for Cmd/Ctrl+Delete', () => {
-      const imageContainer = document.getElementById('image-container');
+    it('should flash delete button for Cmd/Ctrl+Delete', () => {
+      const deleteBtn = document.getElementById('delete-btn');
 
       // Test Delete with modifier
       const result = ButtonFlash.flashButtonForKey('Delete', true);
-      assert.strictEqual(result, true, 'Image container flashed for Cmd/Ctrl+Delete');
-      assert.ok(imageContainer.classList.contains('btn-pressed'), 'Image container has btn-pressed class');
+      assert.strictEqual(result, true, 'Delete button flashed for Cmd/Ctrl+Delete');
+      assert.ok(deleteBtn.classList.contains('btn-pressed'), 'Delete button has btn-pressed class');
 
       // Test Delete without modifier - should not flash
-      imageContainer.classList.remove('btn-pressed');
+      deleteBtn.classList.remove('btn-pressed');
       const noModResult = ButtonFlash.flashButtonForKey('Delete', false);
       assert.strictEqual(noModResult, false, 'Delete without modifier returns false');
-      assert.ok(!imageContainer.classList.contains('btn-pressed'), 'Image container not flashed without modifier');
+      assert.ok(!deleteBtn.classList.contains('btn-pressed'), 'Delete button not flashed without modifier');
     });
   });
 

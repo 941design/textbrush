@@ -13,8 +13,8 @@ function setupDOM() {
       <button id="pause-btn">Pause</button>
       <button id="skip-btn">Skip</button>
       <button id="accept-btn">Accept</button>
+      <button id="delete-btn">Delete</button>
       <button id="abort-btn">Abort</button>
-      <div id="image-container"></div>
     </body>
     </html>
   `;
@@ -218,7 +218,7 @@ test('flashButtonById - Handle Various Button ID Formats', () => {
   global.window = window;
   global.document = window.document;
 
-  const ids = ['previous-btn', 'skip-btn', 'accept-btn', 'abort-btn', 'image-container'];
+  const ids = ['previous-btn', 'skip-btn', 'accept-btn', 'delete-btn', 'abort-btn'];
 
   ids.forEach((id) => {
     const result = flashButtonById(id);
@@ -307,7 +307,7 @@ test('flashButtonForKey - Map All Keys Correctly', () => {
   });
 });
 
-test('flashButtonForKey - Delete with Cmd to image-container', () => {
+test('flashButtonForKey - Delete with Cmd to delete-btn', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
@@ -315,10 +315,10 @@ test('flashButtonForKey - Delete with Cmd to image-container', () => {
   const result = flashButtonForKey('Delete', true);
 
   assert.strictEqual(result, true);
-  assert(window.document.getElementById('image-container').classList.contains('btn-pressed'));
+  assert(window.document.getElementById('delete-btn').classList.contains('btn-pressed'));
 });
 
-test('flashButtonForKey - Backspace with Cmd to image-container', () => {
+test('flashButtonForKey - Backspace with Cmd to delete-btn', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
@@ -326,7 +326,7 @@ test('flashButtonForKey - Backspace with Cmd to image-container', () => {
   const result = flashButtonForKey('Backspace', true);
 
   assert.strictEqual(result, true);
-  assert(window.document.getElementById('image-container').classList.contains('btn-pressed'));
+  assert(window.document.getElementById('delete-btn').classList.contains('btn-pressed'));
 });
 
 test('flashButtonForKey - Delete Without Cmd Ignored', () => {
@@ -424,12 +424,12 @@ test('flashButtonForKey - Handle Gracefully When Button Missing', () => {
   });
 });
 
-test('flashButtonForKey - Image Container Missing Return False', () => {
+test('flashButtonForKey - Delete Button Missing Return False', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
 
-  window.document.getElementById('image-container').remove();
+  window.document.getElementById('delete-btn').remove();
 
   const result = flashButtonForKey('Delete', true);
 

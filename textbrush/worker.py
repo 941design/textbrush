@@ -31,6 +31,7 @@ class GenerationWorker:
         prompt: str,
         options: GenerationOptions,
         on_generation_start: OnGenerationStartCallback | None = None,
+        start_paused: bool = False,
     ):
         """Initialize worker with engine, buffer, and generation parameters.
 
@@ -42,12 +43,14 @@ class GenerationWorker:
             - options: GenerationOptions with seed, dimensions, steps, aspect_ratio
             - on_generation_start: optional callback invoked before each generation
               with (seed, queue_position) args
+            - start_paused: if True, worker starts in paused state
 
           Outputs: none (constructs instance)
 
           Invariants:
             - Worker starts in stopped state
             - Thread is not started until start() is called
+            - If start_paused=True, worker starts paused (requires resume to generate)
 
           Properties:
             - Non-blocking: constructor returns immediately
@@ -61,7 +64,9 @@ class GenerationWorker:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
-        self._pause_event.set()  # Start in running state (set = running)
+        if not start_paused:
+            self._pause_event.set()  # Set = running state
+        # If start_paused=True, leave _pause_event cleared (paused state)
         self._error_queue: queue.Queue[Exception] = queue.Queue(maxsize=1)
 
     def start(self) -> None:
@@ -162,6 +167,42 @@ class GenerationWorker:
         """
         logger.info("Resuming generation")
         self._pause_event.set()
+
+    def update_config(
+        self,
+        prompt: str,
+        options: "GenerationOptions",
+        on_generation_start: OnGenerationStartCallback | None = None,
+    ) -> None:
+        """Update generation configuration without restarting worker.
+
+        CONTRACT:
+          Inputs:
+            - prompt: non-empty string, text description for generation
+            - options: GenerationOptions with seed, dimensions, steps, aspect_ratio
+            - on_generation_start: optional callback (if None, keeps existing callback)
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - Worker thread continues running (paused or active)
+            - New config takes effect on next generation iteration
+            - Pause state is preserved
+
+          Properties:
+            - Thread-safe: can be called while worker is paused or running
+            - Non-blocking: returns immediately
+            - Immediate: changes are visible to worker on next iteration
+
+          Algorithm:
+            1. Update self.prompt
+            2. Update self.options
+            3. If on_generation_start provided, update callback
+        """
+        self.prompt = prompt
+        self.options = options
+        if on_generation_start is not None:
+            self._on_generation_start = on_generation_start
 
     def is_paused(self) -> bool:
         """Check if generation is paused.

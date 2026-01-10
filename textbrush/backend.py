@@ -73,6 +73,7 @@ class TextbrushBackend:
         width: int | None = None,
         height: int | None = None,
         on_generation_start: OnGenerationStartCallback | None = None,
+        start_paused: bool = False,
     ) -> None:
         """Begin background image generation.
 
@@ -85,6 +86,7 @@ class TextbrushBackend:
             - height: optional int, image height in pixels (overrides aspect_ratio)
             - on_generation_start: optional callback invoked before each generation
               with (seed, queue_position) args
+            - start_paused: if True, worker starts in paused state
 
           Outputs: none (modifies internal state)
 
@@ -94,6 +96,7 @@ class TextbrushBackend:
             - Starts worker thread
             - After start_generation(), worker is filling buffer
             - If both width and height are provided, they override aspect_ratio
+            - If start_paused=True, worker starts paused (requires resume to generate)
 
           Properties:
             - Non-blocking: returns immediately, generation runs in background
@@ -105,7 +108,7 @@ class TextbrushBackend:
             1. Check engine.is_loaded(), raise RuntimeError if not loaded
             2. Reset buffer shutdown state to allow put/get operations
             3. Create GenerationOptions with seed, aspect_ratio, and optional dimensions
-            4. Create GenerationWorker with engine, buffer, prompt, options, callback
+            4. Create GenerationWorker with engine, buffer, prompt, options, callback, start_paused
             5. Start worker thread
         """
         if not self.engine.is_loaded():
@@ -126,6 +129,7 @@ class TextbrushBackend:
             prompt=prompt,
             options=options,
             on_generation_start=on_generation_start,
+            start_paused=start_paused,
         )
         self._worker.start()
 
@@ -418,6 +422,56 @@ class TextbrushBackend:
         if self._worker:
             return self._worker.is_paused()
         return False
+
+    def update_config(
+        self,
+        prompt: str,
+        aspect_ratio: str = "1:1",
+        width: int | None = None,
+        height: int | None = None,
+        on_generation_start: OnGenerationStartCallback | None = None,
+    ) -> None:
+        """Update generation configuration without restarting worker.
+
+        CONTRACT:
+          Inputs:
+            - prompt: non-empty string, text description
+            - aspect_ratio: string, one of "1:1", "16:9", "9:16", or "custom"
+            - width: optional int, image width in pixels (overrides aspect_ratio)
+            - height: optional int, image height in pixels (overrides aspect_ratio)
+            - on_generation_start: optional callback invoked before each generation
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - Worker must exist (start_generation() called before)
+            - Worker thread continues running (not stopped/restarted)
+            - Buffer is cleared (old images are stale)
+            - Pause state is preserved
+
+          Properties:
+            - Non-blocking: returns immediately
+            - Thread-safe: can be called while worker is paused or running
+            - Buffer cleared: existing images discarded since config changed
+
+          Algorithm:
+            1. Raise RuntimeError if no worker exists
+            2. Create new GenerationOptions with seed=None (auto-generate)
+            3. Call worker.update_config() with new prompt and options
+            4. Clear buffer (old images are stale)
+        """
+        if not self._worker:
+            raise RuntimeError("No worker to update. Call start_generation() first.")
+
+        options = GenerationOptions(
+            seed=None,
+            steps=4,
+            aspect_ratio=aspect_ratio,
+            width=width if width is not None else 512,
+            height=height if height is not None else 512,
+        )
+        self._worker.update_config(prompt, options, on_generation_start)
+        self.buffer.clear()
 
     def _generate_output_path(self) -> Path:
         """Generate output path for accepted image.

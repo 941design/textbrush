@@ -23,11 +23,15 @@ class FluxInferenceEngine(InferenceEngine):
 
     MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 
-    # Aspect ratio to dimensions mapping
+    # Aspect ratio to dimensions mapping (default resolutions for each ratio)
+    # Values must be divisible by 16 (FLUX model requirement)
     ASPECT_RATIOS = {
         "1:1": (1024, 1024),
-        "16:9": (1344, 768),
-        "9:16": (768, 1344),
+        "16:9": (1280, 720),
+        "3:1": (1536, 512),
+        "4:1": (1600, 400),
+        "4:5": (1024, 1280),
+        "9:16": (720, 1280),
     }
 
     @staticmethod
@@ -36,7 +40,7 @@ class FluxInferenceEngine(InferenceEngine):
 
         CONTRACT:
           Inputs:
-            - aspect_ratio: string, one of "1:1", "16:9", "9:16"
+            - aspect_ratio: string, one of "1:1", "16:9", "3:1", "4:1", "4:5", "9:16"
 
           Outputs:
             - tuple of two integers (width, height)

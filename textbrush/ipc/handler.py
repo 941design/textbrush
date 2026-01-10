@@ -335,7 +335,7 @@ class MessageHandler:
             )
 
     def handle_update_config(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle UPDATE_CONFIG command: restart generation with new configuration.
+        """Handle UPDATE_CONFIG command: update generation configuration.
 
         CONTRACT:
           Inputs:
@@ -348,21 +348,21 @@ class MessageHandler:
           Invariants:
             - If backend not initialized: sends non-fatal ERROR event
             - If backend exists:
-              * Calls backend.abort() to stop current worker and clear buffer
-              * Calls backend.start_generation() with new prompt, aspect_ratio, dimensions
+              * Calls backend.update_config() to update worker settings
+              * Buffer is cleared (old images are stale)
               * Sends BUFFER_STATUS event showing reset buffer (count=0)
               * Image delivery thread continues, will deliver new images
-            - Pause state is preserved: if paused before, remains paused after
+            - Pause state is preserved: worker thread stays alive, not restarted
 
           Properties:
-            - Thread-safe: uses backend's thread-safe abort() and start_generation()
-            - Non-blocking: returns quickly after starting restart sequence
+            - Thread-safe: uses backend's thread-safe update_config()
+            - Non-blocking: returns quickly after updating configuration
             - Continuous delivery: image delivery thread not restarted, continues running
             - Seed handling: new generation uses auto-generated seeds (seed=None)
             - Buffer cleared: all pending images from old generation are purged
             - Error handling: sends non-fatal ERROR if backend not initialized
             - Dimension priority: explicit width/height override aspect_ratio
-            - Pause preservation: paused state survives config updates
+            - Pause preservation: worker thread stays alive, pause state unchanged
 
           Algorithm:
             1. Parse payload into UpdateConfigCommand dataclass
@@ -371,29 +371,23 @@ class MessageHandler:
                b. Return
             3. Validate aspect_ratio only if no explicit dimensions provided
             4. Log config update with truncated prompt
-            5. Save current pause state via backend.is_paused()
-            6. Call backend.abort():
-               - Stops current GenerationWorker thread
-               - Clears buffer via buffer.clear()
-               - Waits for worker to finish
-            7. Call backend.start_generation():
-               - Creates new GenerationWorker with updated config
-               - Seed is None (auto-generate)
-               - Starts new worker thread
-            8. If was paused: call backend.pause_generation() to restore pause
-            9. Send BUFFER_STATUS event:
+            5. Get current pause state via backend.is_paused()
+            6. Call backend.update_config():
+               - Updates worker's prompt and options in-place
+               - Clears buffer (old images are stale)
+               - Worker thread stays alive (not stopped/restarted)
+            7. Send BUFFER_STATUS event:
                - count: 0 (buffer was just cleared)
                - max: backend.buffer.max_size
                - generating: True only if not paused
-            10. Return (image delivery thread will deliver new images automatically)
+            8. Return (image delivery thread will deliver new images automatically)
 
         Thread Safety:
-          - backend.abort() is thread-safe: stops worker, waits for completion
-          - backend.start_generation() is thread-safe: creates new worker
-          - buffer.clear() is atomic (called by abort())
+          - backend.update_config() is thread-safe: updates worker config
+          - buffer.clear() is atomic (called by update_config())
           - Image delivery thread continues running, will automatically:
             * Wait on empty buffer after clear
-            * Receive new images when new worker produces them
+            * Receive new images when worker produces them
             * No race conditions: buffer operations are thread-safe
         """
         from textbrush.ipc.protocol import ErrorEvent, UpdateConfigCommand
@@ -453,22 +447,16 @@ class MessageHandler:
                 )
             )
 
-        # Preserve pause state across config update
+        # Get pause state for buffer status event
         was_paused = self.backend.is_paused()
 
-        self.backend.abort()
-        self.backend.start_generation(
+        self.backend.update_config(
             prompt=cmd.prompt,
-            seed=None,
             aspect_ratio=cmd.aspect_ratio,
             width=cmd.width,
             height=cmd.height,
             on_generation_start=on_generation_start,
         )
-
-        # Restore pause state if was paused before
-        if was_paused:
-            self.backend.pause_generation()
 
         server.send(
             Message(
