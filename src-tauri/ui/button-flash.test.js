@@ -9,9 +9,9 @@ function setupDOM() {
     <html>
     <head></head>
     <body>
-      <button id="previous-btn">Previous</button>
+      <button id="prev-btn">Previous</button>
       <button id="pause-btn">Pause</button>
-      <button id="skip-btn">Skip</button>
+      <button id="next-btn">Skip</button>
       <button id="accept-btn">Accept</button>
       <button id="delete-btn">Delete</button>
       <button id="abort-btn">Abort</button>
@@ -66,7 +66,7 @@ test('flashButton - Class Addition Property', () => {
   global.window = window;
   global.document = window.document;
 
-  const button = window.document.getElementById('skip-btn');
+  const button = window.document.getElementById('next-btn');
   assert(!button.classList.contains('btn-pressed'));
 
   flashButton(button);
@@ -90,7 +90,7 @@ test('flashButton - Idempotency: Multiple Rapid Calls', () => {
   global.window = window;
   global.document = window.document;
 
-  const button = window.document.getElementById('skip-btn');
+  const button = window.document.getElementById('next-btn');
 
   flashButton(button);
   flashButton(button);
@@ -137,9 +137,9 @@ test('flashButtonById - Get Element By ID Call', () => {
     return originalGetElementById.call(window.document, id);
   };
 
-  flashButtonById('skip-btn');
+  flashButtonById('next-btn');
 
-  assert.strictEqual(queriedId, 'skip-btn');
+  assert.strictEqual(queriedId, 'next-btn');
 
   window.document.getElementById = originalGetElementById;
 });
@@ -149,7 +149,7 @@ test('flashButtonById - Return True When Found', () => {
   global.window = window;
   global.document = window.document;
 
-  const result = flashButtonById('skip-btn');
+  const result = flashButtonById('next-btn');
 
   assert.strictEqual(result, true);
 });
@@ -170,7 +170,7 @@ test('flashButtonById - Returns Boolean Always', () => {
   global.document = window.document;
 
   const results = [
-    flashButtonById('skip-btn'),
+    flashButtonById('next-btn'),
     flashButtonById('missing-btn'),
     flashButtonById('accept-btn'),
     flashButtonById('does-not-exist'),
@@ -186,10 +186,10 @@ test('flashButtonById - Add Class When Found', () => {
   global.window = window;
   global.document = window.document;
 
-  const button = window.document.getElementById('skip-btn');
+  const button = window.document.getElementById('next-btn');
   assert(!button.classList.contains('btn-pressed'));
 
-  flashButtonById('skip-btn');
+  flashButtonById('next-btn');
 
   assert(button.classList.contains('btn-pressed'));
 });
@@ -218,7 +218,7 @@ test('flashButtonById - Handle Various Button ID Formats', () => {
   global.window = window;
   global.document = window.document;
 
-  const ids = ['previous-btn', 'skip-btn', 'accept-btn', 'delete-btn', 'abort-btn'];
+  const ids = ['prev-btn', 'next-btn', 'accept-btn', 'delete-btn', 'abort-btn'];
 
   ids.forEach((id) => {
     const result = flashButtonById(id);
@@ -226,7 +226,7 @@ test('flashButtonById - Handle Various Button ID Formats', () => {
   });
 });
 
-test('flashButtonForKey - Map ArrowLeft to previous-btn', () => {
+test('flashButtonForKey - Map ArrowLeft to prev-btn', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
@@ -234,10 +234,10 @@ test('flashButtonForKey - Map ArrowLeft to previous-btn', () => {
   const result = flashButtonForKey('ArrowLeft');
 
   assert.strictEqual(result, true);
-  assert(window.document.getElementById('previous-btn').classList.contains('btn-pressed'));
+  assert(window.document.getElementById('prev-btn').classList.contains('btn-pressed'));
 });
 
-test('flashButtonForKey - Map ArrowRight to skip-btn', () => {
+test('flashButtonForKey - Map ArrowRight to next-btn', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
@@ -245,7 +245,7 @@ test('flashButtonForKey - Map ArrowRight to skip-btn', () => {
   const result = flashButtonForKey('ArrowRight');
 
   assert.strictEqual(result, true);
-  assert(window.document.getElementById('skip-btn').classList.contains('btn-pressed'));
+  assert(window.document.getElementById('next-btn').classList.contains('btn-pressed'));
 });
 
 test('flashButtonForKey - Map Space to pause-btn', () => {
@@ -287,8 +287,8 @@ test('flashButtonForKey - Map All Keys Correctly', () => {
   global.document = window.document;
 
   const keyMappings = {
-    ArrowLeft: 'previous-btn',
-    ArrowRight: 'skip-btn',
+    ArrowLeft: 'prev-btn',
+    ArrowRight: 'next-btn',
     ' ': 'pause-btn',
     Enter: 'accept-btn',
     Escape: 'abort-btn',
@@ -400,7 +400,7 @@ test('flashButtonForKey - Return False When Button Missing', () => {
   global.window = window;
   global.document = window.document;
 
-  window.document.getElementById('previous-btn').remove();
+  window.document.getElementById('prev-btn').remove();
 
   const result = flashButtonForKey('ArrowLeft');
 
@@ -413,10 +413,10 @@ test('flashButtonForKey - Handle Gracefully When Button Missing', () => {
   global.document = window.document;
 
   assert.doesNotThrow(() => {
-    window.document.getElementById('previous-btn').remove();
+    window.document.getElementById('prev-btn').remove();
     flashButtonForKey('ArrowLeft');
 
-    window.document.getElementById('skip-btn').remove();
+    window.document.getElementById('next-btn').remove();
     flashButtonForKey('ArrowRight');
 
     window.document.getElementById('accept-btn').remove();
@@ -467,7 +467,7 @@ test('Integration - Preserve DOM State After Invalid Operations', () => {
   global.window = window;
   global.document = window.document;
 
-  const skipBtn = window.document.getElementById('skip-btn');
+  const skipBtn = window.document.getElementById('next-btn');
   const beforeClasses = skipBtn.className;
 
   flashButtonForKey('InvalidKey');
@@ -484,7 +484,7 @@ test('Integration - Button ID Semantics Across Functions', () => {
   global.window = window;
   global.document = window.document;
 
-  const buttons = ['previous-btn', 'skip-btn', 'accept-btn', 'abort-btn'];
+  const buttons = ['prev-btn', 'next-btn', 'accept-btn', 'abort-btn'];
 
   buttons.forEach((btnId) => {
     const button = window.document.getElementById(btnId);
@@ -497,7 +497,7 @@ test('Property - Class Addition Idempotent', () => {
   global.window = window;
   global.document = window.document;
 
-  const button = window.document.getElementById('skip-btn');
+  const button = window.document.getElementById('next-btn');
 
   flashButton(button);
   const firstState = button.classList.contains('btn-pressed');

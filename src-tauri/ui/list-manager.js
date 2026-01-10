@@ -3,7 +3,7 @@
 /**
  * Navigate to previous image in list.
  */
-export function navigateToPrevious(state, displayImage) {
+export function navigateToPrev(state, displayImage) {
     if (state.currentIndex <= 0) {
         return false;
     }
@@ -75,5 +75,5 @@ export function getPositionIndicator(state) {
     }
     const current = state.currentIndex + 1;
     const total = state.imageList.length;
-    return `[${current}]/${total}]`;
+    return `[${current}/${total}]`;
 }

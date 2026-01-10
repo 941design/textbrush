@@ -559,12 +559,39 @@ body {
     opacity: 0.25;
 }
 
-.nav-ellipsis {
-    color: var(--text-muted);
-    font-size: 12px;
-    letter-spacing: 2px;
+/* Spinner dot styling - hollow circle to indicate loading position */
+.nav-dot.spinner-dot {
+    background: transparent;
+    border: 2px solid var(--border-subtle);
+    box-sizing: border-box;
+}
+
+.nav-dot.spinner-dot:hover {
+    border-color: var(--text-muted);
+}
+
+.nav-dot.spinner-dot.active {
+    border-color: var(--accent-primary);
+    background: transparent;
+}
+
+/* Gap indicator - 3 small dots that match nav-dot height */
+.nav-gap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 8px; /* Same height as nav-dot */
     padding: 0 4px;
     user-select: none;
+}
+
+.nav-gap-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.5;
 }
 
 /* ============================================================================
@@ -682,10 +709,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: calc(var(--font-scale) * 24px);
+    height: calc(var(--font-scale) * 24px);
     padding: 0;
-    font-size: 16px;
+    font-size: calc(var(--font-scale) * 16px);
     font-weight: 600;
     background: var(--bg-secondary);
     color: var(--text-primary);
@@ -901,8 +928,7 @@ body {
 .image-path-display,
 .prompt-display,
 .loading-label,
-.loading-prompt,
-.nav-ellipsis {
+.loading-prompt {
     font-size: calc(var(--font-scale) * 1em);
 }
 

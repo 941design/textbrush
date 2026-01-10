@@ -78,8 +78,8 @@ const elements: Elements = {
   pathText: null,
   copyPathBtn: null,
   controls: null,
-  previousButton: null,
-  skipButton: null,
+  prevButton: null,
+  nextButton: null,
   acceptButton: null,
   deleteButton: null,
   abortButton: null,
@@ -122,8 +122,8 @@ function cacheElements(): void {
   elements.pathText = document.getElementById('path-text');
   elements.copyPathBtn = document.getElementById('copy-path-btn') as HTMLButtonElement | null;
   elements.controls = document.querySelector('.controls');
-  elements.previousButton = document.getElementById('previous-btn') as HTMLButtonElement | null;
-  elements.skipButton = document.getElementById('skip-btn') as HTMLButtonElement | null;
+  elements.prevButton = document.getElementById('prev-btn') as HTMLButtonElement | null;
+  elements.nextButton = document.getElementById('next-btn') as HTMLButtonElement | null;
   elements.acceptButton = document.getElementById('accept-btn') as HTMLButtonElement | null;
   elements.deleteButton = document.getElementById('delete-btn') as HTMLButtonElement | null;
   elements.abortButton = document.getElementById('abort-btn') as HTMLButtonElement | null;
@@ -190,6 +190,7 @@ async function init(): Promise<void> {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
+    setupResizeObserver();
 
     // Initialize image generation
     await invoke('init_generation', {
@@ -589,131 +590,240 @@ function clearMetadataPanel(): void {
   updateMetadataPanelFromRecord(null, null);
 }
 
-// Maximum number of dots to display before using ellipsis
-const MAX_VISIBLE_DOTS = 9;
+// Dimensions for nav dot layout calculation (must match CSS)
+const DOT_WIDTH = 8;      // .nav-dot width
+const DOT_GAP = 6;        // .nav-dots gap
+const GAP_INDICATOR_WIDTH = 20; // Width of gap indicator (3 small dots + spacing)
 
+/**
+ * Calculate max number of dots that fit in given width.
+ * For N dots: width = N * DOT_WIDTH + (N - 1) * DOT_GAP = N * (DOT_WIDTH + DOT_GAP) - DOT_GAP
+ */
+function maxDotsForWidth(width: number): number {
+  if (width <= 0) return 0;
+  // N * (DOT_WIDTH + DOT_GAP) - DOT_GAP <= width
+  // N <= (width + DOT_GAP) / (DOT_WIDTH + DOT_GAP)
+  return Math.floor((width + DOT_GAP) / (DOT_WIDTH + DOT_GAP));
+}
+
+/**
+ * Update navigation dots display.
+ *
+ * The navigation model:
+ * - Total positions = imageList.length + 1 (images + spinner)
+ * - Position 0 to imageList.length-1 are images
+ * - Position imageList.length is always the "loading/spinner" position
+ * - Minimum 1 dot (spinner when no images)
+ * - Active position: waitingForNext or no images → spinner; otherwise → currentIndex
+ */
 function updateNavDots(): void {
-  console.log('updateNavDots called, imageList.length:', state.imageList.length, 'navDots element:', elements.navDots);
   if (!elements.navDots) {
-    console.warn('updateNavDots: navDots element is null!');
     return;
   }
 
-  const total = state.imageList.length;
-  const currentIdx = state.currentIndex;
+  const imageCount = state.imageList.length;
+  // Total positions = images + 1 (spinner is always the last position)
+  const totalPositions = imageCount + 1;
+
+  // Determine active position
+  // If waitingForNext or no images, active is the spinner (last position)
+  // Otherwise, active is currentIndex
+  let activePosition: number;
+  if (state.waitingForNext || imageCount === 0) {
+    activePosition = imageCount; // Last position = spinner
+  } else {
+    activePosition = state.currentIndex;
+  }
 
   // Clear existing dots
   elements.navDots.innerHTML = '';
-  console.log('updateNavDots: cleared dots, total:', total, 'currentIdx:', currentIdx);
 
-  if (total === 0) {
-    return;
-  }
+  // Calculate available width from parent container
+  const container = elements.navDots.parentElement;
+  const availableWidth = container ? container.clientWidth - 32 : 400; // 32px padding buffer
+  const maxDots = maxDotsForWidth(availableWidth);
 
-  // If total is within limit, show all dots
-  if (total <= MAX_VISIBLE_DOTS) {
-    for (let i = 0; i < total; i++) {
-      const dot = createNavDot(i, i === currentIdx);
+  // If all positions fit, show them all
+  if (totalPositions <= maxDots) {
+    for (let i = 0; i < totalPositions; i++) {
+      const isSpinner = i === imageCount;
+      const dot = createNavDot(i, i === activePosition, isSpinner);
       elements.navDots.appendChild(dot);
     }
-    console.log('updateNavDots: added', total, 'dots, navDots.children.length:', elements.navDots.children.length);
+    announceNavigation(activePosition, totalPositions);
     return;
   }
 
-  // Otherwise, use ellipsis in the middle
-  // Pattern: [first few] ... [current area] ... [last few]
-  // We want to show: first 2, current-1, current, current+1, last 2
-  // With ellipsis between groups when there are gaps
+  // Need gap indicators - calculate how many dots we can show
+  // Reserve space for up to 2 gap indicators
+  const maxGapIndicators = 2;
+  const widthForDots = availableWidth - (maxGapIndicators * (GAP_INDICATOR_WIDTH + DOT_GAP));
+  const dotsAvailable = Math.max(3, maxDotsForWidth(widthForDots)); // At least 3 dots (first, active, last)
 
-  const dotsToShow: Array<number | 'ellipsis'> = [];
-  const leftEdge = 2; // Show first 2 dots
-  const rightEdge = total - 2; // Last 2 dots start here
+  // Strategy: always show first dot, last dot (spinner), and current area
+  // Distribute remaining dots to edges
+  const minEdgeDots = 1; // At least first and last
+  const remainingDots = dotsAvailable - 2; // After reserving first and spinner
+  const currentRadius = Math.max(0, Math.floor(remainingDots / 2));
 
-  // Always show first 2
-  for (let i = 0; i < Math.min(leftEdge, total); i++) {
-    dotsToShow.push(i);
+  const dotsToShow: Array<number | 'gap'> = [];
+
+  // Always add first dot (position 0) if there are images
+  if (imageCount > 0) {
+    dotsToShow.push(0);
   }
 
-  // Middle section around current
-  const middleStart = Math.max(leftEdge, currentIdx - 1);
-  const middleEnd = Math.min(rightEdge - 1, currentIdx + 1);
+  // Calculate middle section around active (if not first or last)
+  const middleStart = Math.max(minEdgeDots, activePosition - currentRadius);
+  const middleEnd = Math.min(imageCount - 1, activePosition + currentRadius);
 
-  // Add ellipsis if there's a gap
-  if (middleStart > leftEdge) {
-    dotsToShow.push('ellipsis');
+  // Add gap if there's a jump from first dot to middle section
+  if (middleStart > minEdgeDots) {
+    dotsToShow.push('gap');
   }
 
-  // Add middle section
+  // Add middle section (images around active position)
   for (let i = middleStart; i <= middleEnd; i++) {
-    if (!dotsToShow.includes(i)) {
+    if (!dotsToShow.includes(i) && i < imageCount) {
       dotsToShow.push(i);
     }
   }
 
-  // Add ellipsis if there's a gap before the end
-  if (middleEnd < rightEdge - 1) {
-    dotsToShow.push('ellipsis');
+  // Add gap if there's a jump from middle section to spinner
+  // (if active is not near the spinner position)
+  if (middleEnd < imageCount - 1) {
+    dotsToShow.push('gap');
   }
 
-  // Always show last 2
-  for (let i = rightEdge; i < total; i++) {
-    if (!dotsToShow.includes(i)) {
-      dotsToShow.push(i);
-    }
-  }
+  // Always add spinner dot (last position)
+  dotsToShow.push(imageCount);
 
   // Render the dots
   for (const item of dotsToShow) {
-    if (item === 'ellipsis') {
-      const ellipsis = document.createElement('span');
-      ellipsis.className = 'nav-ellipsis';
-      ellipsis.textContent = '...';
-      elements.navDots.appendChild(ellipsis);
+    if (item === 'gap') {
+      elements.navDots.appendChild(createGapIndicator());
     } else {
-      const dot = createNavDot(item, item === currentIdx);
+      const isSpinner = item === imageCount;
+      const dot = createNavDot(item, item === activePosition, isSpinner);
       elements.navDots.appendChild(dot);
     }
   }
+
+  announceNavigation(activePosition, totalPositions);
 }
 
-function createNavDot(index: number, isActive: boolean): HTMLElement {
+/**
+ * Create a gap indicator element (replaces text ellipsis).
+ * Uses 3 small dots that match the nav-dot height to avoid layout shifts.
+ */
+function createGapIndicator(): HTMLElement {
+  const gap = document.createElement('span');
+  gap.className = 'nav-gap';
+  gap.setAttribute('aria-hidden', 'true');
+
+  // Create 3 small dots
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'nav-gap-dot';
+    gap.appendChild(dot);
+  }
+
+  return gap;
+}
+
+/**
+ * Announce navigation change for screen readers.
+ */
+function announceNavigation(activePosition: number, totalPositions: number): void {
+  const navIndicator = elements.navIndicator;
+  if (!navIndicator) return;
+
+  const imageCount = totalPositions - 1;
+  let announcement: string;
+
+  if (activePosition === imageCount) {
+    // Spinner position
+    if (imageCount === 0) {
+      announcement = 'Waiting for first image';
+    } else {
+      announcement = `Waiting for next image, ${imageCount} image${imageCount !== 1 ? 's' : ''} available`;
+    }
+  } else {
+    announcement = `Image ${activePosition + 1} of ${imageCount}`;
+  }
+
+  // Update aria-label for the nav indicator
+  navIndicator.setAttribute('aria-label', announcement);
+}
+
+function createNavDot(index: number, isActive: boolean, isSpinner: boolean): HTMLElement {
   const dot = document.createElement('span');
   dot.className = 'nav-dot';
   if (isActive) {
     dot.classList.add('active');
   }
+  if (isSpinner) {
+    dot.classList.add('spinner-dot');
+  }
   dot.setAttribute('role', 'button');
-  dot.setAttribute('aria-label', `Go to image ${index + 1}`);
+
+  // Set appropriate aria-label
+  if (isSpinner) {
+    dot.setAttribute('aria-label', 'Go to loading screen');
+  } else {
+    dot.setAttribute('aria-label', `Go to image ${index + 1}`);
+  }
   dot.setAttribute('tabindex', '0');
 
-  // Click handler to navigate to this image
+  // Click handler to navigate
   dot.addEventListener('click', () => {
-    navigateToIndex(index);
+    navigateToIndex(index, isSpinner);
   });
 
   // Keyboard handler
   dot.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      navigateToIndex(index);
+      navigateToIndex(index, isSpinner);
     }
   });
 
   return dot;
 }
 
-function navigateToIndex(index: number): void {
-  if (state.isTransitioning || index < 0 || index >= state.imageList.length) {
+function navigateToIndex(index: number, isSpinner = false): void {
+  if (state.isTransitioning) {
     return;
   }
 
-  if (index === state.currentIndex) {
+  // Handle spinner dot click - show loading placeholder
+  if (isSpinner) {
+    if (state.waitingForNext) {
+      return; // Already on spinner
+    }
+    state.waitingForNext = true;
+    showLoadingPlaceholder();
     return;
+  }
+
+  // Handle image dot click
+  if (index < 0 || index >= state.imageList.length) {
+    return;
+  }
+
+  if (index === state.currentIndex && !state.waitingForNext) {
+    return; // Already on this image
+  }
+
+  // If coming from spinner, clear waitingForNext
+  if (state.waitingForNext) {
+    state.waitingForNext = false;
   }
 
   state.currentIndex = index;
   const entry = state.imageList[index];
   if (entry) {
+    showLoading(false);
     void displayImageRecord(entry, index);
   }
 }
@@ -824,7 +934,7 @@ function visualSuccessFeedback(): void {
   }
 }
 
-function previous(): void {
+function prev(): void {
   if (state.isTransitioning) {
     return;
   }
@@ -837,10 +947,11 @@ function previous(): void {
     if (entry) {
       void displayImageRecord(entry, state.currentIndex);
     }
+    updateNavDots();
     return;
   }
 
-  const navigated = ListManager.navigateToPrevious(state, (entry: ImageRecord) => {
+  const navigated = ListManager.navigateToPrev(state, (entry: ImageRecord) => {
     void displayImageRecord(entry, state.currentIndex);
   });
 
@@ -849,7 +960,7 @@ function previous(): void {
   }
 }
 
-function skip(): void {
+function next(): void {
   if (state.isTransitioning) {
     return;
   }
@@ -859,7 +970,7 @@ function skip(): void {
     return;
   }
 
-  const requestNext = () => {
+  const requestNextImage = () => {
     state.waitingForNext = true;
     showLoadingPlaceholder();
 
@@ -868,7 +979,7 @@ function skip(): void {
         await invoke('skip_image');
       })
       .catch(err => {
-        console.error('Skip failed:', err);
+        console.error('Next failed:', err);
         state.waitingForNext = false;
         if (state.imageList.length > 0) {
           const entry = state.imageList[state.currentIndex];
@@ -885,7 +996,7 @@ function skip(): void {
     (entry: ImageRecord) => {
       void displayImageRecord(entry, state.currentIndex);
     },
-    requestNext
+    requestNextImage
   );
 }
 
@@ -944,13 +1055,12 @@ function deleteCurrentImage(): void {
     state,
     (entry: ImageRecord) => {
       void displayImageRecord(entry, state.currentIndex);
+      updateNavDots();
     },
     () => {
-      if (elements.currentImage) {
-        elements.currentImage.classList.add('hidden');
-      }
-      clearMetadataPanel();
-      updateNavDots();
+      // When last image is deleted, show spinner screen
+      state.waitingForNext = true;
+      showLoadingPlaceholder();
     }
   );
 }
@@ -962,12 +1072,12 @@ function enableAcceptButton(): void {
 }
 
 function setupButtonListeners(): void {
-  if (elements.previousButton) {
-    elements.previousButton.addEventListener('click', previous);
+  if (elements.prevButton) {
+    elements.prevButton.addEventListener('click', prev);
   }
 
-  if (elements.skipButton) {
-    elements.skipButton.addEventListener('click', skip);
+  if (elements.nextButton) {
+    elements.nextButton.addEventListener('click', next);
   }
 
   if (elements.acceptButton) {
@@ -1056,10 +1166,10 @@ function setupKeyboardListeners(): void {
 
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      previous();
+      prev();
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      skip();
+      next();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       accept();
@@ -1081,6 +1191,17 @@ function setupKeyboardListeners(): void {
   });
 }
 
+function setupResizeObserver(): void {
+  if (!elements.navIndicator) return;
+
+  const resizeObserver = new ResizeObserver(() => {
+    // Always update dots (we always have at least the spinner dot)
+    updateNavDots();
+  });
+
+  resizeObserver.observe(elements.navIndicator);
+}
+
 // Expose for testing
 declare global {
   interface Window {
@@ -1094,8 +1215,8 @@ declare global {
       navigateToIndex: typeof navigateToIndex;
       showLoading: typeof showLoading;
       showLoadingPlaceholder: typeof showLoadingPlaceholder;
-      previous: typeof previous;
-      skip: typeof skip;
+      prev: typeof prev;
+      next: typeof next;
       accept: typeof accept;
       abort: typeof abort;
       togglePause: typeof togglePause;
@@ -1121,8 +1242,8 @@ if (typeof window !== 'undefined') {
     navigateToIndex,
     showLoading,
     showLoadingPlaceholder,
-    previous,
-    skip,
+    prev,
+    next,
     accept,
     abort,
     togglePause,

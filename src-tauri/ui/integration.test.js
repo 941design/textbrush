@@ -20,9 +20,9 @@ describe('UI Enhancements Integration Tests', () => {
       <html>
         <head></head>
         <body>
-          <button id="previous-btn">Prev</button>
+          <button id="prev-btn">Prev</button>
           <button id="pause-btn">Pause</button>
-          <button id="skip-btn">Next</button>
+          <button id="next-btn">Next</button>
           <button id="delete-btn">Delete</button>
           <button id="accept-btn">Done</button>
           <button id="abort-btn">Abort</button>
@@ -133,17 +133,17 @@ describe('UI Enhancements Integration Tests', () => {
       };
 
       // Navigate to previous
-      const prevResult = ListManager.navigateToPrevious(state, displayImage);
+      const prevResult = ListManager.navigateToPrev(state, displayImage);
       assert.strictEqual(prevResult, true, 'Navigation to previous succeeded');
       assert.strictEqual(state.currentIndex, 0, 'Index decremented to 0');
       assert.deepStrictEqual(displayedImages, [1], 'First image displayed');
 
       // Position indicator at start
       let indicator = ListManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '[1]/3]', 'Position indicator shows 1 of 3');
+      assert.strictEqual(indicator, '[1/3]', 'Position indicator shows 1 of 3');
 
       // Try to go before start
-      const prevAtStart = ListManager.navigateToPrevious(state, displayImage);
+      const prevAtStart = ListManager.navigateToPrev(state, displayImage);
       assert.strictEqual(prevAtStart, false, 'Cannot navigate before start');
       assert.strictEqual(state.currentIndex, 0, 'Index remains at 0');
 
@@ -155,7 +155,7 @@ describe('UI Enhancements Integration Tests', () => {
 
       // Position indicator in middle
       indicator = ListManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '[2]/3]', 'Position indicator shows 2 of 3');
+      assert.strictEqual(indicator, '[2/3]', 'Position indicator shows 2 of 3');
 
       // Navigate to end
       ListManager.navigateToNext(state, displayImage, () => {});
@@ -163,7 +163,7 @@ describe('UI Enhancements Integration Tests', () => {
 
       // Position indicator at end
       indicator = ListManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '[3]/3]', 'Position indicator shows 3 of 3');
+      assert.strictEqual(indicator, '[3/3]', 'Position indicator shows 3 of 3');
     });
   });
 
@@ -235,7 +235,7 @@ describe('UI Enhancements Integration Tests', () => {
 
   describe('E2E: Button Flash on Keyboard Shortcuts', () => {
     it('should flash corresponding button when keyboard shortcut pressed', () => {
-      const skipBtn = document.getElementById('skip-btn');
+      const skipBtn = document.getElementById('next-btn');
       const acceptBtn = document.getElementById('accept-btn');
       const abortBtn = document.getElementById('abort-btn');
 
@@ -359,7 +359,7 @@ describe('UI Enhancements Integration Tests', () => {
 
       // Flash button for visual feedback
       ButtonFlash.flashButtonForKey('ArrowRight');
-      assert.ok(document.getElementById('skip-btn').classList.contains('btn-pressed'), 'Button flashed');
+      assert.ok(document.getElementById('next-btn').classList.contains('btn-pressed'), 'Button flashed');
 
       // Delete unwanted image
       ListManager.deleteCurrentImage(state, () => {}, () => {});
@@ -381,7 +381,7 @@ describe('UI Enhancements Integration Tests', () => {
 
       // Verify position indicator
       const indicator = ListManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '[2]/2]', 'Position indicator correct after deletion');
+      assert.strictEqual(indicator, '[2/2]', 'Position indicator correct after deletion');
     });
 
     it('E2E Multi-Path Acceptance Workflow', () => {
@@ -401,7 +401,7 @@ describe('UI Enhancements Integration Tests', () => {
       };
 
       // Step 1: Navigate backward to review images
-      ListManager.navigateToPrevious(state, () => {});
+      ListManager.navigateToPrev(state, () => {});
       assert.strictEqual(state.currentIndex, 2, 'Navigated to image 3');
 
       // Step 2: Delete unwanted image (index 2, seed 103)

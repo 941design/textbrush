@@ -69,66 +69,66 @@ function createState(listLength = 0, currentIndex = -1) {
 }
 
 // ============================================================================
-// navigateToPrevious Tests
+// navigateToPrev Tests
 // ============================================================================
 
-function test_navigateToPrevious_atBeginningReturnsFalse() {
+function test_navigateToPrev_atBeginningReturnsFalse() {
   const state = createState(3, 0);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = ListManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrev(state, mockDisplay);
 
-  assert(!result, 'navigateToPrevious should return false at beginning');
+  assert(!result, 'navigateToPrev should return false at beginning');
   assertEqual(state.currentIndex, 0, 'index should not change');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
-function test_navigateToPrevious_emptyListReturnsFalse() {
+function test_navigateToPrev_emptyListReturnsFalse() {
   const state = createState(0, -1);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = ListManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrev(state, mockDisplay);
 
-  assert(!result, 'navigateToPrevious should return false on empty list');
+  assert(!result, 'navigateToPrev should return false on empty list');
   assertEqual(state.currentIndex, -1, 'index should remain -1');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
-function test_navigateToPrevious_validPositionDecrements() {
+function test_navigateToPrev_validPositionDecrements() {
   const state = createState(5, 2);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = ListManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrev(state, mockDisplay);
 
-  assert(result, 'navigateToPrevious should return true');
+  assert(result, 'navigateToPrev should return true');
   assertEqual(state.currentIndex, 1, 'index should decrement by 1');
   assertEqual(callLog.length, 1, 'displayImage should be called once');
   assertEqual(callLog[0].path, '/preview/img-1.png', 'should display image at index 1');
 }
 
-function test_navigateToPrevious_idempotentAtBoundary() {
+function test_navigateToPrev_idempotentAtBoundary() {
   const state = createState(3, 0);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  ListManager.navigateToPrevious(state, mockDisplay);
-  ListManager.navigateToPrevious(state, mockDisplay);
-  ListManager.navigateToPrevious(state, mockDisplay);
+  ListManager.navigateToPrev(state, mockDisplay);
+  ListManager.navigateToPrev(state, mockDisplay);
+  ListManager.navigateToPrev(state, mockDisplay);
 
   assertEqual(state.currentIndex, 0, 'should remain at beginning');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
-function test_navigateToPrevious_property_indexDecrementsFromEnd() {
+function test_navigateToPrev_property_indexDecrementsFromEnd() {
   // Property: navigating from end (index = length - 1) should decrement by 1
   for (let len = 2; len <= 10; len++) {
     const state = createState(len, len - 1);
     const mockDisplay = () => {};
 
-    ListManager.navigateToPrevious(state, mockDisplay);
+    ListManager.navigateToPrev(state, mockDisplay);
 
     assertEqual(
       state.currentIndex,
@@ -138,7 +138,7 @@ function test_navigateToPrevious_property_indexDecrementsFromEnd() {
   }
 }
 
-function test_navigateToPrevious_property_neverGoesNegative() {
+function test_navigateToPrev_property_neverGoesNegative() {
   // Property: index should never become negative
   for (let i = 0; i < 20; i++) {
     const state = createState(5, Math.max(0, Math.floor(Math.random() * 5)));
@@ -146,7 +146,7 @@ function test_navigateToPrevious_property_neverGoesNegative() {
 
     // Try navigating backward multiple times
     for (let j = 0; j < 10; j++) {
-      ListManager.navigateToPrevious(state, mockDisplay);
+      ListManager.navigateToPrev(state, mockDisplay);
     }
 
     assert(state.currentIndex >= 0, 'index should never become negative');
@@ -452,7 +452,7 @@ function test_getPositionIndicator_singleImage() {
 
   const indicator = ListManager.getPositionIndicator(state);
 
-  assertEqual(indicator, '[1]/1]', 'should return [1]/1]');
+  assertEqual(indicator, '[1/1]', 'should return [1/1]');
 }
 
 function test_getPositionIndicator_middleOfList() {
@@ -460,7 +460,7 @@ function test_getPositionIndicator_middleOfList() {
 
   const indicator = ListManager.getPositionIndicator(state);
 
-  assertEqual(indicator, '[3]/5]', 'should return [3]/5]');
+  assertEqual(indicator, '[3/5]', 'should return [3/5]');
 }
 
 function test_getPositionIndicator_endOfList() {
@@ -468,7 +468,7 @@ function test_getPositionIndicator_endOfList() {
 
   const indicator = ListManager.getPositionIndicator(state);
 
-  assertEqual(indicator, '[5]/5]', 'should return [5]/5]');
+  assertEqual(indicator, '[5/5]', 'should return [5/5]');
 }
 
 function test_getPositionIndicator_property_alwaysValid() {
@@ -478,7 +478,7 @@ function test_getPositionIndicator_property_alwaysValid() {
       const state = createState(len, idx);
       const indicator = ListManager.getPositionIndicator(state);
 
-      const match = indicator.match(/\[(\d+)\]\/(\d+)\]/);
+      const match = indicator.match(/\[(\d+)\/(\d+)\]/);
       assert(match, `indicator format invalid: ${indicator}`);
 
       const current = parseInt(match[1], 10);
@@ -495,13 +495,13 @@ function test_getPositionIndicator_property_alwaysValid() {
 // ============================================================================
 
 const tests = [
-  // navigateToPrevious
-  test_navigateToPrevious_atBeginningReturnsFalse,
-  test_navigateToPrevious_emptyListReturnsFalse,
-  test_navigateToPrevious_validPositionDecrements,
-  test_navigateToPrevious_idempotentAtBoundary,
-  test_navigateToPrevious_property_indexDecrementsFromEnd,
-  test_navigateToPrevious_property_neverGoesNegative,
+  // navigateToPrev
+  test_navigateToPrev_atBeginningReturnsFalse,
+  test_navigateToPrev_emptyListReturnsFalse,
+  test_navigateToPrev_validPositionDecrements,
+  test_navigateToPrev_idempotentAtBoundary,
+  test_navigateToPrev_property_indexDecrementsFromEnd,
+  test_navigateToPrev_property_neverGoesNegative,
 
   // navigateToNext
   test_navigateToNext_navigatesForwardInList,

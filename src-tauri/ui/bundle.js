@@ -161,8 +161,8 @@ function getNextResolution(ratio, width, height) {
   if (!resolutions) return null;
   const index = getResolutionIndex(ratio, width, height);
   if (index < resolutions.length - 1) {
-    const next = resolutions[index + 1];
-    return next ?? null;
+    const next2 = resolutions[index + 1];
+    return next2 ?? null;
   }
   return null;
 }
@@ -171,8 +171,8 @@ function getPreviousResolution(ratio, width, height) {
   if (!resolutions) return null;
   const index = getResolutionIndex(ratio, width, height);
   if (index > 0) {
-    const prev = resolutions[index - 1];
-    return prev ?? null;
+    const prev2 = resolutions[index - 1];
+    return prev2 ?? null;
   }
   return null;
 }
@@ -396,7 +396,7 @@ function applyFontSize(size) {
 }
 
 // list-manager.ts
-function navigateToPrevious(state2, displayImage) {
+function navigateToPrev(state2, displayImage) {
   if (state2.currentIndex <= 0) {
     return false;
   }
@@ -466,9 +466,9 @@ function flashButtonById(buttonId) {
 function flashButtonForKey(key, ctrlOrCmd = false) {
   switch (key) {
     case "ArrowLeft":
-      return flashButtonById("previous-btn");
+      return flashButtonById("prev-btn");
     case "ArrowRight":
-      return flashButtonById("skip-btn");
+      return flashButtonById("next-btn");
     case " ":
       return flashButtonById("pause-btn");
     case "Enter":
@@ -1988,10 +1988,10 @@ var Window = class {
    * @param skip true to hide window icon, false to show it.
    * @returns A promise indicating the success or failure of the operation.
    */
-  async setSkipTaskbar(skip2) {
+  async setSkipTaskbar(skip) {
     return invoke("plugin:window|set_skip_taskbar", {
       label: this.label,
-      value: skip2
+      value: skip
     });
   }
   /**
@@ -9020,8 +9020,8 @@ var elements = {
   pathText: null,
   copyPathBtn: null,
   controls: null,
-  previousButton: null,
-  skipButton: null,
+  prevButton: null,
+  nextButton: null,
   acceptButton: null,
   deleteButton: null,
   abortButton: null,
@@ -9061,8 +9061,8 @@ function cacheElements() {
   elements.pathText = document.getElementById("path-text");
   elements.copyPathBtn = document.getElementById("copy-path-btn");
   elements.controls = document.querySelector(".controls");
-  elements.previousButton = document.getElementById("previous-btn");
-  elements.skipButton = document.getElementById("skip-btn");
+  elements.prevButton = document.getElementById("prev-btn");
+  elements.nextButton = document.getElementById("next-btn");
   elements.acceptButton = document.getElementById("accept-btn");
   elements.deleteButton = document.getElementById("delete-btn");
   elements.abortButton = document.getElementById("abort-btn");
@@ -9110,6 +9110,7 @@ async function init() {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
+    setupResizeObserver();
     await invoke("init_generation", {
       prompt: state.prompt,
       outputPath: launchArgs.output_path || null,
@@ -9420,94 +9421,152 @@ function updateMetadataPanelFromRecord(record, _listIdx = null) {
 function clearMetadataPanel() {
   updateMetadataPanelFromRecord(null, null);
 }
-var MAX_VISIBLE_DOTS = 9;
+var DOT_WIDTH = 8;
+var DOT_GAP = 6;
+var GAP_INDICATOR_WIDTH = 20;
+function maxDotsForWidth(width) {
+  if (width <= 0) return 0;
+  return Math.floor((width + DOT_GAP) / (DOT_WIDTH + DOT_GAP));
+}
 function updateNavDots() {
-  console.log("updateNavDots called, imageList.length:", state.imageList.length, "navDots element:", elements.navDots);
   if (!elements.navDots) {
-    console.warn("updateNavDots: navDots element is null!");
     return;
   }
-  const total = state.imageList.length;
-  const currentIdx = state.currentIndex;
+  const imageCount = state.imageList.length;
+  const totalPositions = imageCount + 1;
+  let activePosition;
+  if (state.waitingForNext || imageCount === 0) {
+    activePosition = imageCount;
+  } else {
+    activePosition = state.currentIndex;
+  }
   elements.navDots.innerHTML = "";
-  console.log("updateNavDots: cleared dots, total:", total, "currentIdx:", currentIdx);
-  if (total === 0) {
-    return;
-  }
-  if (total <= MAX_VISIBLE_DOTS) {
-    for (let i = 0; i < total; i++) {
-      const dot = createNavDot(i, i === currentIdx);
+  const container = elements.navDots.parentElement;
+  const availableWidth = container ? container.clientWidth - 32 : 400;
+  const maxDots = maxDotsForWidth(availableWidth);
+  if (totalPositions <= maxDots) {
+    for (let i = 0; i < totalPositions; i++) {
+      const isSpinner = i === imageCount;
+      const dot = createNavDot(i, i === activePosition, isSpinner);
       elements.navDots.appendChild(dot);
     }
-    console.log("updateNavDots: added", total, "dots, navDots.children.length:", elements.navDots.children.length);
+    announceNavigation(activePosition, totalPositions);
     return;
   }
+  const maxGapIndicators = 2;
+  const widthForDots = availableWidth - maxGapIndicators * (GAP_INDICATOR_WIDTH + DOT_GAP);
+  const dotsAvailable = Math.max(3, maxDotsForWidth(widthForDots));
+  const minEdgeDots = 1;
+  const remainingDots = dotsAvailable - 2;
+  const currentRadius = Math.max(0, Math.floor(remainingDots / 2));
   const dotsToShow = [];
-  const leftEdge = 2;
-  const rightEdge = total - 2;
-  for (let i = 0; i < Math.min(leftEdge, total); i++) {
-    dotsToShow.push(i);
+  if (imageCount > 0) {
+    dotsToShow.push(0);
   }
-  const middleStart = Math.max(leftEdge, currentIdx - 1);
-  const middleEnd = Math.min(rightEdge - 1, currentIdx + 1);
-  if (middleStart > leftEdge) {
-    dotsToShow.push("ellipsis");
+  const middleStart = Math.max(minEdgeDots, activePosition - currentRadius);
+  const middleEnd = Math.min(imageCount - 1, activePosition + currentRadius);
+  if (middleStart > minEdgeDots) {
+    dotsToShow.push("gap");
   }
   for (let i = middleStart; i <= middleEnd; i++) {
-    if (!dotsToShow.includes(i)) {
+    if (!dotsToShow.includes(i) && i < imageCount) {
       dotsToShow.push(i);
     }
   }
-  if (middleEnd < rightEdge - 1) {
-    dotsToShow.push("ellipsis");
+  if (middleEnd < imageCount - 1) {
+    dotsToShow.push("gap");
   }
-  for (let i = rightEdge; i < total; i++) {
-    if (!dotsToShow.includes(i)) {
-      dotsToShow.push(i);
-    }
-  }
+  dotsToShow.push(imageCount);
   for (const item of dotsToShow) {
-    if (item === "ellipsis") {
-      const ellipsis = document.createElement("span");
-      ellipsis.className = "nav-ellipsis";
-      ellipsis.textContent = "...";
-      elements.navDots.appendChild(ellipsis);
+    if (item === "gap") {
+      elements.navDots.appendChild(createGapIndicator());
     } else {
-      const dot = createNavDot(item, item === currentIdx);
+      const isSpinner = item === imageCount;
+      const dot = createNavDot(item, item === activePosition, isSpinner);
       elements.navDots.appendChild(dot);
     }
   }
+  announceNavigation(activePosition, totalPositions);
 }
-function createNavDot(index, isActive) {
+function createGapIndicator() {
+  const gap = document.createElement("span");
+  gap.className = "nav-gap";
+  gap.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement("span");
+    dot.className = "nav-gap-dot";
+    gap.appendChild(dot);
+  }
+  return gap;
+}
+function announceNavigation(activePosition, totalPositions) {
+  const navIndicator = elements.navIndicator;
+  if (!navIndicator) return;
+  const imageCount = totalPositions - 1;
+  let announcement;
+  if (activePosition === imageCount) {
+    if (imageCount === 0) {
+      announcement = "Waiting for first image";
+    } else {
+      announcement = `Waiting for next image, ${imageCount} image${imageCount !== 1 ? "s" : ""} available`;
+    }
+  } else {
+    announcement = `Image ${activePosition + 1} of ${imageCount}`;
+  }
+  navIndicator.setAttribute("aria-label", announcement);
+}
+function createNavDot(index, isActive, isSpinner) {
   const dot = document.createElement("span");
   dot.className = "nav-dot";
   if (isActive) {
     dot.classList.add("active");
   }
+  if (isSpinner) {
+    dot.classList.add("spinner-dot");
+  }
   dot.setAttribute("role", "button");
-  dot.setAttribute("aria-label", `Go to image ${index + 1}`);
+  if (isSpinner) {
+    dot.setAttribute("aria-label", "Go to loading screen");
+  } else {
+    dot.setAttribute("aria-label", `Go to image ${index + 1}`);
+  }
   dot.setAttribute("tabindex", "0");
   dot.addEventListener("click", () => {
-    navigateToIndex(index);
+    navigateToIndex(index, isSpinner);
   });
   dot.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      navigateToIndex(index);
+      navigateToIndex(index, isSpinner);
     }
   });
   return dot;
 }
-function navigateToIndex(index) {
-  if (state.isTransitioning || index < 0 || index >= state.imageList.length) {
+function navigateToIndex(index, isSpinner = false) {
+  if (state.isTransitioning) {
     return;
   }
-  if (index === state.currentIndex) {
+  if (isSpinner) {
+    if (state.waitingForNext) {
+      return;
+    }
+    state.waitingForNext = true;
+    showLoadingPlaceholder();
     return;
+  }
+  if (index < 0 || index >= state.imageList.length) {
+    return;
+  }
+  if (index === state.currentIndex && !state.waitingForNext) {
+    return;
+  }
+  if (state.waitingForNext) {
+    state.waitingForNext = false;
   }
   state.currentIndex = index;
   const entry = state.imageList[index];
   if (entry) {
+    showLoading(false);
     void displayImageRecord(entry, index);
   }
 }
@@ -9583,7 +9642,7 @@ function visualSuccessFeedback() {
     elements.imageContainer.style.boxShadow = "0 0 20px rgba(34, 197, 94, 0.5)";
   }
 }
-function previous() {
+function prev() {
   if (state.isTransitioning) {
     return;
   }
@@ -9595,16 +9654,17 @@ function previous() {
     if (entry) {
       void displayImageRecord(entry, state.currentIndex);
     }
+    updateNavDots();
     return;
   }
-  const navigated = navigateToPrevious(state, (entry) => {
+  const navigated = navigateToPrev(state, (entry) => {
     void displayImageRecord(entry, state.currentIndex);
   });
   if (!navigated) {
     console.log("At beginning of list, cannot go back");
   }
 }
-function skip() {
+function next() {
   if (state.isTransitioning) {
     return;
   }
@@ -9612,13 +9672,13 @@ function skip() {
     console.log("Already waiting for next image");
     return;
   }
-  const requestNext = () => {
+  const requestNextImage = () => {
     state.waitingForNext = true;
     showLoadingPlaceholder();
     state.actionQueue = state.actionQueue.then(async () => {
       await invoke("skip_image");
     }).catch((err) => {
-      console.error("Skip failed:", err);
+      console.error("Next failed:", err);
       state.waitingForNext = false;
       if (state.imageList.length > 0) {
         const entry = state.imageList[state.currentIndex];
@@ -9634,7 +9694,7 @@ function skip() {
     (entry) => {
       void displayImageRecord(entry, state.currentIndex);
     },
-    requestNext
+    requestNextImage
   );
 }
 function showLoadingPlaceholder() {
@@ -9685,13 +9745,11 @@ function deleteCurrentImage2() {
     state,
     (entry) => {
       void displayImageRecord(entry, state.currentIndex);
+      updateNavDots();
     },
     () => {
-      if (elements.currentImage) {
-        elements.currentImage.classList.add("hidden");
-      }
-      clearMetadataPanel();
-      updateNavDots();
+      state.waitingForNext = true;
+      showLoadingPlaceholder();
     }
   );
 }
@@ -9701,11 +9759,11 @@ function enableAcceptButton() {
   }
 }
 function setupButtonListeners() {
-  if (elements.previousButton) {
-    elements.previousButton.addEventListener("click", previous);
+  if (elements.prevButton) {
+    elements.prevButton.addEventListener("click", prev);
   }
-  if (elements.skipButton) {
-    elements.skipButton.addEventListener("click", skip);
+  if (elements.nextButton) {
+    elements.nextButton.addEventListener("click", next);
   }
   if (elements.acceptButton) {
     elements.acceptButton.addEventListener("click", accept);
@@ -9775,10 +9833,10 @@ function setupKeyboardListeners() {
     flashButtonForKey(e.key, ctrlOrCmd);
     if (e.key === "ArrowLeft") {
       e.preventDefault();
-      previous();
+      prev();
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      skip();
+      next();
     } else if (e.key === "Enter") {
       e.preventDefault();
       accept();
@@ -9798,6 +9856,13 @@ function setupKeyboardListeners() {
     }
   });
 }
+function setupResizeObserver() {
+  if (!elements.navIndicator) return;
+  const resizeObserver = new ResizeObserver(() => {
+    updateNavDots();
+  });
+  resizeObserver.observe(elements.navIndicator);
+}
 if (typeof window !== "undefined") {
   window.textbrushApp = {
     state,
@@ -9809,8 +9874,8 @@ if (typeof window !== "undefined") {
     navigateToIndex,
     showLoading,
     showLoadingPlaceholder,
-    previous,
-    skip,
+    prev,
+    next,
     accept,
     abort,
     togglePause,

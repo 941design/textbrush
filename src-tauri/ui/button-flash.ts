@@ -36,10 +36,10 @@ export function flashButtonById(buttonId: string): boolean {
 export function flashButtonForKey(key: string, ctrlOrCmd = false): boolean {
   switch (key) {
     case 'ArrowLeft':
-      return flashButtonById('previous-btn');
+      return flashButtonById('prev-btn');
 
     case 'ArrowRight':
-      return flashButtonById('skip-btn');
+      return flashButtonById('next-btn');
 
     case ' ':
       return flashButtonById('pause-btn');

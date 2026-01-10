@@ -10,7 +10,7 @@ type RequestNextImageCallback = () => void;
 /**
  * Navigate to previous image in list.
  */
-export function navigateToPrevious(
+export function navigateToPrev(
   state: AppState,
   displayImage: DisplayImageCallback
 ): boolean {
@@ -105,5 +105,5 @@ export function getPositionIndicator(state: AppState): string {
 
   const current = state.currentIndex + 1;
   const total = state.imageList.length;
-  return `[${current}]/${total}]`;
+  return `[${current}/${total}]`;
 }

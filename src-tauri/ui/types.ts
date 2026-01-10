@@ -131,8 +131,8 @@ export interface Elements {
   pathText: HTMLElement | null;
   copyPathBtn: HTMLButtonElement | null;
   controls: HTMLElement | null;
-  previousButton: HTMLButtonElement | null;
-  skipButton: HTMLButtonElement | null;
+  prevButton: HTMLButtonElement | null;
+  nextButton: HTMLButtonElement | null;
   acceptButton: HTMLButtonElement | null;
   deleteButton: HTMLButtonElement | null;
   abortButton: HTMLButtonElement | null;
