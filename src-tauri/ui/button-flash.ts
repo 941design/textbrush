@@ -39,18 +39,16 @@ export function flashButtonForKey(key: string, ctrlOrCmd = false): boolean {
       return flashButtonById('previous-btn');
 
     case 'ArrowRight':
-    case ' ':
       return flashButtonById('skip-btn');
+
+    case ' ':
+      return flashButtonById('pause-btn');
 
     case 'Enter':
       return flashButtonById('accept-btn');
 
     case 'Escape':
       return flashButtonById('abort-btn');
-
-    case 'p':
-    case 'P':
-      return flashButtonById('pause-btn');
 
     case 'Delete':
     case 'Backspace':

@@ -320,71 +320,6 @@ def test_prompt_display_monospace():
 
 
 # ============================================================================
-# TESTS: Buffer Indicator
-# ============================================================================
-
-
-def test_buffer_indicator_flex_layout():
-    """Buffer indicator should use flex layout."""
-    _, parser = load_css_file()
-    assert parser.has_selector(".buffer-indicator"), ".buffer-indicator not found"
-    props = parser.get_selector_properties(".buffer-indicator")
-    assert props.get("display") == "flex", ".buffer-indicator should have display: flex"
-    assert "center" in props.get("align-items", ""), ".buffer-indicator should center items"
-
-
-def test_buffer_dots_container():
-    """Buffer dots should use flex with 3px gap."""
-    _, parser = load_css_file()
-    assert parser.has_selector(".buffer-dots"), ".buffer-dots not found"
-    props = parser.get_selector_properties(".buffer-dots")
-    assert props.get("display") == "flex", ".buffer-dots should have display: flex"
-    assert "3px" in props.get("gap", ""), ".buffer-dots should have 3px gap"
-
-
-def test_buffer_dot_styling():
-    """Individual buffer dots should be 6px circles."""
-    _, parser = load_css_file()
-    assert parser.has_selector(".buffer-dot"), ".buffer-dot not found"
-    props = parser.get_selector_properties(".buffer-dot")
-    assert "6px" in props.get("width", "") and "6px" in props.get("height", ""), (
-        ".buffer-dot should be 6px x 6px"
-    )
-    assert "50%" in props.get("border-radius", ""), (
-        ".buffer-dot should be circular (border-radius: 50%)"
-    )
-    assert "var(--border-subtle)" in props.get("background", ""), (
-        ".buffer-dot should use var(--border-subtle)"
-    )
-
-
-def test_buffer_dot_filled_state():
-    """Filled buffer dots should use accent color."""
-    _, parser = load_css_file()
-    assert parser.has_selector(".buffer-dot.filled"), ".buffer-dot.filled not found"
-    props = parser.get_selector_properties(".buffer-dot.filled")
-    assert "var(--accent-primary)" in props.get("background", ""), (
-        ".buffer-dot.filled should use var(--accent-primary)"
-    )
-
-
-def test_buffer_generating_animation():
-    """Buffer indicator with buffer-generating should pulse last dot."""
-    _, parser = load_css_file()
-    selectors = parser.get_all_selectors()
-    generating_selector = [s for s in selectors if "buffer-generating" in s and "buffer-dot" in s]
-    assert len(generating_selector) > 0, (
-        "Should have selector for buffer-generating buffer-dot animation"
-    )
-
-
-def test_pulse_keyframe_exists():
-    """Pulse keyframe should exist for buffer animation."""
-    _, parser = load_css_file()
-    assert parser.has_keyframe("pulse"), "pulse keyframe not found"
-
-
-# ============================================================================
 # TESTS: Controls Section
 # ============================================================================
 
@@ -650,10 +585,6 @@ def test_user_select_none_on_body():
         ".status-bar",
         ".status-left",
         ".prompt-display",
-        ".buffer-indicator",
-        ".buffer-dots",
-        ".buffer-dot",
-        ".buffer-text",
         ".controls",
         ".control-btn",
         ".btn-icon",

@@ -20,7 +20,9 @@ describe('UI Enhancements Integration Tests', () => {
       <html>
         <head></head>
         <body>
-          <button id="skip-btn">Skip</button>
+          <button id="previous-btn">Prev</button>
+          <button id="pause-btn">Pause</button>
+          <button id="skip-btn">Next</button>
           <button id="accept-btn">Accept</button>
           <button id="abort-btn">Abort</button>
           <div id="image-container"></div>
@@ -256,9 +258,9 @@ describe('UI Enhancements Integration Tests', () => {
       assert.strictEqual(abortResult, true, 'Abort button flashed for Escape');
       assert.ok(abortBtn.classList.contains('btn-pressed'), 'Abort button has btn-pressed class');
 
-      // Test Space -> skip button
+      // Test Space -> pause button
       const spaceResult = ButtonFlash.flashButtonForKey(' ');
-      assert.strictEqual(spaceResult, true, 'Skip button flashed for Space');
+      assert.strictEqual(spaceResult, true, 'Pause button flashed for Space');
 
       // Test unmapped key
       const unmappedResult = ButtonFlash.flashButtonForKey('x');

@@ -10,6 +10,7 @@ function setupDOM() {
     <head></head>
     <body>
       <button id="previous-btn">Previous</button>
+      <button id="pause-btn">Pause</button>
       <button id="skip-btn">Skip</button>
       <button id="accept-btn">Accept</button>
       <button id="abort-btn">Abort</button>
@@ -247,7 +248,7 @@ test('flashButtonForKey - Map ArrowRight to skip-btn', () => {
   assert(window.document.getElementById('skip-btn').classList.contains('btn-pressed'));
 });
 
-test('flashButtonForKey - Map Space to skip-btn', () => {
+test('flashButtonForKey - Map Space to pause-btn', () => {
   const { window } = setupDOM();
   global.window = window;
   global.document = window.document;
@@ -255,7 +256,7 @@ test('flashButtonForKey - Map Space to skip-btn', () => {
   const result = flashButtonForKey(' ');
 
   assert.strictEqual(result, true);
-  assert(window.document.getElementById('skip-btn').classList.contains('btn-pressed'));
+  assert(window.document.getElementById('pause-btn').classList.contains('btn-pressed'));
 });
 
 test('flashButtonForKey - Map Enter to accept-btn', () => {
@@ -288,7 +289,7 @@ test('flashButtonForKey - Map All Keys Correctly', () => {
   const keyMappings = {
     ArrowLeft: 'previous-btn',
     ArrowRight: 'skip-btn',
-    ' ': 'skip-btn',
+    ' ': 'pause-btn',
     Enter: 'accept-btn',
     Escape: 'abort-btn',
   };

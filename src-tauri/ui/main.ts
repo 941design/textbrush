@@ -21,6 +21,7 @@ import type {
   ErrorPayload,
   PausedPayload,
   ReadyPayload,
+  GenerationStartedPayload,
   ImageRecord,
 } from './types';
 
@@ -35,7 +36,9 @@ const state: AppState = {
   isGenerating: false,
   isPaused: false,
   isTransitioning: false,
+  backendReady: false,  // Becomes true when backend sends 'ready' message
   prompt: '',
+  generationPrompt: '',  // Confirmed prompt the backend is generating with
   aspectRatio: '1:1',
   width: 1024,
   height: 1024,
@@ -56,6 +59,7 @@ const elements: Elements = {
   currentImage: null,
   loadingOverlay: null,
   loadingSpinner: null,
+  loadingLabel: null,
   loadingPrompt: null,
   navIndicator: null,
   navDots: null,
@@ -70,12 +74,11 @@ const elements: Elements = {
   resolutionIncrease: null,
   validationError: null,
   fontSizeRadios: null,
-  bufferIndicator: null,
-  bufferDots: null,
-  bufferText: null,
-  outputPathDisplay: null,
-  metadataPath: null,
+  imagePathDisplay: null,
+  pathText: null,
+  copyPathBtn: null,
   controls: null,
+  previousButton: null,
   skipButton: null,
   acceptButton: null,
   abortButton: null,
@@ -93,6 +96,7 @@ function cacheElements(): void {
   elements.currentImage = document.querySelector('.current-image') as HTMLImageElement | null;
   elements.loadingOverlay = document.getElementById('loading-overlay');
   elements.loadingSpinner = document.querySelector('.spinner');
+  elements.loadingLabel = document.querySelector('.loading-label');
   elements.loadingPrompt = document.getElementById('loading-prompt');
   elements.navIndicator = document.getElementById('nav-indicator');
   elements.navDots = document.getElementById('nav-dots');
@@ -107,12 +111,11 @@ function cacheElements(): void {
   elements.resolutionIncrease = document.getElementById('resolution-increase') as HTMLButtonElement | null;
   elements.validationError = document.getElementById('validation-error');
   elements.fontSizeRadios = document.querySelectorAll('input[name="font-size"]');
-  elements.bufferIndicator = document.getElementById('buffer-indicator');
-  elements.bufferDots = document.getElementById('buffer-dots');
-  elements.bufferText = document.getElementById('buffer-text');
-  elements.outputPathDisplay = document.getElementById('output-path-display');
-  elements.metadataPath = document.getElementById('metadata-path');
+  elements.imagePathDisplay = document.getElementById('image-path-display');
+  elements.pathText = document.getElementById('path-text');
+  elements.copyPathBtn = document.getElementById('copy-path-btn') as HTMLButtonElement | null;
   elements.controls = document.querySelector('.controls');
+  elements.previousButton = document.getElementById('previous-btn') as HTMLButtonElement | null;
   elements.skipButton = document.getElementById('skip-btn') as HTMLButtonElement | null;
   elements.acceptButton = document.getElementById('accept-btn') as HTMLButtonElement | null;
   elements.abortButton = document.getElementById('abort-btn') as HTMLButtonElement | null;
@@ -150,30 +153,17 @@ async function init(): Promise<void> {
     const launchArgs = await invoke<LaunchArgs>('get_launch_args');
     console.log('Launch args received:', launchArgs);
     state.prompt = launchArgs.prompt || '';
+    state.generationPrompt = launchArgs.prompt || '';  // Initially, generation uses launch prompt
     state.aspectRatio = launchArgs.aspect_ratio || '1:1';
     state.bufferMax = launchArgs.buffer_max || 8;
     state.outputPath = launchArgs.output_path || null;
-
-    // Display the output path
-    if (elements.outputPathDisplay) {
-      if (state.outputPath) {
-        elements.outputPathDisplay.textContent = `path: ${state.outputPath}`;
-        elements.outputPathDisplay.title = state.outputPath;
-      } else {
-        elements.outputPathDisplay.textContent = 'path: (default)';
-        elements.outputPathDisplay.title = 'Using default output directory';
-      }
-    }
 
     // Display the prompt (legacy support if config controls not initialized)
     if (elements.promptDisplay) {
       elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
     }
 
-    // Set the prompt in the loading caption
-    if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = state.prompt || 'waiting...';
-    }
+    // Loading prompt stays empty until backend is ready (initial state is "waiting for backend")
 
     // Initialize config controls with dimensions from launch args
     state.width = launchArgs.width;
@@ -239,6 +229,10 @@ function handleMessage(msg: SidecarMessage): void {
       handleImageReady(msg.payload as ImagePayload);
       break;
 
+    case 'generation_started':
+      handleGenerationStarted(msg.payload as GenerationStartedPayload);
+      break;
+
     case 'buffer_status':
       handleBufferStatus(msg.payload as BufferStatusPayload);
       break;
@@ -267,8 +261,25 @@ function handleMessage(msg: SidecarMessage): void {
 // Message Handlers
 function handleReady(payload: ReadyPayload): void {
   state.isGenerating = true;
+  state.backendReady = true;
   state.bufferCount = payload.buffer_count || 0;
-  updateBufferDisplay();
+
+  // Update loading overlay to "waiting for image" state with prompt
+  if (elements.loadingLabel) {
+    elements.loadingLabel.textContent = 'waiting for image';
+  }
+  if (elements.loadingPrompt) {
+    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+  }
+}
+
+function handleGenerationStarted(payload: GenerationStartedPayload): void {
+  // Update loading overlay to show generation is active
+  // Only update if loading overlay is currently visible (waiting for image)
+  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains('hidden')) {
+    elements.loadingLabel.textContent = 'generating';
+  }
+  console.log(`Generation started: seed=${payload.seed}, queue_position=${payload.queue_position}`);
 }
 
 async function handleImageReady(payload: ImagePayload): Promise<void> {
@@ -287,6 +298,7 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
   // Create image record with parsed metadata
   const record: ImageRecord = {
     path: payload.path,
+    displayPath: payload.display_path,
     seed: metadata.seed ?? 0,
     blobUrl: assetUrl,
     prompt: metadata.prompt ?? '',
@@ -303,8 +315,19 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
   state.historyIndex = state.imageHistory.length - 1;
   state.waitingForNext = false;
 
+  // Immediately update nav dots so new image appears in indicator
+  updateNavDots();
+
+  // Update generationPrompt when we receive confirmation via image metadata
+  // This ensures the loading prompt reflects the actual prompt being generated
+  if (record.prompt && record.prompt !== state.generationPrompt) {
+    state.generationPrompt = record.prompt;
+    if (elements.loadingPrompt) {
+      elements.loadingPrompt.textContent = state.generationPrompt;
+    }
+  }
+
   void displayImageRecord(record);
-  updateBufferDisplay();
   showLoading(false);
   enableAcceptButton();
 }
@@ -312,7 +335,11 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
 function handleBufferStatus(payload: BufferStatusPayload): void {
   state.bufferCount = payload.count || 0;
   state.isGenerating = payload.generating || false;
-  updateBufferDisplay();
+
+  // Show loading if waiting for next image and buffer is empty
+  if (state.waitingForNext && state.bufferCount === 0) {
+    showLoading(true);
+  }
 }
 
 async function handleAccepted(payload: AcceptedPayload): Promise<void> {
@@ -320,6 +347,7 @@ async function handleAccepted(payload: AcceptedPayload): Promise<void> {
     const entry = state.imageHistory[state.historyIndex];
     if (entry) {
       entry.outputPath = payload.path;
+      entry.outputDisplayPath = payload.display_path;
     }
   }
 
@@ -377,7 +405,36 @@ function handleError(payload: ErrorPayload): void {
 function handlePaused(payload: PausedPayload): void {
   state.isPaused = payload.paused || false;
   updatePauseButton();
+  updateLoadingOverlayForPause();
   console.log('Generation', state.isPaused ? 'paused' : 'resumed');
+}
+
+function updateLoadingOverlayForPause(): void {
+  // Update spinner visibility, label text, and prompt visibility based on paused state
+  if (elements.loadingSpinner) {
+    if (state.isPaused) {
+      elements.loadingSpinner.classList.add('hidden');
+    } else {
+      elements.loadingSpinner.classList.remove('hidden');
+    }
+  }
+
+  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains('hidden')) {
+    if (state.isPaused) {
+      elements.loadingLabel.textContent = 'generation paused';
+    } else {
+      elements.loadingLabel.textContent = 'waiting for image';
+    }
+  }
+
+  // Hide prompt when paused, show when active
+  if (elements.loadingPrompt) {
+    if (state.isPaused) {
+      elements.loadingPrompt.classList.add('hidden');
+    } else {
+      elements.loadingPrompt.classList.remove('hidden');
+    }
+  }
 }
 
 // Update Pause Button UI
@@ -390,14 +447,14 @@ function updatePauseButton(): void {
     elements.pauseIcon.textContent = '\u25B6';
     elements.pauseLabel.textContent = 'Resume';
     if (elements.pauseButton) {
-      elements.pauseButton.title = 'Resume image generation (P)';
+      elements.pauseButton.title = 'Resume image generation (Space)';
       elements.pauseButton.classList.add('paused');
     }
   } else {
     elements.pauseIcon.textContent = '\u23F8';
     elements.pauseLabel.textContent = 'Pause';
     if (elements.pauseButton) {
-      elements.pauseButton.title = 'Pause image generation (P)';
+      elements.pauseButton.title = 'Pause image generation (Space)';
       elements.pauseButton.classList.remove('paused');
     }
   }
@@ -490,12 +547,18 @@ function updateMetadataPanelFromRecord(record: ImageRecord | null, _historyIdx: 
       metadataFinalSize.textContent = '—';
     }
 
-    // Update path display - show output path if accepted, otherwise preview path
-    if (elements.metadataPath) {
-      const path = record.outputPath || record.path;
-      const isSaved = !!record.outputPath;
-      elements.metadataPath.textContent = isSaved ? path : '(not saved)';
-      elements.metadataPath.title = isSaved ? `Click to copy: ${path}` : 'Image not yet saved';
+    // Update path display in status bar - show output path if accepted, else preview path
+    // Use display paths (with ~ for home dir) for UI, keep absolute paths for copy
+    const displayPathStr = record.outputDisplayPath || record.displayPath || '—';
+    const absolutePath = record.outputPath || record.path || '';
+    if (elements.pathText) {
+      elements.pathText.textContent = displayPathStr;
+    }
+    if (elements.imagePathDisplay) {
+      elements.imagePathDisplay.title = absolutePath || 'Current image path';
+    }
+    if (elements.copyPathBtn) {
+      elements.copyPathBtn.style.display = absolutePath ? 'inline-flex' : 'none';
     }
   } else {
     metadataPrompt.textContent = '—';
@@ -503,9 +566,14 @@ function updateMetadataPanelFromRecord(record: ImageRecord | null, _historyIdx: 
     metadataSeed.textContent = '—';
     metadataGeneratedSize.textContent = '—';
     metadataFinalSize.textContent = '—';
-    if (elements.metadataPath) {
-      elements.metadataPath.textContent = '—';
-      elements.metadataPath.title = '';
+    if (elements.pathText) {
+      elements.pathText.textContent = '—';
+    }
+    if (elements.imagePathDisplay) {
+      elements.imagePathDisplay.title = 'Current image path';
+    }
+    if (elements.copyPathBtn) {
+      elements.copyPathBtn.style.display = 'none';
     }
   }
 }
@@ -639,29 +707,6 @@ function navigateToIndex(index: number): void {
   }
 }
 
-function updateBufferDisplay(): void {
-  if (!elements.bufferDots) {
-    return;
-  }
-
-  const dots = elements.bufferDots.querySelectorAll('.buffer-dot');
-  for (let i = 0; i < dots.length; i++) {
-    if (i < state.bufferCount) {
-      dots[i]?.classList.add('filled');
-    } else {
-      dots[i]?.classList.remove('filled');
-    }
-  }
-
-  if (elements.bufferText) {
-    elements.bufferText.textContent = `${state.bufferCount}/${state.bufferMax}`;
-  }
-
-  if (state.waitingForNext && state.bufferCount === 0) {
-    showLoading(true);
-  }
-}
-
 function showLoading(show: boolean): void {
   if (!elements.loadingOverlay) {
     return;
@@ -758,6 +803,13 @@ function showLoadingPlaceholder(): void {
   if (elements.loadingOverlay) {
     elements.loadingOverlay.classList.remove('hidden');
   }
+  // Show "waiting for image" with current prompt
+  if (elements.loadingLabel) {
+    elements.loadingLabel.textContent = 'waiting for image';
+  }
+  if (elements.loadingPrompt) {
+    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+  }
   clearMetadataPanel();
   updateNavDots();
 }
@@ -817,6 +869,10 @@ function enableAcceptButton(): void {
 }
 
 function setupButtonListeners(): void {
+  if (elements.previousButton) {
+    elements.previousButton.addEventListener('click', previous);
+  }
+
   if (elements.skipButton) {
     elements.skipButton.addEventListener('click', skip);
   }
@@ -839,21 +895,22 @@ function setupButtonListeners(): void {
     });
   }
 
-  // Click handler for metadata path to copy to clipboard
-  if (elements.metadataPath) {
-    elements.metadataPath.addEventListener('click', () => {
+  // Click handler for copy path button
+  if (elements.copyPathBtn) {
+    elements.copyPathBtn.addEventListener('click', () => {
       const idx = state.historyIndex;
       const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
-      const path = entry?.path;
+      // Copy output path if accepted, otherwise preview path
+      const path = entry?.outputPath || entry?.path;
       if (path) {
         navigator.clipboard.writeText(path).then(() => {
-          // Visual feedback
-          const original = elements.metadataPath?.textContent;
-          if (elements.metadataPath) {
-            elements.metadataPath.textContent = 'Copied!';
+          // Visual feedback - temporarily change path text
+          const original = elements.pathText?.textContent;
+          if (elements.pathText) {
+            elements.pathText.textContent = 'Copied!';
             setTimeout(() => {
-              if (elements.metadataPath && original) {
-                elements.metadataPath.textContent = original;
+              if (elements.pathText && original) {
+                elements.pathText.textContent = original;
               }
             }, 1000);
           }
@@ -892,7 +949,7 @@ function setupKeyboardListeners(): void {
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       previous();
-    } else if (e.key === ' ' || e.key === 'ArrowRight') {
+    } else if (e.key === 'ArrowRight') {
       e.preventDefault();
       skip();
     } else if (e.key === 'Enter') {
@@ -904,7 +961,7 @@ function setupKeyboardListeners(): void {
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && ctrlOrCmd) {
       e.preventDefault();
       deleteCurrentImage();
-    } else if (e.key === 'p' || e.key === 'P') {
+    } else if (e.key === ' ') {
       e.preventDefault();
       togglePause();
     }
@@ -920,7 +977,6 @@ declare global {
       init: typeof init;
       handleMessage: typeof handleMessage;
       displayImageRecord: typeof displayImageRecord;
-      updateBufferDisplay: typeof updateBufferDisplay;
       updateNavDots: typeof updateNavDots;
       navigateToIndex: typeof navigateToIndex;
       showLoading: typeof showLoading;
@@ -945,7 +1001,6 @@ if (typeof window !== 'undefined') {
     init,
     handleMessage,
     displayImageRecord,
-    updateBufferDisplay,
     updateNavDots,
     navigateToIndex,
     showLoading,

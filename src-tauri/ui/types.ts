@@ -4,6 +4,7 @@
 // ImagePayload is path-based; all metadata (including seed) is parsed from PNG tEXt chunks
 export interface ImagePayload {
   path: string;              // Absolute path to preview PNG file
+  display_path: string;      // Path with home dir replaced by ~
   buffer_count: number;
   buffer_max: number;
 }
@@ -14,7 +15,8 @@ export interface BufferStatusPayload {
 }
 
 export interface AcceptedPayload {
-  path?: string;
+  path?: string;             // Absolute path to saved file
+  display_path?: string;     // Path with home dir replaced by ~
 }
 
 export interface ErrorPayload {
@@ -30,6 +32,11 @@ export interface ReadyPayload {
   buffer_count?: number;
 }
 
+export interface GenerationStartedPayload {
+  seed: number;
+  queue_position: number;
+}
+
 export type MessagePayload =
   | ImagePayload
   | BufferStatusPayload
@@ -37,10 +44,11 @@ export type MessagePayload =
   | ErrorPayload
   | PausedPayload
   | ReadyPayload
+  | GenerationStartedPayload
   | Record<string, unknown>;
 
 export interface SidecarMessage {
-  type: 'ready' | 'image_ready' | 'buffer_status' | 'accepted' | 'aborted' | 'error' | 'paused';
+  type: 'ready' | 'image_ready' | 'generation_started' | 'buffer_status' | 'accepted' | 'aborted' | 'error' | 'paused';
   payload: MessagePayload;
 }
 
@@ -59,6 +67,7 @@ export interface LaunchArgs {
 // Metadata parsed from PNG tEXt chunks on arrival, stored for navigation
 export interface ImageRecord {
   path: string;                    // Absolute path to preview PNG file
+  displayPath: string;             // Path with home dir replaced by ~ (for display)
   seed: number;
   blobUrl: string | null;          // Object URL for display (from asset protocol)
   prompt: string;
@@ -69,6 +78,7 @@ export interface ImageRecord {
   generatedWidth?: number;         // Width passed to model (multiple of 16)
   generatedHeight?: number;        // Height passed to model (multiple of 16)
   outputPath?: string;             // Final output path after accept (moved from preview)
+  outputDisplayPath?: string;      // Output path with home dir replaced by ~ (for display)
 }
 
 // Application state
@@ -79,7 +89,9 @@ export interface AppState {
   isGenerating: boolean;
   isPaused: boolean;
   isTransitioning: boolean;
+  backendReady: boolean;  // True when backend has sent 'ready' message
   prompt: string;
+  generationPrompt: string;  // Prompt currently being used for generation (confirmed by backend)
   aspectRatio: string;
   width: number;
   height: number;
@@ -100,6 +112,7 @@ export interface Elements {
   currentImage: HTMLImageElement | null;
   loadingOverlay: HTMLElement | null;
   loadingSpinner: HTMLElement | null;
+  loadingLabel: HTMLElement | null;
   loadingPrompt: HTMLElement | null;
   navIndicator: HTMLElement | null;
   navDots: HTMLElement | null;
@@ -114,12 +127,11 @@ export interface Elements {
   resolutionIncrease: HTMLButtonElement | null;
   validationError: HTMLElement | null;
   fontSizeRadios: NodeListOf<HTMLInputElement> | null;
-  bufferIndicator: HTMLElement | null;
-  bufferDots: HTMLElement | null;
-  bufferText: HTMLElement | null;
-  outputPathDisplay: HTMLElement | null;
-  metadataPath: HTMLElement | null;
+  imagePathDisplay: HTMLElement | null;
+  pathText: HTMLElement | null;
+  copyPathBtn: HTMLButtonElement | null;
   controls: HTMLElement | null;
+  previousButton: HTMLButtonElement | null;
   skipButton: HTMLButtonElement | null;
   acceptButton: HTMLButtonElement | null;
   abortButton: HTMLButtonElement | null;

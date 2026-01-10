@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from hypothesis import given, settings
@@ -485,17 +485,19 @@ class TestImageReadyEventSerialization:
     """Tests for ImageReadyEvent serialization (path-based protocol)."""
 
     def test_image_ready_event_serialization(self):
-        """ImageReadyEvent serializes path and buffer stats to valid JSON."""
+        """ImageReadyEvent serializes path, display_path, and buffer stats to valid JSON."""
         from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
 
         event = ImageReadyEvent(
-            path="/path/to/preview.png",
+            path="/Users/test/Pictures/preview.png",
+            display_path="~/Pictures/preview.png",
             buffer_count=3,
             buffer_max=8,
         )
         payload = dataclass_to_dict(event)
 
-        assert payload["path"] == "/path/to/preview.png"
+        assert payload["path"] == "/Users/test/Pictures/preview.png"
+        assert payload["display_path"] == "~/Pictures/preview.png"
         assert payload["buffer_count"] == 3
         assert payload["buffer_max"] == 8
         # Seed and dimensions are in PNG metadata, not in payload
@@ -527,7 +529,12 @@ class TestUpdateConfigCommand:
 
         mock_backend.abort.assert_called_once()
         mock_backend.start_generation.assert_called_once_with(
-            prompt=prompt, seed=None, aspect_ratio=aspect_ratio, width=None, height=None
+            prompt=prompt,
+            seed=None,
+            aspect_ratio=aspect_ratio,
+            width=None,
+            height=None,
+            on_generation_start=ANY,
         )
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]

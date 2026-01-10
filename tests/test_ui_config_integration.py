@@ -4,7 +4,7 @@ Tests complete end-to-end scenarios spanning frontend UI → Tauri command → P
 Uses property-based testing to validate system-level invariants across component boundaries.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from hypothesis import given
@@ -61,7 +61,12 @@ class TestConfigUpdateE2E:
 
         # Verify start_generation() called with new config
         handler_with_backend.backend.start_generation.assert_called_once_with(
-            prompt="New prompt text", seed=None, aspect_ratio="16:9", width=None, height=None
+            prompt="New prompt text",
+            seed=None,
+            aspect_ratio="16:9",
+            width=None,
+            height=None,
+            on_generation_start=ANY,
         )
 
         # Verify BUFFER_STATUS event sent
@@ -85,7 +90,12 @@ class TestConfigUpdateE2E:
 
         handler_with_backend.backend.abort.assert_called_once()
         handler_with_backend.backend.start_generation.assert_called_once_with(
-            prompt="Same prompt", seed=None, aspect_ratio="9:16", width=None, height=None
+            prompt="Same prompt",
+            seed=None,
+            aspect_ratio="9:16",
+            width=None,
+            height=None,
+            on_generation_start=ANY,
         )
 
         # Verify buffer status reflects reset state

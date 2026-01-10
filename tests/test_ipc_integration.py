@@ -279,6 +279,7 @@ class TestIPCCompleteWorkflow:
         # Verify path-based payload (seed is in PNG metadata, not payload)
         img_msg = image_ready_msgs[0]
         assert "path" in img_msg.payload, "Expected 'path' field in IMAGE_READY payload"
+        assert "display_path" in img_msg.payload, "Expected 'display_path' field"
         assert "image_data" not in img_msg.payload, "Should not have 'image_data' in payload"
         assert "seed" not in img_msg.payload, "Seed should be in PNG metadata, not payload"
         assert img_msg.payload["path"] == str(preview_path)

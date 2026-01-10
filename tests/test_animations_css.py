@@ -107,7 +107,7 @@ def parser(css_content):
 class TestKeyframesExist:
     """Property: All required keyframes are defined."""
 
-    REQUIRED_KEYFRAMES = ["spin", "fadeIn", "fadeOut", "btnPress", "pulse"]
+    REQUIRED_KEYFRAMES = ["spin", "fadeIn", "fadeOut", "btnPress"]
 
     def test_all_required_keyframes_defined(self, parser):
         """All required keyframe animations exist."""
@@ -129,10 +129,6 @@ class TestKeyframesExist:
     def test_btnpress_keyframe_exists(self, parser):
         """BtnPress keyframe is defined."""
         assert parser.keyframe_exists("btnPress")
-
-    def test_pulse_keyframe_exists(self, parser):
-        """Pulse keyframe is defined."""
-        assert parser.keyframe_exists("pulse")
 
 
 class TestSpinnerAnimation:
@@ -292,39 +288,6 @@ class TestButtonPressAnimation:
         assert parser.class_property_contains("btn-pressed", "translateZ(0)")
 
 
-class TestPulseAnimation:
-    """Property: Pulse animation fades opacity 0.3 → 1 → 0.3 over 1s infinitely."""
-
-    def test_pulse_has_opacity_progression(self, parser):
-        """Pulse keyframe transitions opacity 0.3 → 1 → 0.3."""
-        css = parser.css_content
-        assert "pulse" in css and "opacity" in css, "Pulse keyframe missing opacity transitions"
-
-    def test_buffer_generating_selector_exists(self, parser):
-        """buffer-generating selector is defined."""
-        selector = ".buffer-generating .buffer-dot:last-child"
-        assert parser.selector_has_property_value(selector, "animation")
-
-    def test_buffer_pulse_uses_pulse_animation(self, parser):
-        """buffer-dot pulse uses pulse animation."""
-        selector = ".buffer-generating .buffer-dot:last-child"
-        assert parser.selector_has_property_value(selector, "pulse")
-
-    def test_buffer_generating_pulse_1s_duration(self, parser):
-        """Buffer-generating pulse uses 1s duration."""
-        selector = ".buffer-generating .buffer-dot:last-child"
-        assert parser.selector_has_property_value(selector, "1s")
-
-    def test_buffer_generating_infinite_loop(self, parser):
-        """Buffer pulse animation runs infinite."""
-        selector = ".buffer-generating .buffer-dot:last-child"
-        assert parser.selector_has_property_value(selector, "infinite")
-
-    def test_buffer_generating_targets_last_child(self, parser):
-        """Buffer pulse targets last-child specifically."""
-        assert ".buffer-generating .buffer-dot:last-child" in parser.css_content
-
-
 class TestCSSCustomProperties:
     """Property: Animation durations use consistent timing values."""
 
@@ -412,10 +375,6 @@ class TestPerformanceOptimization:
         """BtnPress uses transform."""
         assert parser.keyframe_has_property("btnPress", "transform")
 
-    def test_pulse_has_opacity(self, parser):
-        """Pulse uses opacity."""
-        assert parser.keyframe_has_property("pulse", "opacity")
-
     def test_spinner_has_translatez(self, parser):
         """Spinner includes translateZ for GPU acceleration."""
         assert parser.class_property_contains("spinner", "translateZ(0)")
@@ -431,8 +390,3 @@ class TestPerformanceOptimization:
     def test_btn_pressed_has_translatez(self, parser):
         """btn-pressed includes translateZ for GPU acceleration."""
         assert parser.class_property_contains("btn-pressed", "translateZ(0)")
-
-    def test_buffer_pulse_has_translatez(self, parser):
-        """buffer pulse includes translateZ for GPU acceleration."""
-        selector = ".buffer-generating .buffer-dot:last-child"
-        assert parser.selector_has_property_value(selector, "translateZ(0)")

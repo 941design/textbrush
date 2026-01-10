@@ -14,11 +14,13 @@ from textbrush.backend import TextbrushBackend
 from textbrush.config import Config
 from textbrush.ipc.protocol import (
     BufferStatusEvent,
+    GenerationStartedEvent,
     Message,
     MessageType,
     PausedEvent,
     dataclass_to_dict,
 )
+from textbrush.paths import display_path
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,18 @@ class MessageHandler:
         self.backend = TextbrushBackend(self.config)
         logger.info("Backend created, starting init thread")
 
+        def on_generation_start(seed: int, queue_position: int) -> None:
+            """Callback invoked when worker starts generating an image."""
+            logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
+            server.send(
+                Message(
+                    MessageType.GENERATION_STARTED,
+                    dataclass_to_dict(
+                        GenerationStartedEvent(seed=seed, queue_position=queue_position)
+                    ),
+                )
+            )
+
         def on_ready():
             logger.info("Backend ready, sending READY event")
             server.send(Message(MessageType.READY))
@@ -127,6 +141,7 @@ class MessageHandler:
                 aspect_ratio=cmd.aspect_ratio,
                 width=cmd.width,
                 height=cmd.height,
+                on_generation_start=on_generation_start,
             )
             logger.info("Starting image delivery")
             self._start_image_delivery(server, cmd.output_path)
@@ -226,11 +241,16 @@ class MessageHandler:
 
         try:
             path = self.backend.accept_from_preview(self._current_image, self._output_path)
-            logger.info(f"Image moved to: {path.absolute()}")
+            logger.info(f"Image moved to: {display_path(path)}")
             server.send(
                 Message(
                     MessageType.ACCEPTED,
-                    dataclass_to_dict(AcceptedEvent(path=str(path.absolute()))),
+                    dataclass_to_dict(
+                        AcceptedEvent(
+                            path=str(path.absolute()),
+                            display_path=display_path(path),
+                        )
+                    ),
                 )
             )
         except Exception as e:
@@ -416,6 +436,19 @@ class MessageHandler:
         else:
             dims_info = f"aspect_ratio={cmd.aspect_ratio}"
         logger.info(f"UPDATE_CONFIG: prompt='{cmd.prompt[:50]}...', {dims_info}")
+
+        def on_generation_start(seed: int, queue_position: int) -> None:
+            """Callback invoked when worker starts generating an image."""
+            logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
+            server.send(
+                Message(
+                    MessageType.GENERATION_STARTED,
+                    dataclass_to_dict(
+                        GenerationStartedEvent(seed=seed, queue_position=queue_position)
+                    ),
+                )
+            )
+
         self.backend.abort()
         self.backend.start_generation(
             prompt=cmd.prompt,
@@ -423,6 +456,7 @@ class MessageHandler:
             aspect_ratio=cmd.aspect_ratio,
             width=cmd.width,
             height=cmd.height,
+            on_generation_start=on_generation_start,
         )
 
         server.send(
@@ -590,7 +624,7 @@ class MessageHandler:
 
                     # Save to preview directory with full metadata in PNG tEXt chunks
                     preview_path = self.backend.save_to_preview(buffered)
-                    logger.info(f"Saved preview: {preview_path}")
+                    logger.info(f"Saved preview: {display_path(preview_path)}")
 
                     server.send(
                         Message(
@@ -598,6 +632,7 @@ class MessageHandler:
                             dataclass_to_dict(
                                 ImageReadyEvent(
                                     path=str(preview_path.absolute()),
+                                    display_path=display_path(preview_path),
                                     buffer_count=len(self.backend.buffer),
                                     buffer_max=self.backend.buffer.max_size,
                                 )

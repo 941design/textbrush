@@ -160,9 +160,6 @@ class TestRequiredElementIDs:
         "current-image": "img",
         "loading-overlay": "div",
         "prompt-display": "div",
-        "buffer-indicator": "div",
-        "buffer-dots": "div",
-        "buffer-text": "div",
         "abort-btn": "button",
         "skip-btn": "button",
         "accept-btn": "button",
@@ -389,28 +386,12 @@ class TestAccessibility:
             "Loading overlay must have aria-live='polite'"
         )
 
-    def test_buffer_dots_have_aria_labels(self):
-        """Individual buffer dots should have aria-label for screen readers."""
-        html = load_html()
-        parser = parse_html(html)
-
-        buffer_dots = [
-            attrs
-            for tag, attrs in parser.all_elements
-            if tag == "span" and "buffer-dot" in attrs.get("class", "")
-        ]
-
-        assert len(buffer_dots) > 0, "Buffer dots not found"
-
-        for i, dot_attrs in enumerate(buffer_dots):
-            assert "aria-label" in dot_attrs, f"Buffer dot {i} missing aria-label"
-
 
 class TestLoadingOverlay:
     """Test loading overlay initial state."""
 
-    def test_loading_overlay_initially_hidden(self):
-        """Loading overlay must have 'hidden' class initially."""
+    def test_loading_overlay_initially_visible(self):
+        """Loading overlay must be visible initially (waiting for backend state)."""
         html = load_html()
         parser = parse_html(html)
 
@@ -424,7 +405,9 @@ class TestLoadingOverlay:
         )
         assert overlay_attrs is not None, "Loading overlay not found"
         classes = overlay_attrs.get("class", "").split()
-        assert "hidden" in classes, "Loading overlay must have 'hidden' class"
+        assert "hidden" not in classes, (
+            "Loading overlay must NOT have 'hidden' class (shows 'waiting for backend')"
+        )
 
     def test_loading_overlay_contains_spinner(self):
         """Loading overlay must contain a spinner element."""
@@ -519,10 +502,6 @@ class TestCSSClassesUsed:
         "status-bar",
         "status-left",
         "prompt-display",
-        "buffer-indicator",
-        "buffer-dots",
-        "buffer-dot",
-        "buffer-text",
         "controls",
         "control-btn",
         "btn-abort",
@@ -582,41 +561,6 @@ class TestStatusBarStructure:
             None,
         )
         assert prompt_attrs is not None, "Prompt display not found"
-
-    def test_buffer_indicator_structure(self):
-        """Buffer indicator must have dots and text."""
-        html = load_html()
-        parser = parse_html(html)
-
-        indicator_attrs = next(
-            (
-                attrs
-                for tag, attrs in parser.all_elements
-                if tag == "div" and attrs.get("id") == "buffer-indicator"
-            ),
-            None,
-        )
-        assert indicator_attrs is not None, "Buffer indicator not found"
-
-        dots_attrs = next(
-            (
-                attrs
-                for tag, attrs in parser.all_elements
-                if tag == "div" and attrs.get("id") == "buffer-dots"
-            ),
-            None,
-        )
-        assert dots_attrs is not None, "Buffer dots container not found"
-
-        text_attrs = next(
-            (
-                attrs
-                for tag, attrs in parser.all_elements
-                if tag == "div" and attrs.get("id") == "buffer-text"
-            ),
-            None,
-        )
-        assert text_attrs is not None, "Buffer text element not found"
 
     def test_metadata_panel_present(self):
         """Metadata panel must be present (seed now displayed in metadata panel)."""

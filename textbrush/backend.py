@@ -11,7 +11,7 @@ from textbrush.buffer import BufferedImage, ImageBuffer
 from textbrush.config import Config
 from textbrush.inference.base import GenerationOptions
 from textbrush.inference.factory import create_engine
-from textbrush.worker import GenerationWorker
+from textbrush.worker import GenerationWorker, OnGenerationStartCallback
 
 
 class TextbrushBackend:
@@ -72,6 +72,7 @@ class TextbrushBackend:
         aspect_ratio: str = "1:1",
         width: int | None = None,
         height: int | None = None,
+        on_generation_start: OnGenerationStartCallback | None = None,
     ) -> None:
         """Begin background image generation.
 
@@ -82,6 +83,8 @@ class TextbrushBackend:
             - aspect_ratio: string, one of "1:1", "16:9", "9:16", or "custom"
             - width: optional int, image width in pixels (overrides aspect_ratio)
             - height: optional int, image height in pixels (overrides aspect_ratio)
+            - on_generation_start: optional callback invoked before each generation
+              with (seed, queue_position) args
 
           Outputs: none (modifies internal state)
 
@@ -102,7 +105,7 @@ class TextbrushBackend:
             1. Check engine.is_loaded(), raise RuntimeError if not loaded
             2. Reset buffer shutdown state to allow put/get operations
             3. Create GenerationOptions with seed, aspect_ratio, and optional dimensions
-            4. Create GenerationWorker with engine, buffer, prompt, options
+            4. Create GenerationWorker with engine, buffer, prompt, options, callback
             5. Start worker thread
         """
         if not self.engine.is_loaded():
@@ -122,6 +125,7 @@ class TextbrushBackend:
             buffer=self.buffer,
             prompt=prompt,
             options=options,
+            on_generation_start=on_generation_start,
         )
         self._worker.start()
 
@@ -426,31 +430,25 @@ class TextbrushBackend:
 
           Invariants:
             - Path is in config.output.directory
-            - Filename includes timestamp or seed
+            - Filename is a UUID
             - Extension matches config.output.format
 
           Properties:
-            - Unique: generates unique filename for each call
+            - Unique: generates unique UUID filename for each call
             - Deterministic structure: uses config settings
 
           Algorithm:
             1. Get config.output.directory
-            2. Generate filename based on timestamp and/or seed
+            2. Generate UUID filename
             3. Add extension from config.output.format
             4. Return Path object
         """
-        from datetime import datetime
+        import uuid
 
         output_dir = self.config.output.directory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        current_image = self.buffer.peek()
-        if current_image is not None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{timestamp}_seed{current_image.seed}.{self.config.output.format}"
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{timestamp}.{self.config.output.format}"
+        filename = f"{uuid.uuid4()}.{self.config.output.format}"
 
         return output_dir / filename
 
@@ -499,20 +497,19 @@ class TextbrushBackend:
           Properties:
             - Side effect: writes file to disk
             - Side effect: modifies buffered_image.temp_path
-            - Unique filename: uses timestamp and seed
+            - Unique filename: uses UUID
 
           Algorithm:
             1. Get preview directory
-            2. Generate unique filename with timestamp and seed
+            2. Generate unique UUID filename
             3. Save image with metadata using _save_with_metadata
             4. Set buffered_image.temp_path
             5. Return path
         """
-        from datetime import datetime
+        import uuid
 
         preview_dir = self._get_preview_dir()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        filename = f"preview_{timestamp}_seed{buffered_image.seed}.png"
+        filename = f"{uuid.uuid4()}.png"
         preview_path = preview_dir / filename
 
         self._save_with_metadata(buffered_image, preview_path)

@@ -1,6 +1,7 @@
 """Property-based tests for TextbrushBackend._generate_output_path()."""
 
 import tempfile
+import uuid
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -78,8 +79,8 @@ class TestGenerateOutputPathProperties:
         seed=st.integers(min_value=0, max_value=2**31 - 1),
     )
     @settings(max_examples=10)
-    def test_filename_includes_seed(self, output_format: str, seed: int):
-        """Filename includes seed when buffer has image."""
+    def test_filename_is_uuid(self, output_format: str, seed: int):
+        """Filename is a valid UUID."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             backend = create_test_backend(output_dir, output_format)
@@ -90,29 +91,9 @@ class TestGenerateOutputPathProperties:
 
             result_path = backend._generate_output_path()
 
-            assert f"seed{seed}" in result_path.name
-
-    @given(
-        output_format=st.sampled_from(["png", "jpg"]),
-        seed=st.integers(min_value=0, max_value=2**31 - 1),
-    )
-    @settings(max_examples=10)
-    def test_filename_includes_timestamp(self, output_format: str, seed: int):
-        """Filename includes timestamp component."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir)
-            backend = create_test_backend(output_dir, output_format)
-
-            image = Image.new("RGB", (64, 64))
-            buffered_image = BufferedImage(image=image, seed=seed)
-            backend.buffer.peek.return_value = buffered_image
-
-            result_path = backend._generate_output_path()
-
-            import re
-
-            timestamp_pattern = r"\d{8}_\d{6}"
-            assert re.search(timestamp_pattern, result_path.name)
+            # Filename without extension should be a valid UUID
+            filename_without_ext = result_path.stem
+            uuid.UUID(filename_without_ext)  # Raises ValueError if not valid UUID
 
     @given(
         output_format=st.sampled_from(["png", "jpg"]),
@@ -141,8 +122,8 @@ class TestGenerateOutputPathProperties:
         output_format=st.sampled_from(["png", "jpg"]),
     )
     @settings(max_examples=10)
-    def test_no_seed_when_buffer_empty(self, output_format: str):
-        """Filename has no seed when buffer is empty."""
+    def test_uuid_when_buffer_empty(self, output_format: str):
+        """Filename is UUID when buffer is empty."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             backend = create_test_backend(output_dir, output_format)
@@ -150,7 +131,9 @@ class TestGenerateOutputPathProperties:
 
             result_path = backend._generate_output_path()
 
-            assert "seed" not in result_path.name
+            # Filename without extension should be a valid UUID
+            filename_without_ext = result_path.stem
+            uuid.UUID(filename_without_ext)  # Raises ValueError if not valid UUID
             assert result_path.suffix == f".{output_format}"
 
     @given(
@@ -159,13 +142,10 @@ class TestGenerateOutputPathProperties:
         seed2=st.integers(min_value=0, max_value=2**31 - 1),
     )
     @settings(max_examples=10)
-    def test_different_seeds_produce_different_filenames(
+    def test_multiple_calls_produce_different_filenames(
         self, output_format: str, seed1: int, seed2: int
     ):
-        """Different seeds produce different filenames."""
-        if seed1 == seed2:
-            return
-
+        """Multiple calls produce different filenames (UUIDs are unique)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
             backend = create_test_backend(output_dir, output_format)
@@ -217,7 +197,9 @@ class TestGenerateOutputPathExamples:
 
             result_path = backend._generate_output_path()
 
-            assert "seed0" in result_path.name
+            # Filename without extension should be a valid UUID
+            filename_without_ext = result_path.stem
+            uuid.UUID(filename_without_ext)  # Raises ValueError if not valid UUID
             assert result_path.suffix == ".png"
 
     def test_large_seed(self):
@@ -232,7 +214,9 @@ class TestGenerateOutputPathExamples:
 
             result_path = backend._generate_output_path()
 
-            assert "seed2147483647" in result_path.name
+            # Filename without extension should be a valid UUID
+            filename_without_ext = result_path.stem
+            uuid.UUID(filename_without_ext)  # Raises ValueError if not valid UUID
             assert result_path.suffix == ".jpg"
 
     def test_special_characters_in_format(self):
@@ -265,4 +249,6 @@ class TestGenerateOutputPathExamples:
             result_path = backend._generate_output_path()
 
             assert result_path.parent == output_dir
-            assert "seed42" in result_path.name
+            # Filename without extension should be a valid UUID
+            filename_without_ext = result_path.stem
+            uuid.UUID(filename_without_ext)  # Raises ValueError if not valid UUID

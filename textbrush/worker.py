@@ -5,12 +5,17 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 
 from textbrush.buffer import BufferedImage, ImageBuffer
 from textbrush.inference.base import GenerationOptions, InferenceEngine
 
 logger = logging.getLogger(__name__)
+
+# Callback type for generation start notification
+# Args: seed (int), queue_position (int)
+OnGenerationStartCallback = Callable[[int, int], None]
 
 
 class GenerationWorker:
@@ -25,6 +30,7 @@ class GenerationWorker:
         buffer: ImageBuffer,
         prompt: str,
         options: GenerationOptions,
+        on_generation_start: OnGenerationStartCallback | None = None,
     ):
         """Initialize worker with engine, buffer, and generation parameters.
 
@@ -34,6 +40,8 @@ class GenerationWorker:
             - buffer: ImageBuffer to fill with images
             - prompt: non-empty string, text description for generation
             - options: GenerationOptions with seed, dimensions, steps, aspect_ratio
+            - on_generation_start: optional callback invoked before each generation
+              with (seed, queue_position) args
 
           Outputs: none (constructs instance)
 
@@ -49,6 +57,7 @@ class GenerationWorker:
         self.buffer = buffer
         self.prompt = prompt
         self.options = options
+        self._on_generation_start = on_generation_start
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
@@ -291,6 +300,12 @@ class GenerationWorker:
                     break
 
                 try:
+                    # Notify callback before starting generation
+                    if self._on_generation_start:
+                        current_seed = self.options.seed or 0
+                        queue_position = len(self.buffer)
+                        self._on_generation_start(current_seed, queue_position)
+
                     result = self.engine.generate(self.prompt, self.options)
 
                     buffered_image = BufferedImage(

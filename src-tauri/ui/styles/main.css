@@ -98,25 +98,7 @@
  *        - font-size: 12px
  *        - white-space: nowrap, overflow hidden, text-overflow ellipsis
  *
- *     9. Buffer Indicator (.buffer-indicator):
- *        - display: flex, align-items center, gap: var(--spacing-sm)
- *        - Contains .buffer-dots and .buffer-text
- *
- *    10. Buffer Dots (.buffer-dots):
- *        - display: flex, gap: 3px
- *
- *    11. Buffer Dot (.buffer-dot):
- *        - width: 6px, height: 6px, border-radius: 50%
- *        - background: var(--border-subtle)
- *        - transition: background var(--transition-fast)
- *        - When .filled: background var(--accent-primary)
- *
- *    12. Buffer Text (.buffer-text):
- *        - color: var(--text-muted)
- *        - font-family: var(--font-mono)
- *        - font-size: 11px
- *
- *    13. Controls (.controls):
+ *     9. Controls (.controls):
  *        - display: flex, justify-content center, gap: var(--spacing-md)
  *        - padding: var(--spacing-lg)
  *        - background: var(--bg-primary)
@@ -220,6 +202,8 @@ body {
     padding: var(--spacing-lg);
     background: var(--bg-secondary);
     gap: var(--spacing-lg);
+    min-height: 0;
+    overflow: hidden;
 }
 
 .image-panel {
@@ -229,12 +213,15 @@ body {
     align-items: center;
     justify-content: center;
     min-width: 0;
+    min-height: 0;
     gap: var(--spacing-sm);
+    overflow: hidden;
 }
 
 .metadata-panel {
     width: 350px;
     flex-shrink: 0;
+    min-height: 0;
     background: var(--bg-tertiary);
     border-left: 1px solid var(--border-subtle);
     padding: var(--spacing-lg);
@@ -286,10 +273,13 @@ body {
     position: relative;
     width: 512px;
     height: 512px;
+    max-width: 100%;
+    max-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    flex-shrink: 1;
 }
 
 .current-image {
@@ -343,6 +333,10 @@ body {
     animation: spin 1s linear infinite;
 }
 
+.spinner.hidden {
+    display: none;
+}
+
 .loading-caption {
     margin-top: var(--spacing-lg);
     text-align: center;
@@ -378,6 +372,7 @@ body {
     background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-subtle);
     gap: var(--spacing-xs);
+    flex-shrink: 0;
 }
 
 .header-bar .config-controls {
@@ -428,6 +423,7 @@ body {
     border-top: 1px solid var(--border-subtle);
     font-size: 13px;
     gap: var(--spacing-md);
+    flex-shrink: 0;
 }
 
 .status-left {
@@ -482,43 +478,6 @@ body {
 }
 
 /* ============================================================================
-   BUFFER INDICATOR
-   ============================================================================ */
-
-.buffer-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
-
-.buffer-dots {
-    display: flex;
-    gap: 3px;
-}
-
-.buffer-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--border-subtle);
-    transition: background var(--transition-fast);
-}
-
-.buffer-dot.filled {
-    background: var(--accent-primary);
-}
-
-.buffer-indicator.buffer-generating .buffer-dot:last-child {
-    animation: pulse 1s ease infinite;
-}
-
-.buffer-text {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 11px;
-}
-
-/* ============================================================================
    NAVIGATION INDICATOR (under image)
    ============================================================================ */
 
@@ -528,6 +487,7 @@ body {
     align-items: center;
     padding: var(--spacing-sm) 0;
     min-height: 24px;
+    flex-shrink: 0;
 }
 
 .nav-dots {
@@ -564,27 +524,51 @@ body {
 }
 
 /* ============================================================================
-   METADATA PATH
+   IMAGE PATH DISPLAY
    ============================================================================ */
 
-.metadata-path {
-    word-break: break-all;
-    cursor: pointer;
-    transition: color var(--transition-fast);
-}
-
-.metadata-path:hover {
-    color: var(--accent-primary);
-}
-
-/* ============================================================================
-   OUTPUT PATH DISPLAY
-   ============================================================================ */
-
-.output-path-display {
+.image-path-display {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: 11px;
+}
+
+.path-text {
+    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 800px;
+}
+
+.copy-path-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.copy-path-btn:hover {
+    color: var(--accent-primary);
+    background-color: var(--bg-secondary);
+}
+
+.copy-path-btn:active {
+    transform: scale(0.95);
+}
+
+.copy-icon {
+    display: block;
 }
 
 /* ============================================================================
@@ -813,7 +797,7 @@ body {
 .metadata-label,
 .metadata-value,
 .buffer-text,
-.output-path-display,
+.image-path-display,
 .prompt-display,
 .loading-label,
 .loading-prompt,
@@ -844,6 +828,7 @@ body {
     gap: var(--spacing-md);
     padding: var(--spacing-md) var(--spacing-lg);
     background: var(--bg-primary);
+    flex-shrink: 0;
 }
 
 /* ============================================================================
@@ -899,7 +884,8 @@ body {
     background: rgba(239, 68, 68, 0.1);
 }
 
-.btn-skip:hover {
+.btn-prev:hover,
+.btn-next:hover {
     border-color: var(--accent-primary);
 }
 

@@ -286,10 +286,6 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
       height
     });
     console.log("Configuration updated successfully");
-    const loadingPrompt = document.getElementById("loading-prompt");
-    if (loadingPrompt) {
-      loadingPrompt.textContent = trimmedPrompt;
-    }
   } catch (error) {
     console.error("Configuration update failed:", error);
     state2.prompt = previousPrompt;
@@ -461,15 +457,13 @@ function flashButtonForKey(key, ctrlOrCmd = false) {
     case "ArrowLeft":
       return flashButtonById("previous-btn");
     case "ArrowRight":
-    case " ":
       return flashButtonById("skip-btn");
+    case " ":
+      return flashButtonById("pause-btn");
     case "Enter":
       return flashButtonById("accept-btn");
     case "Escape":
       return flashButtonById("abort-btn");
-    case "p":
-    case "P":
-      return flashButtonById("pause-btn");
     case "Delete":
     case "Backspace":
       if (ctrlOrCmd) {
@@ -8978,7 +8972,11 @@ var state = {
   isGenerating: false,
   isPaused: false,
   isTransitioning: false,
+  backendReady: false,
+  // Becomes true when backend sends 'ready' message
   prompt: "",
+  generationPrompt: "",
+  // Confirmed prompt the backend is generating with
   aspectRatio: "1:1",
   width: 1024,
   height: 1024,
@@ -8997,6 +8995,7 @@ var elements = {
   currentImage: null,
   loadingOverlay: null,
   loadingSpinner: null,
+  loadingLabel: null,
   loadingPrompt: null,
   navIndicator: null,
   navDots: null,
@@ -9011,12 +9010,11 @@ var elements = {
   resolutionIncrease: null,
   validationError: null,
   fontSizeRadios: null,
-  bufferIndicator: null,
-  bufferDots: null,
-  bufferText: null,
-  outputPathDisplay: null,
-  metadataPath: null,
+  imagePathDisplay: null,
+  pathText: null,
+  copyPathBtn: null,
   controls: null,
+  previousButton: null,
   skipButton: null,
   acceptButton: null,
   abortButton: null,
@@ -9033,6 +9031,7 @@ function cacheElements() {
   elements.currentImage = document.querySelector(".current-image");
   elements.loadingOverlay = document.getElementById("loading-overlay");
   elements.loadingSpinner = document.querySelector(".spinner");
+  elements.loadingLabel = document.querySelector(".loading-label");
   elements.loadingPrompt = document.getElementById("loading-prompt");
   elements.navIndicator = document.getElementById("nav-indicator");
   elements.navDots = document.getElementById("nav-dots");
@@ -9047,12 +9046,11 @@ function cacheElements() {
   elements.resolutionIncrease = document.getElementById("resolution-increase");
   elements.validationError = document.getElementById("validation-error");
   elements.fontSizeRadios = document.querySelectorAll('input[name="font-size"]');
-  elements.bufferIndicator = document.getElementById("buffer-indicator");
-  elements.bufferDots = document.getElementById("buffer-dots");
-  elements.bufferText = document.getElementById("buffer-text");
-  elements.outputPathDisplay = document.getElementById("output-path-display");
-  elements.metadataPath = document.getElementById("metadata-path");
+  elements.imagePathDisplay = document.getElementById("image-path-display");
+  elements.pathText = document.getElementById("path-text");
+  elements.copyPathBtn = document.getElementById("copy-path-btn");
   elements.controls = document.querySelector(".controls");
+  elements.previousButton = document.getElementById("previous-btn");
   elements.skipButton = document.getElementById("skip-btn");
   elements.acceptButton = document.getElementById("accept-btn");
   elements.abortButton = document.getElementById("abort-btn");
@@ -9079,23 +9077,12 @@ async function init() {
     const launchArgs = await invoke("get_launch_args");
     console.log("Launch args received:", launchArgs);
     state.prompt = launchArgs.prompt || "";
+    state.generationPrompt = launchArgs.prompt || "";
     state.aspectRatio = launchArgs.aspect_ratio || "1:1";
     state.bufferMax = launchArgs.buffer_max || 8;
     state.outputPath = launchArgs.output_path || null;
-    if (elements.outputPathDisplay) {
-      if (state.outputPath) {
-        elements.outputPathDisplay.textContent = `path: ${state.outputPath}`;
-        elements.outputPathDisplay.title = state.outputPath;
-      } else {
-        elements.outputPathDisplay.textContent = "path: (default)";
-        elements.outputPathDisplay.title = "Using default output directory";
-      }
-    }
     if (elements.promptDisplay) {
       elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
-    }
-    if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = state.prompt || "waiting...";
     }
     state.width = launchArgs.width;
     state.height = launchArgs.height;
@@ -9148,6 +9135,9 @@ function handleMessage(msg) {
     case "image_ready":
       handleImageReady(msg.payload);
       break;
+    case "generation_started":
+      handleGenerationStarted(msg.payload);
+      break;
     case "buffer_status":
       handleBufferStatus(msg.payload);
       break;
@@ -9169,8 +9159,20 @@ function handleMessage(msg) {
 }
 function handleReady(payload) {
   state.isGenerating = true;
+  state.backendReady = true;
   state.bufferCount = payload.buffer_count || 0;
-  updateBufferDisplay();
+  if (elements.loadingLabel) {
+    elements.loadingLabel.textContent = "waiting for image";
+  }
+  if (elements.loadingPrompt) {
+    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+  }
+}
+function handleGenerationStarted(payload) {
+  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains("hidden")) {
+    elements.loadingLabel.textContent = "generating";
+  }
+  console.log(`Generation started: seed=${payload.seed}, queue_position=${payload.queue_position}`);
 }
 async function handleImageReady(payload) {
   state.currentImage = payload;
@@ -9182,6 +9184,7 @@ async function handleImageReady(payload) {
   console.log("Parsed metadata:", metadata);
   const record = {
     path: payload.path,
+    displayPath: payload.display_path,
     seed: metadata.seed ?? 0,
     blobUrl: assetUrl,
     prompt: metadata.prompt ?? "",
@@ -9195,21 +9198,30 @@ async function handleImageReady(payload) {
   state.imageHistory.push(record);
   state.historyIndex = state.imageHistory.length - 1;
   state.waitingForNext = false;
+  updateNavDots();
+  if (record.prompt && record.prompt !== state.generationPrompt) {
+    state.generationPrompt = record.prompt;
+    if (elements.loadingPrompt) {
+      elements.loadingPrompt.textContent = state.generationPrompt;
+    }
+  }
   void displayImageRecord(record);
-  updateBufferDisplay();
   showLoading(false);
   enableAcceptButton();
 }
 function handleBufferStatus(payload) {
   state.bufferCount = payload.count || 0;
   state.isGenerating = payload.generating || false;
-  updateBufferDisplay();
+  if (state.waitingForNext && state.bufferCount === 0) {
+    showLoading(true);
+  }
 }
 async function handleAccepted(payload) {
   if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
     const entry = state.imageHistory[state.historyIndex];
     if (entry) {
       entry.outputPath = payload.path;
+      entry.outputDisplayPath = payload.display_path;
     }
   }
   const allPaths = getAllRetainedPaths(state);
@@ -9256,7 +9268,31 @@ function handleError(payload) {
 function handlePaused(payload) {
   state.isPaused = payload.paused || false;
   updatePauseButton();
+  updateLoadingOverlayForPause();
   console.log("Generation", state.isPaused ? "paused" : "resumed");
+}
+function updateLoadingOverlayForPause() {
+  if (elements.loadingSpinner) {
+    if (state.isPaused) {
+      elements.loadingSpinner.classList.add("hidden");
+    } else {
+      elements.loadingSpinner.classList.remove("hidden");
+    }
+  }
+  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains("hidden")) {
+    if (state.isPaused) {
+      elements.loadingLabel.textContent = "generation paused";
+    } else {
+      elements.loadingLabel.textContent = "waiting for image";
+    }
+  }
+  if (elements.loadingPrompt) {
+    if (state.isPaused) {
+      elements.loadingPrompt.classList.add("hidden");
+    } else {
+      elements.loadingPrompt.classList.remove("hidden");
+    }
+  }
 }
 function updatePauseButton() {
   if (!elements.pauseIcon || !elements.pauseLabel) {
@@ -9266,14 +9302,14 @@ function updatePauseButton() {
     elements.pauseIcon.textContent = "\u25B6";
     elements.pauseLabel.textContent = "Resume";
     if (elements.pauseButton) {
-      elements.pauseButton.title = "Resume image generation (P)";
+      elements.pauseButton.title = "Resume image generation (Space)";
       elements.pauseButton.classList.add("paused");
     }
   } else {
     elements.pauseIcon.textContent = "\u23F8";
     elements.pauseLabel.textContent = "Pause";
     if (elements.pauseButton) {
-      elements.pauseButton.title = "Pause image generation (P)";
+      elements.pauseButton.title = "Pause image generation (Space)";
       elements.pauseButton.classList.remove("paused");
     }
   }
@@ -9345,11 +9381,16 @@ function updateMetadataPanelFromRecord(record, _historyIdx = null) {
     } else {
       metadataFinalSize.textContent = "\u2014";
     }
-    if (elements.metadataPath) {
-      const path = record.outputPath || record.path;
-      const isSaved = !!record.outputPath;
-      elements.metadataPath.textContent = isSaved ? path : "(not saved)";
-      elements.metadataPath.title = isSaved ? `Click to copy: ${path}` : "Image not yet saved";
+    const displayPathStr = record.outputDisplayPath || record.displayPath || "\u2014";
+    const absolutePath = record.outputPath || record.path || "";
+    if (elements.pathText) {
+      elements.pathText.textContent = displayPathStr;
+    }
+    if (elements.imagePathDisplay) {
+      elements.imagePathDisplay.title = absolutePath || "Current image path";
+    }
+    if (elements.copyPathBtn) {
+      elements.copyPathBtn.style.display = absolutePath ? "inline-flex" : "none";
     }
   } else {
     metadataPrompt.textContent = "\u2014";
@@ -9357,9 +9398,14 @@ function updateMetadataPanelFromRecord(record, _historyIdx = null) {
     metadataSeed.textContent = "\u2014";
     metadataGeneratedSize.textContent = "\u2014";
     metadataFinalSize.textContent = "\u2014";
-    if (elements.metadataPath) {
-      elements.metadataPath.textContent = "\u2014";
-      elements.metadataPath.title = "";
+    if (elements.pathText) {
+      elements.pathText.textContent = "\u2014";
+    }
+    if (elements.imagePathDisplay) {
+      elements.imagePathDisplay.title = "Current image path";
+    }
+    if (elements.copyPathBtn) {
+      elements.copyPathBtn.style.display = "none";
     }
   }
 }
@@ -9453,25 +9499,6 @@ function navigateToIndex(index) {
     void displayImageRecord(entry, index);
   }
 }
-function updateBufferDisplay() {
-  if (!elements.bufferDots) {
-    return;
-  }
-  const dots = elements.bufferDots.querySelectorAll(".buffer-dot");
-  for (let i = 0; i < dots.length; i++) {
-    if (i < state.bufferCount) {
-      dots[i]?.classList.add("filled");
-    } else {
-      dots[i]?.classList.remove("filled");
-    }
-  }
-  if (elements.bufferText) {
-    elements.bufferText.textContent = `${state.bufferCount}/${state.bufferMax}`;
-  }
-  if (state.waitingForNext && state.bufferCount === 0) {
-    showLoading(true);
-  }
-}
 function showLoading(show) {
   if (!elements.loadingOverlay) {
     return;
@@ -9554,6 +9581,12 @@ function showLoadingPlaceholder() {
   if (elements.loadingOverlay) {
     elements.loadingOverlay.classList.remove("hidden");
   }
+  if (elements.loadingLabel) {
+    elements.loadingLabel.textContent = "waiting for image";
+  }
+  if (elements.loadingPrompt) {
+    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+  }
   clearMetadataPanel();
   updateNavDots();
 }
@@ -9605,6 +9638,9 @@ function enableAcceptButton() {
   }
 }
 function setupButtonListeners() {
+  if (elements.previousButton) {
+    elements.previousButton.addEventListener("click", previous);
+  }
   if (elements.skipButton) {
     elements.skipButton.addEventListener("click", skip);
   }
@@ -9622,19 +9658,19 @@ function setupButtonListeners() {
       toggleTheme();
     });
   }
-  if (elements.metadataPath) {
-    elements.metadataPath.addEventListener("click", () => {
+  if (elements.copyPathBtn) {
+    elements.copyPathBtn.addEventListener("click", () => {
       const idx = state.historyIndex;
       const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
-      const path = entry?.path;
+      const path = entry?.outputPath || entry?.path;
       if (path) {
         navigator.clipboard.writeText(path).then(() => {
-          const original = elements.metadataPath?.textContent;
-          if (elements.metadataPath) {
-            elements.metadataPath.textContent = "Copied!";
+          const original = elements.pathText?.textContent;
+          if (elements.pathText) {
+            elements.pathText.textContent = "Copied!";
             setTimeout(() => {
-              if (elements.metadataPath && original) {
-                elements.metadataPath.textContent = original;
+              if (elements.pathText && original) {
+                elements.pathText.textContent = original;
               }
             }, 1e3);
           }
@@ -9667,7 +9703,7 @@ function setupKeyboardListeners() {
     if (e.key === "ArrowLeft") {
       e.preventDefault();
       previous();
-    } else if (e.key === " " || e.key === "ArrowRight") {
+    } else if (e.key === "ArrowRight") {
       e.preventDefault();
       skip();
     } else if (e.key === "Enter") {
@@ -9679,7 +9715,7 @@ function setupKeyboardListeners() {
     } else if ((e.key === "Delete" || e.key === "Backspace") && ctrlOrCmd) {
       e.preventDefault();
       deleteCurrentImage2();
-    } else if (e.key === "p" || e.key === "P") {
+    } else if (e.key === " ") {
       e.preventDefault();
       togglePause();
     }
@@ -9692,7 +9728,6 @@ if (typeof window !== "undefined") {
     init,
     handleMessage,
     displayImageRecord,
-    updateBufferDisplay,
     updateNavDots,
     navigateToIndex,
     showLoading,

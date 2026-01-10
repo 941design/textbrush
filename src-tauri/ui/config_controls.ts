@@ -300,12 +300,9 @@ export async function handleConfigUpdate(
       height: height,
     });
     console.log('Configuration updated successfully');
-
-    // Update loading prompt caption
-    const loadingPrompt = document.getElementById('loading-prompt');
-    if (loadingPrompt) {
-      loadingPrompt.textContent = trimmedPrompt;
-    }
+    // Note: Loading prompt is NOT updated here. It updates when an image arrives
+    // with the new prompt, confirming the backend is actually generating with it.
+    // This prevents showing the new prompt while old images are still in the buffer.
   } catch (error) {
     console.error('Configuration update failed:', error);
 

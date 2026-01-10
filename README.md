@@ -54,7 +54,8 @@ uv run textbrush "a serene mountain landscape" --output output.png
 
 # Keyboard shortcuts:
 # ← : Navigate to previous image in history
-# → or Space : Navigate forward or skip to next buffered image
+# → : Navigate forward or skip to next buffered image
+# Space : Pause/resume image generation
 # Enter: Accept all retained images (prints paths to stdout, exits with code 0)
 # Esc: Abort (exits without saving)
 # Cmd+Delete (macOS) / Ctrl+Delete (Linux): Delete current image from history

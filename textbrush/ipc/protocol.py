@@ -29,6 +29,7 @@ class MessageType(str, Enum):
     # Events (Python → Tauri)
     READY = "ready"
     IMAGE_READY = "image_ready"
+    GENERATION_STARTED = "generation_started"
     BUFFER_STATUS = "buffer_status"
     ERROR = "error"
     ACCEPTED = "accepted"
@@ -70,6 +71,7 @@ class ImageReadyEvent:
     CONTRACT:
       Invariants:
         - path is absolute path to PNG file in preview directory
+        - display_path is path with home directory replaced by ~
         - PNG file contains metadata in tEXt chunks (parsed by frontend)
 
       Properties:
@@ -79,13 +81,26 @@ class ImageReadyEvent:
 
       Algorithm (IPC handler):
         1. Save image to preview directory with full metadata
-        2. Send path to frontend
+        2. Send path and display_path to frontend
         3. Frontend loads image and parses all metadata from PNG
     """
 
     path: str  # Absolute path to preview PNG file
+    display_path: str  # Path with home dir replaced by ~
     buffer_count: int
     buffer_max: int
+
+
+@dataclass
+class GenerationStartedEvent:
+    """Event indicating image generation has started.
+
+    Sent when the backend begins generating a new image, allowing the frontend
+    to show meaningful progress info (seed) instead of generic "waiting" message.
+    """
+
+    seed: int
+    queue_position: int  # 0 = generating for immediate display, 1+ = for buffer
 
 
 @dataclass
@@ -101,7 +116,8 @@ class BufferStatusEvent:
 class AcceptedEvent:
     """Event indicating image was saved successfully."""
 
-    path: str
+    path: str  # Absolute path to saved file
+    display_path: str  # Path with home dir replaced by ~
 
 
 @dataclass

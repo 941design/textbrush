@@ -168,8 +168,9 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 **Keyboard**
 
 * `Enter`: Accept all retained images
-* `Space` or `→`: Navigate forward (skip to next buffered image)
+* `→`: Navigate forward (skip to next buffered image)
 * `←`: Navigate to previous image in history
+* `Space`: Pause/resume image generation
 * `Esc`: Abort
 * `Cmd+Delete` (macOS) / `Ctrl+Delete` (Linux): Delete current image from history
 
@@ -208,7 +209,8 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * **Button flash animations**: Keyboard shortcuts trigger visual feedback
 * **Animation duration**: 200ms CSS class-based animation
 * **Feedback mapping**:
-  - Space/→: Skip button flash
+  - →: Skip button flash
+  - Space: Pause button flash
   - Enter: Accept button flash
   - Esc: Abort button flash
   - Cmd/Ctrl+Delete: Image container flash
@@ -295,7 +297,7 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * Dark/light theme support with toggle button
 * Real-time buffer status visualization
 * GPU-accelerated image transitions
-* Keyboard shortcuts: Space/→ (skip), ← (previous), Enter (accept), Esc (abort), Cmd/Ctrl+Delete (delete)
+* Keyboard shortcuts: → (skip), ← (previous), Space (pause/resume), Enter (accept), Esc (abort), Cmd/Ctrl+Delete (delete)
 * State machine: idle → loading → ready → action states
 * Modular architecture:
   - ThemeManager: Theme toggle and persistence

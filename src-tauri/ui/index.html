@@ -94,10 +94,10 @@
                         alt="Generated image"
                         title="Generated image preview"
                     />
-                    <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite">
+                    <div class="loading-overlay" id="loading-overlay" aria-live="polite">
                         <div class="spinner" aria-hidden="true"></div>
                         <div class="loading-caption" id="loading-caption">
-                            <span class="loading-label">generating:</span>
+                            <span class="loading-label">waiting for backend</span>
                             <span class="loading-prompt" id="loading-prompt"></span>
                         </div>
                     </div>
@@ -124,9 +124,6 @@
 
                     <dt class="metadata-label">Final Size:</dt>
                     <dd class="metadata-value" id="metadata-final-size">—</dd>
-
-                    <dt class="metadata-label">Path:</dt>
-                    <dd class="metadata-value metadata-path" id="metadata-path" title="Click to copy path">—</dd>
                 </dl>
             </aside>
         </section>
@@ -134,21 +131,14 @@
         <!-- Status Bar -->
         <section class="status-bar">
             <div class="status-left">
-                <div class="buffer-indicator" id="buffer-indicator">
-                    <div class="buffer-dots" id="buffer-dots" role="status" aria-label="Buffer status">
-                        <span class="buffer-dot" aria-label="Buffer slot 1"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 2"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 3"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 4"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 5"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 6"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 7"></span>
-                        <span class="buffer-dot" aria-label="Buffer slot 8"></span>
-                    </div>
-                    <div class="buffer-text" id="buffer-text">0/8</div>
-                </div>
-                <div class="output-path-display" id="output-path-display" title="Output directory">
-                    path: —
+                <div class="image-path-display" id="image-path-display" title="Current image path">
+                    <span class="path-text" id="path-text">—</span>
+                    <button class="copy-path-btn" id="copy-path-btn" type="button" title="Copy path to clipboard" aria-label="Copy path">
+                        <svg class="copy-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
                 </div>
                 <div class="prompt-display" id="prompt-display" style="display: none;" title="Generation prompt">
                     Ready for generation
@@ -159,37 +149,37 @@
         <!-- Controls Section -->
         <section class="controls">
             <button
-                class="control-btn btn-abort"
-                id="abort-btn"
+                class="control-btn btn-prev"
+                id="previous-btn"
                 type="button"
-                title="Abort generation and discard all images (Esc)"
-                aria-label="Abort generation"
+                title="Go to previous image (←)"
+                aria-label="Previous image"
             >
-                <span class="btn-icon" aria-hidden="true">⊘</span>
-                <span class="btn-label">Abort</span>
-                <span class="btn-shortcut">Esc</span>
+                <span class="btn-icon" aria-hidden="true">⏪</span>
+                <span class="btn-label">Prev</span>
+                <span class="btn-shortcut">←</span>
             </button>
             <button
                 class="control-btn btn-pause"
                 id="pause-btn"
                 type="button"
-                title="Pause/Resume image generation (P)"
+                title="Pause/Resume image generation (Space)"
                 aria-label="Pause or resume generation"
             >
                 <span class="btn-icon" id="pause-icon" aria-hidden="true">⏸</span>
                 <span class="btn-label" id="pause-label">Pause</span>
-                <span class="btn-shortcut">P</span>
+                <span class="btn-shortcut">Space</span>
             </button>
             <button
-                class="control-btn btn-skip"
+                class="control-btn btn-next"
                 id="skip-btn"
                 type="button"
-                title="Navigate forward (→ or Space), go back (←)"
-                aria-label="Skip to next image"
+                title="Go to next image (→)"
+                aria-label="Next image"
             >
-                <span class="btn-icon" aria-hidden="true">↔</span>
-                <span class="btn-label">Navigate</span>
-                <span class="btn-shortcut">← / → / Space</span>
+                <span class="btn-icon" aria-hidden="true">⏩</span>
+                <span class="btn-label">Next</span>
+                <span class="btn-shortcut">→</span>
             </button>
             <button
                 class="control-btn btn-accept"
@@ -227,6 +217,17 @@
                     </label>
                 </div>
             </div>
+            <button
+                class="control-btn btn-abort"
+                id="abort-btn"
+                type="button"
+                title="Abort generation and discard all images (Esc)"
+                aria-label="Abort generation"
+            >
+                <span class="btn-icon" aria-hidden="true">⊘</span>
+                <span class="btn-label">Abort</span>
+                <span class="btn-shortcut">Esc</span>
+            </button>
         </section>
     </main>
 
