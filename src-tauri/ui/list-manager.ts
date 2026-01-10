@@ -1,4 +1,4 @@
-// Image History Navigation and Management
+// Image List Navigation and Management
 // Extends main.js navigation to support bidirectional navigation and deletion
 
 import type { ImageRecord, AppState } from './types';
@@ -8,18 +8,18 @@ type ShowEmptyStateCallback = () => void;
 type RequestNextImageCallback = () => void;
 
 /**
- * Navigate to previous image in history.
+ * Navigate to previous image in list.
  */
 export function navigateToPrevious(
   state: AppState,
   displayImage: DisplayImageCallback
 ): boolean {
-  if (state.historyIndex <= 0) {
+  if (state.currentIndex <= 0) {
     return false;
   }
 
-  state.historyIndex--;
-  const record = state.imageHistory[state.historyIndex];
+  state.currentIndex--;
+  const record = state.imageList[state.currentIndex];
   if (record) {
     displayImage(record);
   }
@@ -27,29 +27,29 @@ export function navigateToPrevious(
 }
 
 /**
- * Navigate to next image in history or request from buffer.
+ * Navigate to next image in list or request from buffer.
  */
 export function navigateToNext(
   state: AppState,
   displayImage: DisplayImageCallback,
   requestNextImage: RequestNextImageCallback
 ): boolean {
-  if (state.historyIndex < state.imageHistory.length - 1) {
-    state.historyIndex++;
-    const record = state.imageHistory[state.historyIndex];
+  if (state.currentIndex < state.imageList.length - 1) {
+    state.currentIndex++;
+    const record = state.imageList[state.currentIndex];
     if (record) {
       displayImage(record);
     }
     return true;
   }
 
-  // At end of history - always request next image (let backend decide from buffer or generate)
+  // At end of list - always request next image (let backend decide from buffer or generate)
   requestNextImage();
   return true;
 }
 
 /**
- * Delete current image from history and navigate away.
+ * Delete current image from list and navigate away.
  * Note: Asset URLs from convertFileSrc don't need revoking.
  */
 export function deleteCurrentImage(
@@ -57,28 +57,28 @@ export function deleteCurrentImage(
   displayImage: DisplayImageCallback,
   showEmptyState: ShowEmptyStateCallback
 ): ImageRecord | null {
-  if (state.historyIndex < 0 || state.historyIndex >= state.imageHistory.length) {
+  if (state.currentIndex < 0 || state.currentIndex >= state.imageList.length) {
     return null;
   }
 
-  const deletedRecord = state.imageHistory.splice(state.historyIndex, 1)[0];
+  const deletedRecord = state.imageList.splice(state.currentIndex, 1)[0];
   if (!deletedRecord) {
     return null;
   }
 
   // Note: Asset URLs from convertFileSrc don't need revoking like blob URLs
 
-  if (state.imageHistory.length === 0) {
-    state.historyIndex = -1;
+  if (state.imageList.length === 0) {
+    state.currentIndex = -1;
     showEmptyState();
     return deletedRecord;
   }
 
-  if (state.historyIndex >= state.imageHistory.length) {
-    state.historyIndex = state.imageHistory.length - 1;
+  if (state.currentIndex >= state.imageList.length) {
+    state.currentIndex = state.imageList.length - 1;
   }
 
-  const record = state.imageHistory[state.historyIndex];
+  const record = state.imageList[state.currentIndex];
   if (record) {
     displayImage(record);
   }
@@ -90,7 +90,7 @@ export function deleteCurrentImage(
  * Only returns paths for images that have been accepted (have outputPath set).
  */
 export function getAllRetainedPaths(state: AppState): string[] {
-  return state.imageHistory
+  return state.imageList
     .map(record => record.outputPath)
     .filter((path): path is string => path !== null && path !== undefined);
 }
@@ -99,11 +99,11 @@ export function getAllRetainedPaths(state: AppState): string[] {
  * Get formatted position indicator string.
  */
 export function getPositionIndicator(state: AppState): string {
-  if (state.historyIndex < 0) {
+  if (state.currentIndex < 0) {
     return '';
   }
 
-  const current = state.historyIndex + 1;
-  const total = state.imageHistory.length;
+  const current = state.currentIndex + 1;
+  const total = state.imageList.length;
   return `[${current}]/${total}]`;
 }

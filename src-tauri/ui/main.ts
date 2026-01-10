@@ -4,7 +4,7 @@
 import * as ConfigControls from './config_controls';
 import * as ThemeManager from './theme-manager';
 import * as FontSizeManager from './font-size-manager';
-import * as HistoryManager from './history-manager';
+import * as ListManager from './list-manager';
 import * as ButtonFlash from './button-flash';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -45,8 +45,8 @@ const state: AppState = {
   outputPath: null,
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
-  imageHistory: [],
-  historyIndex: -1,
+  imageList: [],
+  currentIndex: -1,
   waitingForNext: false,
 };
 
@@ -310,9 +310,9 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
     generatedHeight: metadata.generatedHeight,
   };
 
-  // Add to history
-  state.imageHistory.push(record);
-  state.historyIndex = state.imageHistory.length - 1;
+  // Add to list
+  state.imageList.push(record);
+  state.currentIndex = state.imageList.length - 1;
   state.waitingForNext = false;
 
   // Immediately update nav dots so new image appears in indicator
@@ -343,15 +343,15 @@ function handleBufferStatus(payload: BufferStatusPayload): void {
 }
 
 async function handleAccepted(payload: AcceptedPayload): Promise<void> {
-  if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
-    const entry = state.imageHistory[state.historyIndex];
+  if (payload.path && state.currentIndex >= 0 && state.currentIndex < state.imageList.length) {
+    const entry = state.imageList[state.currentIndex];
     if (entry) {
       entry.outputPath = payload.path;
       entry.outputDisplayPath = payload.display_path;
     }
   }
 
-  const allPaths = HistoryManager.getAllRetainedPaths(state);
+  const allPaths = ListManager.getAllRetainedPaths(state);
 
   visualSuccessFeedback();
   setTimeout(() => {
@@ -461,7 +461,7 @@ function updatePauseButton(): void {
 }
 
 // Display ImageRecord with Transitions
-async function displayImageRecord(record: ImageRecord, historyIdx: number | null = null): Promise<void> {
+async function displayImageRecord(record: ImageRecord, listIdx: number | null = null): Promise<void> {
   console.log('displayImageRecord called, seed:', record.seed, 'path:', record.path);
   if (state.isTransitioning) {
     console.log('Skipping - already transitioning');
@@ -504,7 +504,7 @@ async function displayImageRecord(record: ImageRecord, historyIdx: number | null
       elements.currentImage.classList.remove('image-enter');
     }
 
-    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    const idx = listIdx !== null ? listIdx : state.currentIndex;
     updateMetadataPanelFromRecord(record, idx);
     updateNavDots();
   } catch (error) {
@@ -514,7 +514,7 @@ async function displayImageRecord(record: ImageRecord, historyIdx: number | null
   }
 }
 
-function updateMetadataPanelFromRecord(record: ImageRecord | null, _historyIdx: number | null = null): void {
+function updateMetadataPanelFromRecord(record: ImageRecord | null, _listIdx: number | null = null): void {
   const metadataPrompt = document.getElementById('metadata-prompt');
   const metadataModel = document.getElementById('metadata-model');
   const metadataSeed = document.getElementById('metadata-seed');
@@ -590,8 +590,8 @@ function updateNavDots(): void {
     return;
   }
 
-  const total = state.imageHistory.length;
-  const currentIdx = state.historyIndex;
+  const total = state.imageList.length;
+  const currentIdx = state.currentIndex;
 
   // Clear existing dots
   elements.navDots.innerHTML = '';
@@ -692,16 +692,16 @@ function createNavDot(index: number, isActive: boolean): HTMLElement {
 }
 
 function navigateToIndex(index: number): void {
-  if (state.isTransitioning || index < 0 || index >= state.imageHistory.length) {
+  if (state.isTransitioning || index < 0 || index >= state.imageList.length) {
     return;
   }
 
-  if (index === state.historyIndex) {
+  if (index === state.currentIndex) {
     return;
   }
 
-  state.historyIndex = index;
-  const entry = state.imageHistory[index];
+  state.currentIndex = index;
+  const entry = state.imageList[index];
   if (entry) {
     void displayImageRecord(entry, index);
   }
@@ -736,23 +736,23 @@ function previous(): void {
     return;
   }
 
-  if (state.waitingForNext && state.imageHistory.length > 0) {
+  if (state.waitingForNext && state.imageList.length > 0) {
     state.waitingForNext = false;
-    state.historyIndex = state.imageHistory.length - 1;
-    const historyItem = state.imageHistory[state.historyIndex];
+    state.currentIndex = state.imageList.length - 1;
+    const entry = state.imageList[state.currentIndex];
     showLoading(false);
-    if (historyItem) {
-      void displayImageRecord(historyItem, state.historyIndex);
+    if (entry) {
+      void displayImageRecord(entry, state.currentIndex);
     }
     return;
   }
 
-  const navigated = HistoryManager.navigateToPrevious(state, (entry: ImageRecord) => {
-    void displayImageRecord(entry, state.historyIndex);
+  const navigated = ListManager.navigateToPrevious(state, (entry: ImageRecord) => {
+    void displayImageRecord(entry, state.currentIndex);
   });
 
   if (!navigated) {
-    console.log('At beginning of history, cannot go back');
+    console.log('At beginning of list, cannot go back');
   }
 }
 
@@ -777,20 +777,20 @@ function skip(): void {
       .catch(err => {
         console.error('Skip failed:', err);
         state.waitingForNext = false;
-        if (state.imageHistory.length > 0) {
-          const historyItem = state.imageHistory[state.historyIndex];
+        if (state.imageList.length > 0) {
+          const entry = state.imageList[state.currentIndex];
           showLoading(false);
-          if (historyItem) {
-            void displayImageRecord(historyItem, state.historyIndex);
+          if (entry) {
+            void displayImageRecord(entry, state.currentIndex);
           }
         }
       });
   };
 
-  HistoryManager.navigateToNext(
+  ListManager.navigateToNext(
     state,
     (entry: ImageRecord) => {
-      void displayImageRecord(entry, state.historyIndex);
+      void displayImageRecord(entry, state.currentIndex);
     },
     requestNext
   );
@@ -847,10 +847,10 @@ function deleteCurrentImage(): void {
     return;
   }
 
-  HistoryManager.deleteCurrentImage(
+  ListManager.deleteCurrentImage(
     state,
     (entry: ImageRecord) => {
-      void displayImageRecord(entry, state.historyIndex);
+      void displayImageRecord(entry, state.currentIndex);
     },
     () => {
       if (elements.currentImage) {
@@ -898,8 +898,8 @@ function setupButtonListeners(): void {
   // Click handler for copy path button
   if (elements.copyPathBtn) {
     elements.copyPathBtn.addEventListener('click', () => {
-      const idx = state.historyIndex;
-      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const idx = state.currentIndex;
+      const entry = idx >= 0 && idx < state.imageList.length ? state.imageList[idx] : null;
       // Copy output path if accepted, otherwise preview path
       const path = entry?.outputPath || entry?.path;
       if (path) {

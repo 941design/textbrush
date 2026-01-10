@@ -352,6 +352,7 @@ class MessageHandler:
               * Calls backend.start_generation() with new prompt, aspect_ratio, dimensions
               * Sends BUFFER_STATUS event showing reset buffer (count=0)
               * Image delivery thread continues, will deliver new images
+            - Pause state is preserved: if paused before, remains paused after
 
           Properties:
             - Thread-safe: uses backend's thread-safe abort() and start_generation()
@@ -361,6 +362,7 @@ class MessageHandler:
             - Buffer cleared: all pending images from old generation are purged
             - Error handling: sends non-fatal ERROR if backend not initialized
             - Dimension priority: explicit width/height override aspect_ratio
+            - Pause preservation: paused state survives config updates
 
           Algorithm:
             1. Parse payload into UpdateConfigCommand dataclass
@@ -369,19 +371,21 @@ class MessageHandler:
                b. Return
             3. Validate aspect_ratio only if no explicit dimensions provided
             4. Log config update with truncated prompt
-            5. Call backend.abort():
+            5. Save current pause state via backend.is_paused()
+            6. Call backend.abort():
                - Stops current GenerationWorker thread
                - Clears buffer via buffer.clear()
                - Waits for worker to finish
-            6. Call backend.start_generation():
+            7. Call backend.start_generation():
                - Creates new GenerationWorker with updated config
                - Seed is None (auto-generate)
                - Starts new worker thread
-            7. Send BUFFER_STATUS event:
+            8. If was paused: call backend.pause_generation() to restore pause
+            9. Send BUFFER_STATUS event:
                - count: 0 (buffer was just cleared)
                - max: backend.buffer.max_size
-               - generating: True (new worker started)
-            8. Return (image delivery thread will deliver new images automatically)
+               - generating: True only if not paused
+            10. Return (image delivery thread will deliver new images automatically)
 
         Thread Safety:
           - backend.abort() is thread-safe: stops worker, waits for completion
@@ -449,6 +453,9 @@ class MessageHandler:
                 )
             )
 
+        # Preserve pause state across config update
+        was_paused = self.backend.is_paused()
+
         self.backend.abort()
         self.backend.start_generation(
             prompt=cmd.prompt,
@@ -459,6 +466,10 @@ class MessageHandler:
             on_generation_start=on_generation_start,
         )
 
+        # Restore pause state if was paused before
+        if was_paused:
+            self.backend.pause_generation()
+
         server.send(
             Message(
                 MessageType.BUFFER_STATUS,
@@ -466,7 +477,7 @@ class MessageHandler:
                     BufferStatusEvent(
                         count=0,
                         max=self.backend.buffer.max_size,
-                        generating=True,
+                        generating=not was_paused,
                     )
                 ),
             )

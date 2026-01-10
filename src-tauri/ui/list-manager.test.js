@@ -1,7 +1,7 @@
-// Property-based tests for HistoryManager module
+// Property-based tests for ListManager module
 // Uses simple assertion testing with property generation
 
-import * as HistoryManager from './history-manager.js';
+import * as ListManager from './list-manager.js';
 
 // Simple assertion helpers
 function assert(condition, message) {
@@ -57,13 +57,13 @@ function generateImageEntry(seed = Math.random()) {
   };
 }
 
-function createState(historyLength = 0, currentIndex = -1) {
-  const imageHistory = Array.from({ length: historyLength }, (_, i) =>
+function createState(listLength = 0, currentIndex = -1) {
+  const imageList = Array.from({ length: listLength }, (_, i) =>
     generateImageEntry(i)
   );
   return {
-    imageHistory,
-    historyIndex: currentIndex,
+    imageList,
+    currentIndex: currentIndex,
     bufferCount: 0,
   };
 }
@@ -77,22 +77,22 @@ function test_navigateToPrevious_atBeginningReturnsFalse() {
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = HistoryManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrevious(state, mockDisplay);
 
   assert(!result, 'navigateToPrevious should return false at beginning');
-  assertEqual(state.historyIndex, 0, 'index should not change');
+  assertEqual(state.currentIndex, 0, 'index should not change');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
-function test_navigateToPrevious_emptyHistoryReturnsFalse() {
+function test_navigateToPrevious_emptyListReturnsFalse() {
   const state = createState(0, -1);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = HistoryManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrevious(state, mockDisplay);
 
-  assert(!result, 'navigateToPrevious should return false on empty history');
-  assertEqual(state.historyIndex, -1, 'index should remain -1');
+  assert(!result, 'navigateToPrevious should return false on empty list');
+  assertEqual(state.currentIndex, -1, 'index should remain -1');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
@@ -101,10 +101,10 @@ function test_navigateToPrevious_validPositionDecrements() {
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  const result = HistoryManager.navigateToPrevious(state, mockDisplay);
+  const result = ListManager.navigateToPrevious(state, mockDisplay);
 
   assert(result, 'navigateToPrevious should return true');
-  assertEqual(state.historyIndex, 1, 'index should decrement by 1');
+  assertEqual(state.currentIndex, 1, 'index should decrement by 1');
   assertEqual(callLog.length, 1, 'displayImage should be called once');
   assertEqual(callLog[0].path, '/preview/img-1.png', 'should display image at index 1');
 }
@@ -114,11 +114,11 @@ function test_navigateToPrevious_idempotentAtBoundary() {
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
 
-  HistoryManager.navigateToPrevious(state, mockDisplay);
-  HistoryManager.navigateToPrevious(state, mockDisplay);
-  HistoryManager.navigateToPrevious(state, mockDisplay);
+  ListManager.navigateToPrevious(state, mockDisplay);
+  ListManager.navigateToPrevious(state, mockDisplay);
+  ListManager.navigateToPrevious(state, mockDisplay);
 
-  assertEqual(state.historyIndex, 0, 'should remain at beginning');
+  assertEqual(state.currentIndex, 0, 'should remain at beginning');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
 }
 
@@ -128,12 +128,12 @@ function test_navigateToPrevious_property_indexDecrementsFromEnd() {
     const state = createState(len, len - 1);
     const mockDisplay = () => {};
 
-    HistoryManager.navigateToPrevious(state, mockDisplay);
+    ListManager.navigateToPrevious(state, mockDisplay);
 
     assertEqual(
-      state.historyIndex,
+      state.currentIndex,
       len - 2,
-      `for history length ${len}, index should be ${len - 2}`
+      `for list length ${len}, index should be ${len - 2}`
     );
   }
 }
@@ -146,10 +146,10 @@ function test_navigateToPrevious_property_neverGoesNegative() {
 
     // Try navigating backward multiple times
     for (let j = 0; j < 10; j++) {
-      HistoryManager.navigateToPrevious(state, mockDisplay);
+      ListManager.navigateToPrevious(state, mockDisplay);
     }
 
-    assert(state.historyIndex >= 0, 'index should never become negative');
+    assert(state.currentIndex >= 0, 'index should never become negative');
   }
 }
 
@@ -157,16 +157,16 @@ function test_navigateToPrevious_property_neverGoesNegative() {
 // navigateToNext Tests
 // ============================================================================
 
-function test_navigateToNext_navigatesForwardInHistory() {
+function test_navigateToNext_navigatesForwardInList() {
   const state = createState(5, 1);
   const callLog = [];
   const mockDisplay = (entry) => callLog.push(entry);
   const mockRequest = () => {};
 
-  const result = HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+  const result = ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
   assert(result, 'navigateToNext should return true');
-  assertEqual(state.historyIndex, 2, 'index should increment to 2');
+  assertEqual(state.currentIndex, 2, 'index should increment to 2');
   assertEqual(callLog.length, 1, 'displayImage should be called once');
 }
 
@@ -178,12 +178,12 @@ function test_navigateToNext_atEndWithBuffer() {
   const requestLog = [];
   const mockRequest = () => requestLog.push(true);
 
-  const result = HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+  const result = ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
   assert(result, 'navigateToNext should return true with buffer');
   assertEqual(callLog.length, 0, 'displayImage should not be called');
   assertEqual(requestLog.length, 1, 'requestNextImage should be called');
-  assertEqual(state.historyIndex, 2, 'index should not change (buffer request)');
+  assertEqual(state.currentIndex, 2, 'index should not change (buffer request)');
 }
 
 function test_navigateToNext_atEndAlwaysRequests() {
@@ -194,28 +194,28 @@ function test_navigateToNext_atEndAlwaysRequests() {
   let requestCalled = false;
   const mockRequest = () => { requestCalled = true; };
 
-  const result = HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+  const result = ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
   assert(result, 'navigateToNext should return true at end (always requests)');
   assert(requestCalled, 'requestNextImage should be called even with empty buffer');
 }
 
-function test_navigateToNext_emptyHistory() {
-  // With empty history, should request new image (e.g., after deleting all images)
+function test_navigateToNext_emptyList() {
+  // With empty list, should request new image (e.g., after deleting all images)
   const state = createState(0, -1);
   state.bufferCount = 0;
   const mockDisplay = () => {};
   let requestCalled = false;
   const mockRequest = () => { requestCalled = true; };
 
-  const result = HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+  const result = ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
-  assert(result, 'navigateToNext should return true on empty history (requests new image)');
-  assert(requestCalled, 'requestNextImage should be called on empty history');
+  assert(result, 'navigateToNext should return true on empty list (requests new image)');
+  assert(requestCalled, 'requestNextImage should be called on empty list');
 }
 
 function test_navigateToNext_property_bufferPriority() {
-  // Property: at end of history, buffer request takes priority
+  // Property: at end of list, buffer request takes priority
   for (let i = 0; i < 20; i++) {
     const state = createState(3, 2);
     state.bufferCount = 1;
@@ -223,7 +223,7 @@ function test_navigateToNext_property_bufferPriority() {
     const mockDisplay = () => {};
     const mockRequest = () => requestLog.push(true);
 
-    HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+    ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
     assertEqual(
       requestLog.length,
@@ -234,18 +234,18 @@ function test_navigateToNext_property_bufferPriority() {
 }
 
 function test_navigateToNext_property_neverExceedsLength() {
-  // Property: index should never exceed history length - 1
+  // Property: index should never exceed list length - 1
   for (let len = 1; len <= 10; len++) {
     for (let idx = 0; idx < len; idx++) {
       const state = createState(len, idx);
       const mockDisplay = () => {};
       const mockRequest = () => {};
 
-      HistoryManager.navigateToNext(state, mockDisplay, mockRequest);
+      ListManager.navigateToNext(state, mockDisplay, mockRequest);
 
       assert(
-        state.historyIndex < state.imageHistory.length,
-        `index ${state.historyIndex} should be less than length ${state.imageHistory.length}`
+        state.currentIndex < state.imageList.length,
+        `index ${state.currentIndex} should be less than length ${state.imageList.length}`
       );
     }
   }
@@ -260,7 +260,7 @@ function test_deleteCurrentImage_invalidIndex() {
   const mockDisplay = () => {};
   const mockEmpty = () => {};
 
-  const deleted = HistoryManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
+  const deleted = ListManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
 
   assert(deleted === null, 'should return null for invalid index');
 }
@@ -270,7 +270,7 @@ function test_deleteCurrentImage_indexOutOfBounds() {
   const mockDisplay = () => {};
   const mockEmpty = () => {};
 
-  const deleted = HistoryManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
+  const deleted = ListManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
 
   assert(deleted === null, 'should return null for out-of-bounds index');
 }
@@ -281,11 +281,11 @@ function test_deleteCurrentImage_lastImage() {
   const mockDisplay = () => {};
   const mockEmpty = () => emptyLog.push(true);
 
-  const deleted = HistoryManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
+  const deleted = ListManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
 
   assert(deleted !== null, 'should return deleted entry');
-  assertEqual(state.imageHistory.length, 0, 'history should be empty');
-  assertEqual(state.historyIndex, -1, 'index should be -1');
+  assertEqual(state.imageList.length, 0, 'list should be empty');
+  assertEqual(state.currentIndex, -1, 'index should be -1');
   assertEqual(emptyLog.length, 1, 'showEmptyState should be called');
 }
 
@@ -295,11 +295,11 @@ function test_deleteCurrentImage_fromMiddle() {
   const mockDisplay = (entry) => displayLog.push(entry);
   const mockEmpty = () => {};
 
-  const deleted = HistoryManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
+  const deleted = ListManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
 
   assert(deleted !== null, 'should return deleted entry');
-  assertEqual(state.imageHistory.length, 4, 'should have 4 images left');
-  assertEqual(state.historyIndex, 2, 'index should stay at 2');
+  assertEqual(state.imageList.length, 4, 'should have 4 images left');
+  assertEqual(state.currentIndex, 2, 'index should stay at 2');
   assertEqual(displayLog.length, 1, 'displayImage should be called');
   assertEqual(displayLog[0].path, '/preview/img-3.png', 'should display what was next (now at index 2)');
 }
@@ -310,11 +310,11 @@ function test_deleteCurrentImage_fromEnd() {
   const mockDisplay = (entry) => displayLog.push(entry);
   const mockEmpty = () => {};
 
-  const deleted = HistoryManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
+  const deleted = ListManager.deleteCurrentImage(state, mockDisplay, mockEmpty);
 
   assert(deleted !== null, 'should return deleted entry');
-  assertEqual(state.imageHistory.length, 4, 'should have 4 images left');
-  assertEqual(state.historyIndex, 3, 'index should adjust to new end');
+  assertEqual(state.imageList.length, 4, 'should have 4 images left');
+  assertEqual(state.currentIndex, 3, 'index should adjust to new end');
   assertEqual(displayLog.length, 1, 'displayImage should be called');
   assertEqual(displayLog[0].path, '/preview/img-3.png', 'should display new end');
 }
@@ -324,21 +324,21 @@ function test_deleteCurrentImage_noLongerUsesBlobUrls() {
   // we no longer need to revoke blob URLs. Asset URLs are managed by Tauri.
   // This test verifies deletion still works correctly without blob URL cleanup.
   const state = createState(3, 1);
-  const originalLength = state.imageHistory.length;
+  const originalLength = state.imageList.length;
 
-  HistoryManager.deleteCurrentImage(state, () => {}, () => {});
+  ListManager.deleteCurrentImage(state, () => {}, () => {});
 
-  assertEqual(state.imageHistory.length, originalLength - 1, 'image should be deleted');
+  assertEqual(state.imageList.length, originalLength - 1, 'image should be deleted');
 }
 
 function test_deleteCurrentImage_property_doesNotRevokeNull() {
   // Property: should not crash when blobUrl is null
   for (let i = 0; i < 10; i++) {
     const state = createState(3, 1);
-    state.imageHistory[1].blobUrl = null;
+    state.imageList[1].blobUrl = null;
 
     try {
-      HistoryManager.deleteCurrentImage(state, () => {}, () => {});
+      ListManager.deleteCurrentImage(state, () => {}, () => {});
     } catch (error) {
       throw new Error('should handle null blobUrl gracefully: ' + error.message);
     }
@@ -350,15 +350,15 @@ function test_deleteCurrentImage_property_indexAlwaysValid() {
   for (let len = 1; len <= 10; len++) {
     for (let idx = 0; idx < len; idx++) {
       const state = createState(len, idx);
-      HistoryManager.deleteCurrentImage(state, () => {}, () => {});
+      ListManager.deleteCurrentImage(state, () => {}, () => {});
 
-      if (state.imageHistory.length > 0) {
+      if (state.imageList.length > 0) {
         assert(
-          state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length,
-          `index ${state.historyIndex} invalid for length ${state.imageHistory.length}`
+          state.currentIndex >= 0 && state.currentIndex < state.imageList.length,
+          `index ${state.currentIndex} invalid for length ${state.imageList.length}`
         );
       } else {
-        assertEqual(state.historyIndex, -1, 'index should be -1 when empty');
+        assertEqual(state.currentIndex, -1, 'index should be -1 when empty');
       }
     }
   }
@@ -368,10 +368,10 @@ function test_deleteCurrentImage_property_indexAlwaysValid() {
 // getAllRetainedPaths Tests
 // ============================================================================
 
-function test_getAllRetainedPaths_emptyHistory() {
+function test_getAllRetainedPaths_emptyList() {
   const state = createState(0, -1);
 
-  const paths = HistoryManager.getAllRetainedPaths(state);
+  const paths = ListManager.getAllRetainedPaths(state);
 
   assertArrayEqual(paths, [], 'should return empty array');
 }
@@ -379,7 +379,7 @@ function test_getAllRetainedPaths_emptyHistory() {
 function test_getAllRetainedPaths_noPathsSet() {
   const state = createState(3, 0);
 
-  const paths = HistoryManager.getAllRetainedPaths(state);
+  const paths = ListManager.getAllRetainedPaths(state);
 
   assertArrayEqual(paths, [], 'should return empty array when no paths set');
 }
@@ -387,11 +387,11 @@ function test_getAllRetainedPaths_noPathsSet() {
 function test_getAllRetainedPaths_allOutputPathsSet() {
   // getAllRetainedPaths returns outputPath (set when accepted), not path (preview)
   const state = createState(3, 0);
-  state.imageHistory[0].outputPath = '/output/image-0.png';
-  state.imageHistory[1].outputPath = '/output/image-1.png';
-  state.imageHistory[2].outputPath = '/output/image-2.png';
+  state.imageList[0].outputPath = '/output/image-0.png';
+  state.imageList[1].outputPath = '/output/image-1.png';
+  state.imageList[2].outputPath = '/output/image-2.png';
 
-  const paths = HistoryManager.getAllRetainedPaths(state);
+  const paths = ListManager.getAllRetainedPaths(state);
 
   assertArrayEqual(
     paths,
@@ -403,12 +403,12 @@ function test_getAllRetainedPaths_allOutputPathsSet() {
 function test_getAllRetainedPaths_filtersMissingOutputPaths() {
   // Only images with outputPath (accepted) should be included
   const state = createState(4, 0);
-  state.imageHistory[0].outputPath = '/output/0.png';
-  state.imageHistory[1].outputPath = null;  // Not accepted
-  state.imageHistory[2].outputPath = undefined;  // Not accepted
-  state.imageHistory[3].outputPath = '/output/3.png';
+  state.imageList[0].outputPath = '/output/0.png';
+  state.imageList[1].outputPath = null;  // Not accepted
+  state.imageList[2].outputPath = undefined;  // Not accepted
+  state.imageList[3].outputPath = '/output/3.png';
 
-  const paths = HistoryManager.getAllRetainedPaths(state);
+  const paths = ListManager.getAllRetainedPaths(state);
 
   assertArrayEqual(
     paths,
@@ -421,17 +421,17 @@ function test_getAllRetainedPaths_property_readOnly() {
   // Property: should not modify state
   for (let i = 0; i < 10; i++) {
     const state = createState(3, 0);
-    const originalLength = state.imageHistory.length;
-    const originalIndex = state.historyIndex;
+    const originalLength = state.imageList.length;
+    const originalIndex = state.currentIndex;
 
-    HistoryManager.getAllRetainedPaths(state);
+    ListManager.getAllRetainedPaths(state);
 
     assertEqual(
-      state.imageHistory.length,
+      state.imageList.length,
       originalLength,
-      'should not modify history length'
+      'should not modify list length'
     );
-    assertEqual(state.historyIndex, originalIndex, 'should not modify index');
+    assertEqual(state.currentIndex, originalIndex, 'should not modify index');
   }
 }
 
@@ -439,34 +439,34 @@ function test_getAllRetainedPaths_property_readOnly() {
 // getPositionIndicator Tests
 // ============================================================================
 
-function test_getPositionIndicator_emptyHistory() {
+function test_getPositionIndicator_emptyList() {
   const state = createState(0, -1);
 
-  const indicator = HistoryManager.getPositionIndicator(state);
+  const indicator = ListManager.getPositionIndicator(state);
 
-  assertEqual(indicator, '', 'should return empty string for empty history');
+  assertEqual(indicator, '', 'should return empty string for empty list');
 }
 
 function test_getPositionIndicator_singleImage() {
   const state = createState(1, 0);
 
-  const indicator = HistoryManager.getPositionIndicator(state);
+  const indicator = ListManager.getPositionIndicator(state);
 
   assertEqual(indicator, '[1]/1]', 'should return [1]/1]');
 }
 
-function test_getPositionIndicator_middleOfHistory() {
+function test_getPositionIndicator_middleOfList() {
   const state = createState(5, 2);
 
-  const indicator = HistoryManager.getPositionIndicator(state);
+  const indicator = ListManager.getPositionIndicator(state);
 
   assertEqual(indicator, '[3]/5]', 'should return [3]/5]');
 }
 
-function test_getPositionIndicator_endOfHistory() {
+function test_getPositionIndicator_endOfList() {
   const state = createState(5, 4);
 
-  const indicator = HistoryManager.getPositionIndicator(state);
+  const indicator = ListManager.getPositionIndicator(state);
 
   assertEqual(indicator, '[5]/5]', 'should return [5]/5]');
 }
@@ -476,7 +476,7 @@ function test_getPositionIndicator_property_alwaysValid() {
   for (let len = 1; len <= 20; len++) {
     for (let idx = 0; idx < len; idx++) {
       const state = createState(len, idx);
-      const indicator = HistoryManager.getPositionIndicator(state);
+      const indicator = ListManager.getPositionIndicator(state);
 
       const match = indicator.match(/\[(\d+)\]\/(\d+)\]/);
       assert(match, `indicator format invalid: ${indicator}`);
@@ -497,17 +497,17 @@ function test_getPositionIndicator_property_alwaysValid() {
 const tests = [
   // navigateToPrevious
   test_navigateToPrevious_atBeginningReturnsFalse,
-  test_navigateToPrevious_emptyHistoryReturnsFalse,
+  test_navigateToPrevious_emptyListReturnsFalse,
   test_navigateToPrevious_validPositionDecrements,
   test_navigateToPrevious_idempotentAtBoundary,
   test_navigateToPrevious_property_indexDecrementsFromEnd,
   test_navigateToPrevious_property_neverGoesNegative,
 
   // navigateToNext
-  test_navigateToNext_navigatesForwardInHistory,
+  test_navigateToNext_navigatesForwardInList,
   test_navigateToNext_atEndWithBuffer,
   test_navigateToNext_atEndAlwaysRequests,
-  test_navigateToNext_emptyHistory,
+  test_navigateToNext_emptyList,
   test_navigateToNext_property_bufferPriority,
   test_navigateToNext_property_neverExceedsLength,
 
@@ -522,17 +522,17 @@ const tests = [
   test_deleteCurrentImage_property_indexAlwaysValid,
 
   // getAllRetainedPaths
-  test_getAllRetainedPaths_emptyHistory,
+  test_getAllRetainedPaths_emptyList,
   test_getAllRetainedPaths_noPathsSet,
   test_getAllRetainedPaths_allOutputPathsSet,
   test_getAllRetainedPaths_filtersMissingOutputPaths,
   test_getAllRetainedPaths_property_readOnly,
 
   // getPositionIndicator
-  test_getPositionIndicator_emptyHistory,
+  test_getPositionIndicator_emptyList,
   test_getPositionIndicator_singleImage,
-  test_getPositionIndicator_middleOfHistory,
-  test_getPositionIndicator_endOfHistory,
+  test_getPositionIndicator_middleOfList,
+  test_getPositionIndicator_endOfList,
   test_getPositionIndicator_property_alwaysValid,
 ];
 

@@ -1,11 +1,11 @@
 // Integration Tests for UI Enhancements
-// Tests end-to-end workflows across ThemeManager, HistoryManager, and ButtonFlash modules
+// Tests end-to-end workflows across ThemeManager, ListManager, and ButtonFlash modules
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import * as ThemeManager from './theme-manager.js';
-import * as HistoryManager from './history-manager.js';
+import * as ListManager from './list-manager.js';
 import * as ButtonFlash from './button-flash.js';
 
 describe('UI Enhancements Integration Tests', () => {
@@ -115,14 +115,14 @@ describe('UI Enhancements Integration Tests', () => {
   });
 
   describe('E2E: Bidirectional Navigation', () => {
-    it('should navigate through history and update position indicator', () => {
+    it('should navigate through list and update position indicator', () => {
       const state = {
-        imageHistory: [
+        imageList: [
           { image_data: 'img1', seed: 1, blobUrl: 'blob:1' },
           { image_data: 'img2', seed: 2, blobUrl: 'blob:2' },
           { image_data: 'img3', seed: 3, blobUrl: 'blob:3' }
         ],
-        historyIndex: 1,
+        currentIndex: 1,
         bufferCount: 0
       };
 
@@ -132,54 +132,50 @@ describe('UI Enhancements Integration Tests', () => {
       };
 
       // Navigate to previous
-      const prevResult = HistoryManager.navigateToPrevious(state, displayImage);
+      const prevResult = ListManager.navigateToPrevious(state, displayImage);
       assert.strictEqual(prevResult, true, 'Navigation to previous succeeded');
-      assert.strictEqual(state.historyIndex, 0, 'Index decremented to 0');
+      assert.strictEqual(state.currentIndex, 0, 'Index decremented to 0');
       assert.deepStrictEqual(displayedImages, [1], 'First image displayed');
 
       // Position indicator at start
-      let indicator = HistoryManager.getPositionIndicator(state);
+      let indicator = ListManager.getPositionIndicator(state);
       assert.strictEqual(indicator, '[1]/3]', 'Position indicator shows 1 of 3');
 
       // Try to go before start
-      const prevAtStart = HistoryManager.navigateToPrevious(state, displayImage);
+      const prevAtStart = ListManager.navigateToPrevious(state, displayImage);
       assert.strictEqual(prevAtStart, false, 'Cannot navigate before start');
-      assert.strictEqual(state.historyIndex, 0, 'Index remains at 0');
+      assert.strictEqual(state.currentIndex, 0, 'Index remains at 0');
 
       // Navigate forward
-      const nextResult = HistoryManager.navigateToNext(state, displayImage, () => {});
+      const nextResult = ListManager.navigateToNext(state, displayImage, () => {});
       assert.strictEqual(nextResult, true, 'Navigation to next succeeded');
-      assert.strictEqual(state.historyIndex, 1, 'Index incremented to 1');
+      assert.strictEqual(state.currentIndex, 1, 'Index incremented to 1');
       assert.deepStrictEqual(displayedImages, [1, 2], 'Second image displayed');
 
       // Position indicator in middle
-      indicator = HistoryManager.getPositionIndicator(state);
+      indicator = ListManager.getPositionIndicator(state);
       assert.strictEqual(indicator, '[2]/3]', 'Position indicator shows 2 of 3');
 
       // Navigate to end
-      HistoryManager.navigateToNext(state, displayImage, () => {});
-      assert.strictEqual(state.historyIndex, 2, 'At end of history');
+      ListManager.navigateToNext(state, displayImage, () => {});
+      assert.strictEqual(state.currentIndex, 2, 'At end of list');
 
       // Position indicator at end
-      indicator = HistoryManager.getPositionIndicator(state);
+      indicator = ListManager.getPositionIndicator(state);
       assert.strictEqual(indicator, '[3]/3]', 'Position indicator shows 3 of 3');
     });
   });
 
-  describe('E2E: Image Deletion with Blob URL Cleanup', () => {
-    it('should delete image, revoke blob URL, and navigate appropriately', () => {
-      const revokedUrls = [];
-      global.URL.revokeObjectURL = (url) => {
-        revokedUrls.push(url);
-      };
-
+  describe('E2E: Image Deletion and Navigation', () => {
+    it('should delete image and navigate appropriately', () => {
+      // Note: Asset URLs from Tauri convertFileSrc don't need revoking like blob URLs
       const state = {
-        imageHistory: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2' },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3' }
+        imageList: [
+          { image_data: 'img1', seed: 1, blobUrl: 'asset://localhost/img1.png' },
+          { image_data: 'img2', seed: 2, blobUrl: 'asset://localhost/img2.png' },
+          { image_data: 'img3', seed: 3, blobUrl: 'asset://localhost/img3.png' }
         ],
-        historyIndex: 1
+        currentIndex: 1
       };
 
       const displayedImages = [];
@@ -193,29 +189,28 @@ describe('UI Enhancements Integration Tests', () => {
       };
 
       // Delete middle image
-      const deleted = HistoryManager.deleteCurrentImage(state, displayImage, showEmptyState);
+      const deleted = ListManager.deleteCurrentImage(state, displayImage, showEmptyState);
 
       // Verify deletion
       assert.strictEqual(deleted.seed, 2, 'Deleted entry returned');
-      assert.strictEqual(state.imageHistory.length, 2, 'History length reduced to 2');
-      assert.strictEqual(state.historyIndex, 1, 'Index adjusted to valid position');
+      assert.strictEqual(state.imageList.length, 2, 'List length reduced to 2');
+      assert.strictEqual(state.currentIndex, 1, 'Index adjusted to valid position');
       assert.deepStrictEqual(displayedImages, [3], 'Next image displayed after deletion');
 
-      // Verify blob URL revoked
-      assert.deepStrictEqual(revokedUrls, ['blob:2'], 'Blob URL was revoked');
+      // Note: Asset URLs from Tauri don't need revoking - managed by Tauri runtime
       assert.strictEqual(showEmptyCalled.value, false, 'Empty state not shown (images remain)');
 
       // Verify remaining images
-      assert.strictEqual(state.imageHistory[0].seed, 1, 'First image still present');
-      assert.strictEqual(state.imageHistory[1].seed, 3, 'Third image now at index 1');
+      assert.strictEqual(state.imageList[0].seed, 1, 'First image still present');
+      assert.strictEqual(state.imageList[1].seed, 3, 'Third image now at index 1');
     });
 
     it('should show empty state when last image deleted', () => {
       const state = {
-        imageHistory: [
+        imageList: [
           { image_data: 'img1', seed: 1, blobUrl: 'blob:1' }
         ],
-        historyIndex: 0
+        currentIndex: 0
       };
 
       let emptyShown = false;
@@ -224,16 +219,16 @@ describe('UI Enhancements Integration Tests', () => {
       };
 
       // Delete last image
-      HistoryManager.deleteCurrentImage(state, () => {}, showEmptyState);
+      ListManager.deleteCurrentImage(state, () => {}, showEmptyState);
 
       // Verify empty state
-      assert.strictEqual(state.imageHistory.length, 0, 'History is empty');
-      assert.strictEqual(state.historyIndex, -1, 'Index set to -1');
+      assert.strictEqual(state.imageList.length, 0, 'List is empty');
+      assert.strictEqual(state.currentIndex, -1, 'Index set to -1');
       assert.strictEqual(emptyShown, true, 'Empty state shown');
 
       // Position indicator should be empty
-      const indicator = HistoryManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '', 'Position indicator empty for no history');
+      const indicator = ListManager.getPositionIndicator(state);
+      assert.strictEqual(indicator, '', 'Position indicator empty for no list');
     });
   });
 
@@ -284,55 +279,57 @@ describe('UI Enhancements Integration Tests', () => {
   });
 
   describe('E2E: Multi-Path Accept (getAllRetainedPaths)', () => {
-    it('should collect all paths from history entries', () => {
+    it('should collect all outputPaths from accepted list entries', () => {
+      // getAllRetainedPaths returns outputPath (set when image is accepted), not preview path
       const state = {
-        imageHistory: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/tmp/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/tmp/img2.png' },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/tmp/img3.png' }
+        imageList: [
+          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
+          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/preview/img2.png', outputPath: '/output/img2.png' },
+          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
         ],
-        historyIndex: 1
+        currentIndex: 1
       };
 
-      const paths = HistoryManager.getAllRetainedPaths(state);
+      const paths = ListManager.getAllRetainedPaths(state);
 
       assert.strictEqual(paths.length, 3, 'Three paths collected');
       assert.deepStrictEqual(
         paths,
-        ['/tmp/img1.png', '/tmp/img2.png', '/tmp/img3.png'],
-        'Paths collected in order'
+        ['/output/img1.png', '/output/img2.png', '/output/img3.png'],
+        'Output paths collected in order'
       );
     });
 
-    it('should filter out entries without paths', () => {
+    it('should filter out entries without outputPaths (not accepted)', () => {
+      // Only images with outputPath (accepted) should be included
       const state = {
-        imageHistory: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/tmp/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: null },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/tmp/img3.png' }
+        imageList: [
+          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
+          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/preview/img2.png', outputPath: null },
+          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
         ],
-        historyIndex: 1
+        currentIndex: 1
       };
 
-      const paths = HistoryManager.getAllRetainedPaths(state);
+      const paths = ListManager.getAllRetainedPaths(state);
 
-      assert.strictEqual(paths.length, 2, 'Only entries with paths collected');
+      assert.strictEqual(paths.length, 2, 'Only entries with outputPath collected');
       assert.deepStrictEqual(
         paths,
-        ['/tmp/img1.png', '/tmp/img3.png'],
-        'Null paths filtered out'
+        ['/output/img1.png', '/output/img3.png'],
+        'Null outputPaths filtered out'
       );
     });
 
-    it('should return empty array for empty history', () => {
+    it('should return empty array for empty list', () => {
       const state = {
-        imageHistory: [],
-        historyIndex: -1
+        imageList: [],
+        currentIndex: -1
       };
 
-      const paths = HistoryManager.getAllRetainedPaths(state);
+      const paths = ListManager.getAllRetainedPaths(state);
 
-      assert.strictEqual(paths.length, 0, 'Empty array for no history');
+      assert.strictEqual(paths.length, 0, 'Empty array for no list');
       assert.deepStrictEqual(paths, [], 'Returns empty array');
     });
   });
@@ -344,51 +341,45 @@ describe('UI Enhancements Integration Tests', () => {
       const theme = ThemeManager.initTheme();
       assert.ok(theme, 'Theme initialized');
 
-      // Setup history
+      // Setup list with accepted images (have outputPath)
       const state = {
-        imageHistory: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/tmp/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/tmp/img2.png' },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/tmp/img3.png' }
+        imageList: [
+          { image_data: 'img1', seed: 1, blobUrl: 'asset://img1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
+          { image_data: 'img2', seed: 2, blobUrl: 'asset://img2', path: '/preview/img2.png', outputPath: '/output/img2.png' },
+          { image_data: 'img3', seed: 3, blobUrl: 'asset://img3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
         ],
-        historyIndex: 0,
+        currentIndex: 0,
         bufferCount: 0
       };
 
-      const revokedUrls = [];
-      global.URL.revokeObjectURL = (url) => {
-        revokedUrls.push(url);
-      };
-
       // Navigate forward
-      HistoryManager.navigateToNext(state, () => {}, () => {});
-      assert.strictEqual(state.historyIndex, 1, 'Navigated to index 1');
+      ListManager.navigateToNext(state, () => {}, () => {});
+      assert.strictEqual(state.currentIndex, 1, 'Navigated to index 1');
 
       // Flash button for visual feedback
       ButtonFlash.flashButtonForKey('ArrowRight');
       assert.ok(document.getElementById('skip-btn').classList.contains('btn-pressed'), 'Button flashed');
 
       // Delete unwanted image
-      HistoryManager.deleteCurrentImage(state, () => {}, () => {});
-      assert.strictEqual(state.imageHistory.length, 2, 'Image deleted');
-      assert.deepStrictEqual(revokedUrls, ['blob:2'], 'Blob revoked');
+      ListManager.deleteCurrentImage(state, () => {}, () => {});
+      assert.strictEqual(state.imageList.length, 2, 'Image deleted');
 
       // Toggle theme
       const newTheme = ThemeManager.toggleTheme();
       assert.notStrictEqual(newTheme, theme, 'Theme toggled');
       assert.strictEqual(localStorage.getItem('textbrush-theme'), newTheme, 'Theme persisted');
 
-      // Collect retained paths
-      const paths = HistoryManager.getAllRetainedPaths(state);
+      // Collect retained paths (outputPath from accepted images)
+      const paths = ListManager.getAllRetainedPaths(state);
       assert.strictEqual(paths.length, 2, 'Two paths retained after deletion');
       assert.deepStrictEqual(
         paths,
-        ['/tmp/img1.png', '/tmp/img3.png'],
-        'Correct paths collected'
+        ['/output/img1.png', '/output/img3.png'],
+        'Correct output paths collected'
       );
 
       // Verify position indicator
-      const indicator = HistoryManager.getPositionIndicator(state);
+      const indicator = ListManager.getPositionIndicator(state);
       assert.strictEqual(indicator, '[2]/2]', 'Position indicator correct after deletion');
     });
 
@@ -396,51 +387,45 @@ describe('UI Enhancements Integration Tests', () => {
       // Property: Complete workflow from multiple image generation through acceptance
       // validates that all retained paths are collected and multi-path exit is used.
 
-      // Setup: Simulate generating 4 images with paths
+      // Setup: Simulate generating 4 accepted images with outputPaths
       const state = {
-        imageHistory: [
-          { image_data: 'img1', seed: 101, blobUrl: 'blob:101', path: '/output/image-101.png' },
-          { image_data: 'img2', seed: 102, blobUrl: 'blob:102', path: '/output/image-102.png' },
-          { image_data: 'img3', seed: 103, blobUrl: 'blob:103', path: '/output/image-103.png' },
-          { image_data: 'img4', seed: 104, blobUrl: 'blob:104', path: '/output/image-104.png' }
+        imageList: [
+          { image_data: 'img1', seed: 101, blobUrl: 'asset://101', path: '/preview/101.png', outputPath: '/output/image-101.png' },
+          { image_data: 'img2', seed: 102, blobUrl: 'asset://102', path: '/preview/102.png', outputPath: '/output/image-102.png' },
+          { image_data: 'img3', seed: 103, blobUrl: 'asset://103', path: '/preview/103.png', outputPath: '/output/image-103.png' },
+          { image_data: 'img4', seed: 104, blobUrl: 'asset://104', path: '/preview/104.png', outputPath: '/output/image-104.png' }
         ],
-        historyIndex: 3,
+        currentIndex: 3,
         bufferCount: 0
       };
 
-      const revokedUrls = [];
-      global.URL.revokeObjectURL = (url) => {
-        revokedUrls.push(url);
-      };
-
       // Step 1: Navigate backward to review images
-      HistoryManager.navigateToPrevious(state, () => {});
-      assert.strictEqual(state.historyIndex, 2, 'Navigated to image 3');
+      ListManager.navigateToPrevious(state, () => {});
+      assert.strictEqual(state.currentIndex, 2, 'Navigated to image 3');
 
       // Step 2: Delete unwanted image (index 2, seed 103)
-      HistoryManager.deleteCurrentImage(state, () => {}, () => {});
-      assert.strictEqual(state.imageHistory.length, 3, 'One image deleted');
-      assert.deepStrictEqual(revokedUrls, ['blob:103'], 'Deleted image blob revoked');
+      ListManager.deleteCurrentImage(state, () => {}, () => {});
+      assert.strictEqual(state.imageList.length, 3, 'One image deleted');
 
       // Step 3: Navigate forward
       // After deletion at index 2, we're now viewing what was index 3 (seed 104), now at index 2
-      assert.strictEqual(state.historyIndex, 2, 'Index adjusted after deletion');
-      assert.strictEqual(state.imageHistory[2].seed, 104, 'Now viewing last image');
+      assert.strictEqual(state.currentIndex, 2, 'Index adjusted after deletion');
+      assert.strictEqual(state.imageList[2].seed, 104, 'Now viewing last image');
 
       // Step 4: Collect all retained paths (should exclude deleted image-103.png)
-      const allPaths = HistoryManager.getAllRetainedPaths(state);
+      const allPaths = ListManager.getAllRetainedPaths(state);
       assert.strictEqual(allPaths.length, 3, 'Three paths retained after deletion');
       assert.deepStrictEqual(
         allPaths,
         ['/output/image-101.png', '/output/image-102.png', '/output/image-104.png'],
-        'Correct paths collected, deleted image excluded'
+        'Correct output paths collected, deleted image excluded'
       );
 
       // Step 5: Simulate acceptance workflow
       // In real workflow:
       // - User presses Enter
       // - Backend saves current image (already saved in this test)
-      // - handleAccepted stores path in history entry
+      // - handleAccepted stores path in list entry
       // - handleAccepted calls getAllRetainedPaths()
       // - handleAccepted calls print_paths_and_exit(allPaths)
 
@@ -448,8 +433,8 @@ describe('UI Enhancements Integration Tests', () => {
       assert.ok(allPaths.length > 1, 'Multi-path exit condition met');
 
       // Verify edge case: if all paths were deleted, would exit as abort
-      state.imageHistory = [];
-      const emptyPaths = HistoryManager.getAllRetainedPaths(state);
+      state.imageList = [];
+      const emptyPaths = ListManager.getAllRetainedPaths(state);
       assert.strictEqual(emptyPaths.length, 0, 'Empty paths when all deleted');
     });
   });

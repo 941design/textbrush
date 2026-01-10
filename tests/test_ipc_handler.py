@@ -522,6 +522,7 @@ class TestUpdateConfigCommand:
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
         mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = False
         handler.backend = mock_backend
 
         payload = {"prompt": prompt, "aspect_ratio": aspect_ratio}
@@ -629,6 +630,7 @@ class TestUpdateConfigCommand:
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
         mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = False
         handler.backend = mock_backend
 
         payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
@@ -639,6 +641,23 @@ class TestUpdateConfigCommand:
         assert call_args.type == MessageType.BUFFER_STATUS
         assert call_args.payload["count"] == 0
         assert call_args.payload["generating"] is True
+
+    def test_update_config_preserves_pause_state(self, handler, mock_server):
+        """Update config preserves paused state - if paused before, stays paused after."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True  # Was paused before
+        handler.backend = mock_backend
+
+        payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
+        handler.handle_update_config(payload, mock_server)
+
+        # Should restore pause state after starting new generation
+        mock_backend.pause_generation.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.BUFFER_STATUS
+        assert call_args.payload["generating"] is False
 
     @given(
         prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),

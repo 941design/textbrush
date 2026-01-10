@@ -384,22 +384,22 @@ function applyFontSize(size) {
   document.documentElement.setAttribute("data-font-size", size);
 }
 
-// history-manager.ts
+// list-manager.ts
 function navigateToPrevious(state2, displayImage) {
-  if (state2.historyIndex <= 0) {
+  if (state2.currentIndex <= 0) {
     return false;
   }
-  state2.historyIndex--;
-  const record = state2.imageHistory[state2.historyIndex];
+  state2.currentIndex--;
+  const record = state2.imageList[state2.currentIndex];
   if (record) {
     displayImage(record);
   }
   return true;
 }
 function navigateToNext(state2, displayImage, requestNextImage) {
-  if (state2.historyIndex < state2.imageHistory.length - 1) {
-    state2.historyIndex++;
-    const record = state2.imageHistory[state2.historyIndex];
+  if (state2.currentIndex < state2.imageList.length - 1) {
+    state2.currentIndex++;
+    const record = state2.imageList[state2.currentIndex];
     if (record) {
       displayImage(record);
     }
@@ -409,29 +409,29 @@ function navigateToNext(state2, displayImage, requestNextImage) {
   return true;
 }
 function deleteCurrentImage(state2, displayImage, showEmptyState) {
-  if (state2.historyIndex < 0 || state2.historyIndex >= state2.imageHistory.length) {
+  if (state2.currentIndex < 0 || state2.currentIndex >= state2.imageList.length) {
     return null;
   }
-  const deletedRecord = state2.imageHistory.splice(state2.historyIndex, 1)[0];
+  const deletedRecord = state2.imageList.splice(state2.currentIndex, 1)[0];
   if (!deletedRecord) {
     return null;
   }
-  if (state2.imageHistory.length === 0) {
-    state2.historyIndex = -1;
+  if (state2.imageList.length === 0) {
+    state2.currentIndex = -1;
     showEmptyState();
     return deletedRecord;
   }
-  if (state2.historyIndex >= state2.imageHistory.length) {
-    state2.historyIndex = state2.imageHistory.length - 1;
+  if (state2.currentIndex >= state2.imageList.length) {
+    state2.currentIndex = state2.imageList.length - 1;
   }
-  const record = state2.imageHistory[state2.historyIndex];
+  const record = state2.imageList[state2.currentIndex];
   if (record) {
     displayImage(record);
   }
   return deletedRecord;
 }
 function getAllRetainedPaths(state2) {
-  return state2.imageHistory.map((record) => record.outputPath).filter((path) => path !== null && path !== void 0);
+  return state2.imageList.map((record) => record.outputPath).filter((path) => path !== null && path !== void 0);
 }
 
 // button-flash.ts
@@ -8983,8 +8983,8 @@ var state = {
   outputPath: null,
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
-  imageHistory: [],
-  historyIndex: -1,
+  imageList: [],
+  currentIndex: -1,
   waitingForNext: false
 };
 var elements = {
@@ -9195,8 +9195,8 @@ async function handleImageReady(payload) {
     generatedWidth: metadata.generatedWidth,
     generatedHeight: metadata.generatedHeight
   };
-  state.imageHistory.push(record);
-  state.historyIndex = state.imageHistory.length - 1;
+  state.imageList.push(record);
+  state.currentIndex = state.imageList.length - 1;
   state.waitingForNext = false;
   updateNavDots();
   if (record.prompt && record.prompt !== state.generationPrompt) {
@@ -9217,8 +9217,8 @@ function handleBufferStatus(payload) {
   }
 }
 async function handleAccepted(payload) {
-  if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
-    const entry = state.imageHistory[state.historyIndex];
+  if (payload.path && state.currentIndex >= 0 && state.currentIndex < state.imageList.length) {
+    const entry = state.imageList[state.currentIndex];
     if (entry) {
       entry.outputPath = payload.path;
       entry.outputDisplayPath = payload.display_path;
@@ -9314,7 +9314,7 @@ function updatePauseButton() {
     }
   }
 }
-async function displayImageRecord(record, historyIdx = null) {
+async function displayImageRecord(record, listIdx = null) {
   console.log("displayImageRecord called, seed:", record.seed, "path:", record.path);
   if (state.isTransitioning) {
     console.log("Skipping - already transitioning");
@@ -9349,7 +9349,7 @@ async function displayImageRecord(record, historyIdx = null) {
       await new Promise((resolve) => setTimeout(resolve, fadeInDuration));
       elements.currentImage.classList.remove("image-enter");
     }
-    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    const idx = listIdx !== null ? listIdx : state.currentIndex;
     updateMetadataPanelFromRecord(record, idx);
     updateNavDots();
   } catch (error) {
@@ -9358,7 +9358,7 @@ async function displayImageRecord(record, historyIdx = null) {
     state.isTransitioning = false;
   }
 }
-function updateMetadataPanelFromRecord(record, _historyIdx = null) {
+function updateMetadataPanelFromRecord(record, _listIdx = null) {
   const metadataPrompt = document.getElementById("metadata-prompt");
   const metadataModel = document.getElementById("metadata-model");
   const metadataSeed = document.getElementById("metadata-seed");
@@ -9417,8 +9417,8 @@ function updateNavDots() {
   if (!elements.navDots) {
     return;
   }
-  const total = state.imageHistory.length;
-  const currentIdx = state.historyIndex;
+  const total = state.imageList.length;
+  const currentIdx = state.currentIndex;
   elements.navDots.innerHTML = "";
   if (total === 0) {
     return;
@@ -9487,14 +9487,14 @@ function createNavDot(index, isActive) {
   return dot;
 }
 function navigateToIndex(index) {
-  if (state.isTransitioning || index < 0 || index >= state.imageHistory.length) {
+  if (state.isTransitioning || index < 0 || index >= state.imageList.length) {
     return;
   }
-  if (index === state.historyIndex) {
+  if (index === state.currentIndex) {
     return;
   }
-  state.historyIndex = index;
-  const entry = state.imageHistory[index];
+  state.currentIndex = index;
+  const entry = state.imageList[index];
   if (entry) {
     void displayImageRecord(entry, index);
   }
@@ -9524,21 +9524,21 @@ function previous() {
   if (state.isTransitioning) {
     return;
   }
-  if (state.waitingForNext && state.imageHistory.length > 0) {
+  if (state.waitingForNext && state.imageList.length > 0) {
     state.waitingForNext = false;
-    state.historyIndex = state.imageHistory.length - 1;
-    const historyItem = state.imageHistory[state.historyIndex];
+    state.currentIndex = state.imageList.length - 1;
+    const entry = state.imageList[state.currentIndex];
     showLoading(false);
-    if (historyItem) {
-      void displayImageRecord(historyItem, state.historyIndex);
+    if (entry) {
+      void displayImageRecord(entry, state.currentIndex);
     }
     return;
   }
   const navigated = navigateToPrevious(state, (entry) => {
-    void displayImageRecord(entry, state.historyIndex);
+    void displayImageRecord(entry, state.currentIndex);
   });
   if (!navigated) {
-    console.log("At beginning of history, cannot go back");
+    console.log("At beginning of list, cannot go back");
   }
 }
 function skip() {
@@ -9557,11 +9557,11 @@ function skip() {
     }).catch((err) => {
       console.error("Skip failed:", err);
       state.waitingForNext = false;
-      if (state.imageHistory.length > 0) {
-        const historyItem = state.imageHistory[state.historyIndex];
+      if (state.imageList.length > 0) {
+        const entry = state.imageList[state.currentIndex];
         showLoading(false);
-        if (historyItem) {
-          void displayImageRecord(historyItem, state.historyIndex);
+        if (entry) {
+          void displayImageRecord(entry, state.currentIndex);
         }
       }
     });
@@ -9569,7 +9569,7 @@ function skip() {
   navigateToNext(
     state,
     (entry) => {
-      void displayImageRecord(entry, state.historyIndex);
+      void displayImageRecord(entry, state.currentIndex);
     },
     requestNext
   );
@@ -9621,7 +9621,7 @@ function deleteCurrentImage2() {
   deleteCurrentImage(
     state,
     (entry) => {
-      void displayImageRecord(entry, state.historyIndex);
+      void displayImageRecord(entry, state.currentIndex);
     },
     () => {
       if (elements.currentImage) {
@@ -9660,8 +9660,8 @@ function setupButtonListeners() {
   }
   if (elements.copyPathBtn) {
     elements.copyPathBtn.addEventListener("click", () => {
-      const idx = state.historyIndex;
-      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
+      const idx = state.currentIndex;
+      const entry = idx >= 0 && idx < state.imageList.length ? state.imageList[idx] : null;
       const path = entry?.outputPath || entry?.path;
       if (path) {
         navigator.clipboard.writeText(path).then(() => {

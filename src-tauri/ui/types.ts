@@ -63,7 +63,7 @@ export interface LaunchArgs {
   height: number;
 }
 
-// Image record for navigation history
+// Image record for list navigation
 // Metadata parsed from PNG tEXt chunks on arrival, stored for navigation
 export interface ImageRecord {
   path: string;                    // Absolute path to preview PNG file
@@ -98,8 +98,8 @@ export interface AppState {
   outputPath: string | null;
   actionQueue: Promise<void>;
   currentBlobUrl: string | null;
-  imageHistory: ImageRecord[];
-  historyIndex: number;
+  imageList: ImageRecord[];
+  currentIndex: number;
   waitingForNext: boolean;
 }
 

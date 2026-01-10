@@ -35,6 +35,7 @@ class TestConfigUpdateE2E:
         handler.backend = Mock(spec=TextbrushBackend)
         handler.backend.buffer = Mock()
         handler.backend.buffer.max_size = 8
+        handler.backend.is_paused.return_value = False
         return handler
 
     @pytest.fixture
@@ -202,6 +203,7 @@ class TestConfigUpdateProperties:
         handler.backend = Mock(spec=TextbrushBackend)
         handler.backend.buffer = Mock()
         handler.backend.buffer.max_size = 8
+        handler.backend.is_paused.return_value = False
         return handler
 
     @given(
@@ -367,6 +369,7 @@ class TestSystemLevelInvariants:
         handler.backend = Mock(spec=TextbrushBackend)
         handler.backend.buffer = Mock()
         handler.backend.buffer.max_size = 8
+        handler.backend.is_paused.return_value = False
 
         mock_server = Mock()
         payload = {"prompt": "Test", "aspect_ratio": "1:1"}
