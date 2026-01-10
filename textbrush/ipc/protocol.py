@@ -67,38 +67,25 @@ class UpdateConfigCommand:
 class ImageReadyEvent:
     """Event indicating new image is ready for display.
 
-    CONTRACT (dimension fields):
+    CONTRACT:
       Invariants:
-        - final_width and final_height are image dimensions after any cropping
-        - If generated_width is not None, it is divisible by 16
-        - If generated_height is not None, it is divisible by 16
-        - generated_width and generated_height are either both present or both absent
-        - If generated dimensions present: generated_width ≥ final_width,
-          generated_height ≥ final_height
-        - If generated dimensions equal final dimensions, no cropping occurred
+        - path is absolute path to PNG file in preview directory
+        - PNG file contains metadata in tEXt chunks (parsed by frontend)
 
       Properties:
-        - Backward compatibility: UI handles missing generated_width/generated_height
-        - Optional: generated dimensions default to None for images without alignment
-        - Semantic: None for generated dimensions means "no dimension alignment performed"
-        - Always present: final_width and final_height always transmitted
+        - Path-based: frontend loads image from filesystem via asset protocol
+        - Metadata in PNG: prompt, model, seed, dimensions stored in PNG tEXt chunks
+        - Frontend parses metadata using ExifReader library
 
       Algorithm (IPC handler):
-        1. Extract final dimensions from buffered_image.image.size
-        2. Extract generated dimensions from buffered_image.generated_width/generated_height
-        3. Populate ImageReadyEvent with all dimension fields
+        1. Save image to preview directory with full metadata
+        2. Send path to frontend
+        3. Frontend loads image and parses all metadata from PNG
     """
 
-    image_data: str  # Base64 encoded PNG
-    seed: int
+    path: str  # Absolute path to preview PNG file
     buffer_count: int
     buffer_max: int
-    prompt: str = ""
-    model_name: str = ""
-    generated_width: int | None = None
-    generated_height: int | None = None
-    final_width: int | None = None
-    final_height: int | None = None
 
 
 @dataclass

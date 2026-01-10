@@ -25,11 +25,16 @@ download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
 dev:  ## Run textbrush CLI with --help
 	uv run textbrush --help
 
+# Example prompt and dimensions for development
+DEV_PROMPT ?= "A watercolor painting of a cat"
+DEV_WIDTH ?= 256
+DEV_HEIGHT ?= 256
+
 run: build-ui  ## Run Tauri application
-	cd src-tauri && cargo run
+	cd src-tauri && cargo run -- --prompt $(DEV_PROMPT) --width $(DEV_WIDTH) --height $(DEV_HEIGHT)
 
 run-debug: build-ui  ## Run Tauri application with debug logging
-	cd src-tauri && RUST_LOG=debug cargo run
+	cd src-tauri && RUST_LOG=debug cargo run -- --prompt $(DEV_PROMPT) --width $(DEV_WIDTH) --height $(DEV_HEIGHT)
 
 test:  ## Run test suite with pytest (excludes slow/integration tests)
 	uv run pytest tests --ignore=tests/test_buffer_stress.py -m "not slow and not integration" -v

@@ -277,7 +277,8 @@ Complete slideshow review interface for generated images with real-time buffer v
 
 **Implementation Details:**
 - HTML/CSS/JS UI with Tailwind-inspired utility classes
-- Memory-efficient blob URLs (replaced base64 data URLs)
+- Path-based IPC with Tauri asset protocol (no base64 encoding)
+- Preview directory pattern: save on generate, move on accept, delete on skip
 - Action queue preventing race conditions
 - Exit handling for OS window close events
 - Conditional animation skipping for performance

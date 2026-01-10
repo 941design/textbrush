@@ -453,3 +453,147 @@ class TextbrushBackend:
             filename = f"{timestamp}.{self.config.output.format}"
 
         return output_dir / filename
+
+    def _get_preview_dir(self) -> Path:
+        """Get or create the preview directory for temporary images.
+
+        CONTRACT:
+          Inputs: none
+
+          Outputs:
+            - Path: absolute path to preview directory (.preview/ under output dir)
+
+          Invariants:
+            - Preview directory exists after call
+            - Preview directory is a subdirectory of output directory
+
+          Properties:
+            - Creates directory if it doesn't exist
+            - Deterministic: always returns same path for same config
+
+          Algorithm:
+            1. Get config.output.directory
+            2. Create .preview subdirectory path
+            3. Create directory if it doesn't exist
+            4. Return path
+        """
+        preview_dir = self.config.output.directory / ".preview"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        return preview_dir
+
+    def save_to_preview(self, buffered_image: BufferedImage) -> Path:
+        """Save image to preview directory with metadata, set temp_path.
+
+        CONTRACT:
+          Inputs:
+            - buffered_image: BufferedImage with image and metadata
+
+          Outputs:
+            - Path: absolute path to saved preview file
+
+          Invariants:
+            - Image is saved to preview directory with PNG metadata
+            - buffered_image.temp_path is set to the saved file path
+            - File can be moved to output on accept or deleted on skip
+
+          Properties:
+            - Side effect: writes file to disk
+            - Side effect: modifies buffered_image.temp_path
+            - Unique filename: uses timestamp and seed
+
+          Algorithm:
+            1. Get preview directory
+            2. Generate unique filename with timestamp and seed
+            3. Save image with metadata using _save_with_metadata
+            4. Set buffered_image.temp_path
+            5. Return path
+        """
+        from datetime import datetime
+
+        preview_dir = self._get_preview_dir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"preview_{timestamp}_seed{buffered_image.seed}.png"
+        preview_path = preview_dir / filename
+
+        self._save_with_metadata(buffered_image, preview_path)
+        buffered_image.temp_path = preview_path
+
+        return preview_path
+
+    def accept_from_preview(
+        self, buffered_image: BufferedImage, output_path: Path | None = None
+    ) -> Path:
+        """Move image from preview to output directory.
+
+        CONTRACT:
+          Inputs:
+            - buffered_image: BufferedImage with temp_path set to preview file
+            - output_path: optional Path for final location (None = auto-generate)
+
+          Outputs:
+            - Path: absolute path where image was moved
+
+          Invariants:
+            - File is moved from preview to output directory
+            - Preview file no longer exists after call
+            - buffered_image.temp_path is cleared (set to None)
+
+          Properties:
+            - Atomic on same filesystem: uses rename
+            - Falls back to copy+delete if rename fails
+            - Raises RuntimeError if no temp_path set
+
+          Algorithm:
+            1. Check buffered_image.temp_path exists
+            2. If output_path is None: generate path using _generate_output_path
+            3. Move file from temp_path to output_path
+            4. Clear buffered_image.temp_path
+            5. Return output_path
+        """
+        import shutil
+
+        if buffered_image.temp_path is None or not buffered_image.temp_path.exists():
+            raise RuntimeError("No preview file to accept")
+
+        if output_path is None:
+            output_path = self._generate_output_path()
+
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Move file (rename or copy+delete)
+        try:
+            buffered_image.temp_path.rename(output_path)
+        except OSError:
+            # Cross-filesystem move: copy then delete
+            shutil.copy2(buffered_image.temp_path, output_path)
+            buffered_image.temp_path.unlink()
+
+        buffered_image.temp_path = None
+        return output_path
+
+    def delete_preview(self, buffered_image: BufferedImage) -> None:
+        """Delete preview file for skipped image.
+
+        CONTRACT:
+          Inputs:
+            - buffered_image: BufferedImage with temp_path set to preview file
+
+          Outputs: none (deletes file)
+
+          Invariants:
+            - Preview file is deleted if it exists
+            - buffered_image.temp_path is cleared (set to None)
+
+          Properties:
+            - Safe: no error if file doesn't exist
+            - Idempotent: safe to call multiple times
+
+          Algorithm:
+            1. If temp_path is None: return
+            2. Delete file if it exists
+            3. Clear temp_path
+        """
+        if buffered_image.temp_path is not None:
+            buffered_image.temp_path.unlink(missing_ok=True)
+            buffered_image.temp_path = None

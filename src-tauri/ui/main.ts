@@ -6,9 +6,10 @@ import * as ThemeManager from './theme-manager';
 import * as FontSizeManager from './font-size-manager';
 import * as HistoryManager from './history-manager';
 import * as ButtonFlash from './button-flash';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { fetchAndParsePngMetadata } from './png-metadata';
 import type {
   AppState,
   Elements,
@@ -20,7 +21,7 @@ import type {
   ErrorPayload,
   PausedPayload,
   ReadyPayload,
-  HistoryEntry,
+  ImageRecord,
 } from './types';
 
 // Get current window reference
@@ -29,7 +30,6 @@ const appWindow = getCurrentWindow();
 // State Management
 const state: AppState = {
   currentImage: null,
-  currentSeed: null,
   bufferCount: 0,
   bufferMax: 8,
   isGenerating: false,
@@ -175,8 +175,17 @@ async function init(): Promise<void> {
       elements.loadingPrompt.textContent = state.prompt || 'waiting...';
     }
 
-    // Initialize config controls
-    ConfigControls.initConfigControls(state.prompt, state.aspectRatio, state, elements);
+    // Initialize config controls with dimensions from launch args
+    state.width = launchArgs.width;
+    state.height = launchArgs.height;
+    ConfigControls.initConfigControls(
+      state.prompt,
+      state.aspectRatio,
+      launchArgs.width,
+      launchArgs.height,
+      state,
+      elements
+    );
 
     // Setup event listeners
     setupMessageListener();
@@ -189,6 +198,8 @@ async function init(): Promise<void> {
       outputPath: launchArgs.output_path || null,
       seed: launchArgs.seed || null,
       aspectRatio: launchArgs.aspect_ratio || '1:1',
+      width: launchArgs.width,
+      height: launchArgs.height,
     });
 
     console.log('Application initialized successfully');
@@ -260,24 +271,39 @@ function handleReady(payload: ReadyPayload): void {
   updateBufferDisplay();
 }
 
-function handleImageReady(payload: ImagePayload): void {
+async function handleImageReady(payload: ImagePayload): Promise<void> {
   state.currentImage = payload;
-  state.currentSeed = payload.seed || null;
   state.bufferCount = payload.buffer_count || 0;
   state.bufferMax = payload.buffer_max || 8;
 
-  // Add new image to history
-  state.imageHistory.push({
-    image_data: payload.image_data,
-    seed: payload.seed,
-    blobUrl: null,
-    prompt: payload.prompt || '',
-    model_name: payload.model_name || '',
-  });
+  // Convert file path to asset URL for display
+  const assetUrl = convertFileSrc(payload.path);
+  console.log('Loading image from:', payload.path, '-> asset URL:', assetUrl);
+
+  // Parse PNG metadata from file (includes seed)
+  const metadata = await fetchAndParsePngMetadata(assetUrl);
+  console.log('Parsed metadata:', metadata);
+
+  // Create image record with parsed metadata
+  const record: ImageRecord = {
+    path: payload.path,
+    seed: metadata.seed ?? 0,
+    blobUrl: assetUrl,
+    prompt: metadata.prompt ?? '',
+    model: metadata.model ?? '',
+    aspectRatio: metadata.aspectRatio ?? state.aspectRatio,
+    width: metadata.width ?? 0,
+    height: metadata.height ?? 0,
+    generatedWidth: metadata.generatedWidth,
+    generatedHeight: metadata.generatedHeight,
+  };
+
+  // Add to history
+  state.imageHistory.push(record);
   state.historyIndex = state.imageHistory.length - 1;
   state.waitingForNext = false;
 
-  void displayImage(payload);
+  void displayImageRecord(record);
   updateBufferDisplay();
   showLoading(false);
   enableAcceptButton();
@@ -293,7 +319,7 @@ async function handleAccepted(payload: AcceptedPayload): Promise<void> {
   if (payload.path && state.historyIndex >= 0 && state.historyIndex < state.imageHistory.length) {
     const entry = state.imageHistory[state.historyIndex];
     if (entry) {
-      entry.path = payload.path;
+      entry.outputPath = payload.path;
     }
   }
 
@@ -303,11 +329,7 @@ async function handleAccepted(payload: AcceptedPayload): Promise<void> {
   setTimeout(() => {
     void (async () => {
       try {
-        for (const entry of state.imageHistory) {
-          if (entry.blobUrl) {
-            URL.revokeObjectURL(entry.blobUrl);
-          }
-        }
+        // Note: asset URLs from convertFileSrc don't need revoking like blob URLs
 
         if (allPaths.length === 0) {
           await invoke('abort_exit');
@@ -328,11 +350,7 @@ function handleAborted(): void {
   setTimeout(() => {
     void (async () => {
       try {
-        for (const entry of state.imageHistory) {
-          if (entry.blobUrl) {
-            URL.revokeObjectURL(entry.blobUrl);
-          }
-        }
+        // Note: asset URLs from convertFileSrc don't need revoking like blob URLs
 
         await invoke('abort_exit');
       } catch (err) {
@@ -385,21 +403,9 @@ function updatePauseButton(): void {
   }
 }
 
-interface DisplayPayload {
-  image_data?: string;
-  blobUrl?: string | null;
-  seed?: number;
-  prompt?: string;
-  model_name?: string;
-  generated_width?: number;  // Optional: dimension passed to model (multiple of 16)
-  generated_height?: number; // Optional: dimension passed to model (multiple of 16)
-  final_width?: number;      // Optional: final image width after cropping
-  final_height?: number;     // Optional: final image height after cropping
-}
-
-// Display Image with Transitions
-async function displayImage(payload: DisplayPayload, historyIdx: number | null = null): Promise<void> {
-  console.log('displayImage called, seed:', payload.seed, 'data length:', payload.image_data?.length);
+// Display ImageRecord with Transitions
+async function displayImageRecord(record: ImageRecord, historyIdx: number | null = null): Promise<void> {
+  console.log('displayImageRecord called, seed:', record.seed, 'path:', record.path);
   if (state.isTransitioning) {
     console.log('Skipping - already transitioning');
     return;
@@ -419,40 +425,16 @@ async function displayImage(payload: DisplayPayload, historyIdx: number | null =
       await new Promise(resolve => setTimeout(resolve, fadeOutDuration));
     }
 
-    if (state.currentBlobUrl && !isHistoryBlobUrl(state.currentBlobUrl)) {
-      URL.revokeObjectURL(state.currentBlobUrl);
-      state.currentBlobUrl = null;
-    }
+    // Asset URLs from convertFileSrc don't need revoking
+    state.currentBlobUrl = record.blobUrl;
 
-    if (elements.currentImage && payload.image_data) {
-      console.log('Creating blob from base64 data...');
-      const binaryString = atob(payload.image_data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'image/png' });
-      state.currentBlobUrl = URL.createObjectURL(blob);
-
-      const idx = historyIdx !== null ? historyIdx : state.historyIndex;
-      if (idx >= 0 && idx < state.imageHistory.length) {
-        const entry = state.imageHistory[idx];
-        if (entry) {
-          entry.blobUrl = state.currentBlobUrl;
-        }
-      }
-
-      console.log('Setting image src to blob URL:', state.currentBlobUrl);
-      elements.currentImage.src = state.currentBlobUrl;
-    } else if (elements.currentImage && payload.blobUrl) {
-      console.log('Using existing blob URL from history:', payload.blobUrl);
-      state.currentBlobUrl = payload.blobUrl;
-      elements.currentImage.src = payload.blobUrl;
+    if (elements.currentImage && record.blobUrl) {
+      console.log('Setting image src to asset URL:', record.blobUrl);
+      elements.currentImage.src = record.blobUrl;
     } else {
-      console.warn('Cannot display image - missing element or data:', {
+      console.warn('Cannot display image - missing element or blobUrl:', {
         hasElement: !!elements.currentImage,
-        hasData: !!payload.image_data,
-        hasBlobUrl: !!payload.blobUrl,
+        hasBlobUrl: !!record.blobUrl,
       });
     }
 
@@ -466,7 +448,7 @@ async function displayImage(payload: DisplayPayload, historyIdx: number | null =
     }
 
     const idx = historyIdx !== null ? historyIdx : state.historyIndex;
-    updateMetadataPanel(payload, idx);
+    updateMetadataPanelFromRecord(record, idx);
     updateNavDots();
   } catch (error) {
     console.error('Error displaying image:', error);
@@ -475,7 +457,7 @@ async function displayImage(payload: DisplayPayload, historyIdx: number | null =
   }
 }
 
-function updateMetadataPanel(payload: DisplayPayload | null, historyIdx: number | null = null): void {
+function updateMetadataPanelFromRecord(record: ImageRecord | null, _historyIdx: number | null = null): void {
   const metadataPrompt = document.getElementById('metadata-prompt');
   const metadataModel = document.getElementById('metadata-model');
   const metadataSeed = document.getElementById('metadata-seed');
@@ -486,36 +468,34 @@ function updateMetadataPanel(payload: DisplayPayload | null, historyIdx: number 
     return;
   }
 
-  if (payload && payload.image_data) {
-    metadataPrompt.textContent = payload.prompt || '—';
-    metadataModel.textContent = payload.model_name || '—';
-    metadataSeed.textContent = payload.seed !== undefined ? String(payload.seed) : '—';
+  if (record) {
+    metadataPrompt.textContent = record.prompt || '—';
+    metadataModel.textContent = record.model || '—';
+    metadataSeed.textContent = record.seed !== undefined ? String(record.seed) : '—';
 
     // Update dimension fields
     // CONTRACT:
     // - If generated dimensions present: display both generated and final
     // - If generated dimensions absent: display final only (or "—" if unavailable)
     // - Format: "width×height"
-    // - Backward compatibility: gracefully handle missing fields
-    if (payload.generated_width !== undefined && payload.generated_height !== undefined) {
-      metadataGeneratedSize.textContent = `${payload.generated_width}×${payload.generated_height}`;
+    if (record.generatedWidth !== undefined && record.generatedHeight !== undefined) {
+      metadataGeneratedSize.textContent = `${record.generatedWidth}×${record.generatedHeight}`;
     } else {
       metadataGeneratedSize.textContent = '—';
     }
 
-    if (payload.final_width !== undefined && payload.final_height !== undefined) {
-      metadataFinalSize.textContent = `${payload.final_width}×${payload.final_height}`;
+    if (record.width && record.height) {
+      metadataFinalSize.textContent = `${record.width}×${record.height}`;
     } else {
       metadataFinalSize.textContent = '—';
     }
 
-    // Update path from history entry if available
-    const idx = historyIdx !== null ? historyIdx : state.historyIndex;
+    // Update path display - show output path if accepted, otherwise preview path
     if (elements.metadataPath) {
-      const entry = idx >= 0 && idx < state.imageHistory.length ? state.imageHistory[idx] : null;
-      const path = entry?.path || null;
-      elements.metadataPath.textContent = path || '(not saved)';
-      elements.metadataPath.title = path ? `Click to copy: ${path}` : 'Image not yet saved';
+      const path = record.outputPath || record.path;
+      const isSaved = !!record.outputPath;
+      elements.metadataPath.textContent = isSaved ? path : '(not saved)';
+      elements.metadataPath.title = isSaved ? `Click to copy: ${path}` : 'Image not yet saved';
     }
   } else {
     metadataPrompt.textContent = '—';
@@ -530,8 +510,8 @@ function updateMetadataPanel(payload: DisplayPayload | null, historyIdx: number 
   }
 }
 
-function isHistoryBlobUrl(blobUrl: string): boolean {
-  return state.imageHistory.some(item => item.blobUrl === blobUrl);
+function clearMetadataPanel(): void {
+  updateMetadataPanelFromRecord(null, null);
 }
 
 // Maximum number of dots to display before using ellipsis
@@ -655,7 +635,7 @@ function navigateToIndex(index: number): void {
   state.historyIndex = index;
   const entry = state.imageHistory[index];
   if (entry) {
-    void displayImage(entry, index);
+    void displayImageRecord(entry, index);
   }
 }
 
@@ -717,13 +697,13 @@ function previous(): void {
     const historyItem = state.imageHistory[state.historyIndex];
     showLoading(false);
     if (historyItem) {
-      void displayImage(historyItem, state.historyIndex);
+      void displayImageRecord(historyItem, state.historyIndex);
     }
     return;
   }
 
-  const navigated = HistoryManager.navigateToPrevious(state, (entry: HistoryEntry) => {
-    void displayImage(entry, state.historyIndex);
+  const navigated = HistoryManager.navigateToPrevious(state, (entry: ImageRecord) => {
+    void displayImageRecord(entry, state.historyIndex);
   });
 
   if (!navigated) {
@@ -756,7 +736,7 @@ function skip(): void {
           const historyItem = state.imageHistory[state.historyIndex];
           showLoading(false);
           if (historyItem) {
-            void displayImage(historyItem, state.historyIndex);
+            void displayImageRecord(historyItem, state.historyIndex);
           }
         }
       });
@@ -764,8 +744,8 @@ function skip(): void {
 
   HistoryManager.navigateToNext(
     state,
-    (entry: HistoryEntry) => {
-      void displayImage(entry, state.historyIndex);
+    (entry: ImageRecord) => {
+      void displayImageRecord(entry, state.historyIndex);
     },
     requestNext
   );
@@ -778,7 +758,7 @@ function showLoadingPlaceholder(): void {
   if (elements.loadingOverlay) {
     elements.loadingOverlay.classList.remove('hidden');
   }
-  updateMetadataPanel(null);
+  clearMetadataPanel();
   updateNavDots();
 }
 
@@ -817,14 +797,14 @@ function deleteCurrentImage(): void {
 
   HistoryManager.deleteCurrentImage(
     state,
-    (entry: HistoryEntry) => {
-      void displayImage(entry, state.historyIndex);
+    (entry: ImageRecord) => {
+      void displayImageRecord(entry, state.historyIndex);
     },
     () => {
       if (elements.currentImage) {
         elements.currentImage.classList.add('hidden');
       }
-      updateMetadataPanel(null);
+      clearMetadataPanel();
       updateNavDots();
     }
   );
@@ -939,7 +919,7 @@ declare global {
       elements: Elements;
       init: typeof init;
       handleMessage: typeof handleMessage;
-      displayImage: typeof displayImage;
+      displayImageRecord: typeof displayImageRecord;
       updateBufferDisplay: typeof updateBufferDisplay;
       updateNavDots: typeof updateNavDots;
       navigateToIndex: typeof navigateToIndex;
@@ -954,7 +934,6 @@ declare global {
       deleteCurrentImage: typeof deleteCurrentImage;
       cacheElements: typeof cacheElements;
       allElementsPresent: typeof allElementsPresent;
-      isHistoryBlobUrl: typeof isHistoryBlobUrl;
     };
   }
 }
@@ -965,7 +944,7 @@ if (typeof window !== 'undefined') {
     elements,
     init,
     handleMessage,
-    displayImage,
+    displayImageRecord,
     updateBufferDisplay,
     updateNavDots,
     navigateToIndex,
@@ -980,7 +959,6 @@ if (typeof window !== 'undefined') {
     deleteCurrentImage,
     cacheElements,
     allElementsPresent,
-    isHistoryBlobUrl,
   };
 }
 

@@ -11,6 +11,9 @@
     "check": "npm run typecheck && npm run lint",
     "test": "npm run build:modules && node --test *.test.js"
   },
+  "dependencies": {
+    "exifreader": "^4.23.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@tauri-apps/api": "^2.0.0",

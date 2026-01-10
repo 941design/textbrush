@@ -6,8 +6,6 @@ coordinating image delivery to UI.
 
 from __future__ import annotations
 
-import base64
-import io
 import logging
 import threading
 from pathlib import Path
@@ -109,14 +107,20 @@ class MessageHandler:
         from textbrush.ipc.protocol import InitCommand
 
         cmd = InitCommand(**payload)
-        logger.info(f"INIT received: prompt='{cmd.prompt[:50]}...', seed={cmd.seed}")
+        logger.info(
+            f"INIT received: prompt='{cmd.prompt[:50]}...', "
+            f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
+        )
         self.backend = TextbrushBackend(self.config)
         logger.info("Backend created, starting init thread")
 
         def on_ready():
             logger.info("Backend ready, sending READY event")
             server.send(Message(MessageType.READY))
-            logger.info(f"Starting generation: prompt='{cmd.prompt[:50]}...', seed={cmd.seed}")
+            logger.info(
+                f"Starting generation: prompt='{cmd.prompt[:50]}...', "
+                f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
+            )
             self.backend.start_generation(
                 prompt=cmd.prompt,
                 seed=cmd.seed,
@@ -130,33 +134,34 @@ class MessageHandler:
         threading.Thread(target=self._init_backend, args=(on_ready, server), daemon=True).start()
 
     def handle_skip(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle SKIP command: discard current image and continue.
+        """Handle SKIP command: delete preview and continue to next image.
 
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (clears current image, sends status)
+          Outputs: none (deletes preview, clears current image, sends status)
 
           Invariants:
+            - Preview file for current image is deleted
             - Current image reference is cleared
             - Image delivery thread is signaled to continue
             - BUFFER_STATUS event is sent with updated buffer info
 
           Properties:
-            - Non-blocking: returns immediately
+            - Non-blocking: returns immediately after file deletion
             - Thread coordination: signals waiting delivery thread
             - Status reporting: sends buffer status after skip
 
           Algorithm:
-            1. Clear current_image reference (set to None)
-            2. Signal image delivery thread to continue (unblock wait)
-            3. If backend exists: send BUFFER_STATUS event with:
-               - count: len(backend.buffer)
-               - max: backend.buffer.max_size
-               - generating: True
+            1. Delete preview file for current image
+            2. Clear current_image reference (set to None)
+            3. Signal image delivery thread to continue (unblock wait)
+            4. If backend exists: send BUFFER_STATUS event
         """
         with self._state_lock:
+            if self._current_image is not None and self.backend:
+                self.backend.delete_preview(self._current_image)
             self._current_image = None
         self._signal_action()
 
@@ -175,23 +180,23 @@ class MessageHandler:
             )
 
     def handle_accept(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle ACCEPT command: save current image and report path.
+        """Handle ACCEPT command: move preview to output and report path.
 
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (saves image, sends event)
+          Outputs: none (moves preview file, sends event)
 
           Invariants:
             - If no current image: sends non-fatal ERROR event
-            - If current image exists: saves to disk via backend.accept_current()
-            - ACCEPTED event sent with absolute path where image was saved
-            - Image delivery thread is signaled to continue (optional: could auto-close)
+            - If current image exists: moves from preview to output directory
+            - ACCEPTED event sent with absolute path where image was moved
+            - Image delivery thread is signaled to continue
 
           Properties:
-            - Blocking: waits for file I/O to complete
-            - Error handling: sends non-fatal ERROR if no image or save fails
+            - Blocking: waits for file move to complete
+            - Error handling: sends non-fatal ERROR if no image or move fails
             - Path reporting: sends absolute path in ACCEPTED event
             - Uses stored output_path or auto-generates via backend
 
@@ -199,13 +204,13 @@ class MessageHandler:
             1. Check if current_image exists
             2. If not: send non-fatal ERROR event, return
             3. Try:
-               a. Call backend.accept_current(output_path from INIT)
+               a. Call backend.accept_from_preview(current_image, output_path)
                b. Get absolute path returned
                c. Send ACCEPTED event with path
             4. Catch exceptions:
                a. Log error
                b. Send non-fatal ERROR event
-            5. Signal image delivery thread to continue (or server can shutdown)
+            5. Signal image delivery thread to continue
         """
         from textbrush.ipc.protocol import AcceptedEvent, ErrorEvent
 
@@ -220,8 +225,8 @@ class MessageHandler:
                 return
 
         try:
-            path = self.backend.accept_current(self._output_path)
-            logger.info(f"Image saved: {path.absolute()}")
+            path = self.backend.accept_from_preview(self._current_image, self._output_path)
+            logger.info(f"Image moved to: {path.absolute()}")
             server.send(
                 Message(
                     MessageType.ACCEPTED,
@@ -583,27 +588,18 @@ class MessageHandler:
 
                     logger.info(f"Image ready: seed={buffered.seed}")
 
-                    buffer = io.BytesIO()
-                    buffered.image.save(buffer, format="PNG")
-                    image_b64 = base64.b64encode(buffer.getvalue()).decode()
-
-                    final_width, final_height = buffered.image.size
+                    # Save to preview directory with full metadata in PNG tEXt chunks
+                    preview_path = self.backend.save_to_preview(buffered)
+                    logger.info(f"Saved preview: {preview_path}")
 
                     server.send(
                         Message(
                             MessageType.IMAGE_READY,
                             dataclass_to_dict(
                                 ImageReadyEvent(
-                                    image_data=image_b64,
-                                    seed=buffered.seed,
+                                    path=str(preview_path.absolute()),
                                     buffer_count=len(self.backend.buffer),
                                     buffer_max=self.backend.buffer.max_size,
-                                    prompt=buffered.prompt,
-                                    model_name=buffered.model_name,
-                                    generated_width=buffered.generated_width,
-                                    generated_height=buffered.generated_height,
-                                    final_width=final_width,
-                                    final_height=final_height,
                                 )
                             ),
                         )

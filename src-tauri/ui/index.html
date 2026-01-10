@@ -13,81 +13,70 @@
         <!-- Header Section with Config Controls -->
         <header class="header-bar">
             <div class="config-controls">
-                <div class="prompt-control">
-                    <label for="prompt-input" class="control-label">Prompt:</label>
-                    <input
-                        type="text"
-                        class="prompt-input"
-                        id="prompt-input"
-                        placeholder="Enter generation prompt"
-                        title="Generation prompt"
-                        aria-label="Generation prompt"
-                    />
-                </div>
-                <div class="aspect-ratio-control">
-                    <span class="control-label">Ratio:</span>
-                    <div class="aspect-ratio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="1:1" checked />
-                            <span>1:1</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="16:9" />
-                            <span>16:9</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="3:1" />
-                            <span>3:1</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="4:1" />
-                            <span>4:1</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="4:5" />
-                            <span>4:5</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="aspect-ratio" value="9:16" />
-                            <span>9:16</span>
-                        </label>
+                <!-- Row 1: Prompt -->
+                <div class="header-row header-row-1">
+                    <div class="prompt-control">
+                        <input
+                            type="text"
+                            class="prompt-input"
+                            id="prompt-input"
+                            placeholder="Enter generation prompt"
+                            title="Generation prompt"
+                            aria-label="Generation prompt"
+                            autocorrect="off"
+                            autocapitalize="off"
+                            spellcheck="false"
+                        />
                     </div>
                 </div>
-                <div class="resolution-control">
-                    <span class="control-label">Size:</span>
-                    <div class="resolution-group">
-                        <button
-                            type="button"
-                            class="resolution-btn"
-                            id="resolution-decrease"
-                            title="Decrease resolution"
-                            aria-label="Decrease resolution"
-                        >−</button>
-                        <span class="dimension-display" id="dimension-display">256×256</span>
-                        <button
-                            type="button"
-                            class="resolution-btn"
-                            id="resolution-increase"
-                            title="Increase resolution"
-                            aria-label="Increase resolution"
-                        >+</button>
+                <!-- Row 2: Aspect Ratio + Dimensions -->
+                <div class="header-row header-row-2">
+                    <div class="aspect-ratio-control">
+                        <div class="aspect-ratio-group">
+                            <label class="radio-label" title="Square">
+                                <input type="radio" name="aspect-ratio" value="1:1" checked />
+                                <span>1:1</span>
+                            </label>
+                            <label class="radio-label" title="Landscape">
+                                <input type="radio" name="aspect-ratio" value="16:9" />
+                                <span>16:9</span>
+                            </label>
+                            <label class="radio-label" title="Wide">
+                                <input type="radio" name="aspect-ratio" value="3:1" />
+                                <span>3:1</span>
+                            </label>
+                            <label class="radio-label" title="Ultra-wide">
+                                <input type="radio" name="aspect-ratio" value="4:1" />
+                                <span>4:1</span>
+                            </label>
+                            <label class="radio-label" title="Portrait">
+                                <input type="radio" name="aspect-ratio" value="4:5" />
+                                <span>4:5</span>
+                            </label>
+                            <label class="radio-label" title="Story">
+                                <input type="radio" name="aspect-ratio" value="9:16" />
+                                <span>9:16</span>
+                            </label>
+                        </div>
                     </div>
-                </div>
-                <div class="font-size-control">
-                    <span class="control-label">Font:</span>
-                    <div class="font-size-group" id="font-size-group" role="radiogroup" aria-label="Font size">
-                        <label class="radio-label font-size-option">
-                            <input type="radio" name="font-size" value="small" />
-                            <span>S</span>
-                        </label>
-                        <label class="radio-label font-size-option">
-                            <input type="radio" name="font-size" value="medium" checked />
-                            <span>M</span>
-                        </label>
-                        <label class="radio-label font-size-option">
-                            <input type="radio" name="font-size" value="large" />
-                            <span>L</span>
-                        </label>
+                    <div class="resolution-control">
+                        <div class="resolution-group">
+                            <button
+                                type="button"
+                                class="resolution-btn"
+                                id="resolution-decrease"
+                                title="Decrease resolution"
+                                aria-label="Decrease resolution"
+                            >−</button>
+                            <span class="dimension-display" id="dimension-display">256×256</span>
+                            <button
+                                type="button"
+                                class="resolution-btn"
+                                id="resolution-increase"
+                                title="Increase resolution"
+                                aria-label="Increase resolution"
+                            >+</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -222,6 +211,22 @@
             >
                 <span class="theme-icon" aria-hidden="true">◐</span>
             </button>
+            <div class="font-size-control">
+                <div class="font-size-group" id="font-size-group" role="radiogroup" aria-label="Font size">
+                    <label class="radio-label font-size-option" title="Small text">
+                        <input type="radio" name="font-size" value="small" />
+                        <span>S</span>
+                    </label>
+                    <label class="radio-label font-size-option" title="Medium text">
+                        <input type="radio" name="font-size" value="medium" checked />
+                        <span>M</span>
+                    </label>
+                    <label class="radio-label font-size-option" title="Large text">
+                        <input type="radio" name="font-size" value="large" />
+                        <span>L</span>
+                    </label>
+                </div>
+            </div>
         </section>
     </main>
 

@@ -147,18 +147,30 @@ class TestHTMLConfigControls:
         assert "config-controls" in parser.elements_by_class, "config-controls container must exist"
 
     def test_control_labels_exist(self):
-        """Control labels must exist for prompt and ratio."""
+        """Control labels must exist (via aria-label, placeholder, or title)."""
         html = load_html()
+        parser = parse_html(html)
 
-        label_texts_in_html = []
-        html_lower = html.lower()
-        if "prompt:" in html_lower:
-            label_texts_in_html.append("prompt")
-        # The HTML uses shortened "Ratio:" label instead of "Aspect Ratio:"
-        if "ratio:" in html_lower:
-            label_texts_in_html.append("ratio")
+        # Check prompt input has accessible label (placeholder or aria-label)
+        prompt_input = next(
+            (attrs for tag, attrs in parser.all_elements if attrs.get("id") == "prompt-input"),
+            None,
+        )
+        assert prompt_input is not None, "prompt-input must exist"
+        has_prompt_label = (
+            prompt_input.get("placeholder")
+            or prompt_input.get("aria-label")
+            or prompt_input.get("title")
+        )
+        assert has_prompt_label, "prompt-input must have accessible label"
 
-        assert len(label_texts_in_html) >= 2, "Must have labels for prompt and ratio"
+        # Check ratio controls have accessible labels (via radio buttons)
+        ratio_radios = [
+            attrs
+            for tag, attrs in parser.all_elements
+            if tag == "input" and attrs.get("name") == "aspect-ratio"
+        ]
+        assert len(ratio_radios) >= 2, "Must have at least 2 ratio options"
 
     def test_legacy_prompt_display_hidden(self):
         """Legacy prompt-display should be hidden for backward compatibility."""
@@ -359,11 +371,6 @@ class TestCSSStyles:
         css = load_css()
         assert ".validation-error.hidden" in css, "Must have .hidden modifier for validation-error"
 
-    def test_control_label_styles_exist(self):
-        """CSS must include styles for control-label class."""
-        css = load_css()
-        assert ".control-label" in css, "Must have styles for .control-label"
-
     def test_uses_css_variables(self):
         """Config control styles must use CSS custom properties."""
         css = load_css()
@@ -407,7 +414,6 @@ class TestIntegrationProperties:
             "aspect-ratio-control",
             "aspect-ratio-group",
             "radio-label",
-            "control-label",
             "validation-error",
         ]
 

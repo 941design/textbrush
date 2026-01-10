@@ -174,7 +174,6 @@ class TestPNGMetadataGeneration:
         finally:
             output_path.unlink(missing_ok=True)
 
-
     @given(buffered_image=buffered_images_with_generated_dimensions())
     @settings(max_examples=20, deadline=None)
     def test_generated_dimensions_are_multiples_of_16(self, buffered_image):

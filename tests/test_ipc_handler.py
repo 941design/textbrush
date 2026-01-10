@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import threading
 import time
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -188,17 +187,20 @@ class TestAcceptCommand:
         assert "No image to accept" in call_args.payload["message"]
 
     def test_accept_saves_image(self, handler, mock_server, tmp_path):
-        """Accept command saves current image to disk."""
-        handler._current_image = Mock()
+        """Accept command moves preview to output via backend."""
+        current_image = Mock()
+        handler._current_image = current_image
         handler._output_path = tmp_path / "test.png"
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_current = Mock(return_value=tmp_path / "test.png")
+        mock_backend.accept_from_preview = Mock(return_value=tmp_path / "test.png")
         handler.backend = mock_backend
 
         handler.handle_accept(mock_server)
 
-        mock_backend.accept_current.assert_called_once_with(handler._output_path)
+        mock_backend.accept_from_preview.assert_called_once_with(
+            current_image, handler._output_path
+        )
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]
         assert call_args.type == MessageType.ACCEPTED
@@ -209,7 +211,7 @@ class TestAcceptCommand:
         handler._output_path = tmp_path / "test.png"
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_current = Mock(return_value=tmp_path / "test.png")
+        mock_backend.accept_from_preview = Mock(return_value=tmp_path / "test.png")
         handler.backend = mock_backend
 
         handler._action_event.clear()
@@ -222,7 +224,7 @@ class TestAcceptCommand:
         handler._current_image = Mock()
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_current = Mock(side_effect=RuntimeError("Disk full"))
+        mock_backend.accept_from_preview = Mock(side_effect=RuntimeError("Disk full"))
         handler.backend = mock_backend
 
         handler.handle_accept(mock_server)
@@ -364,74 +366,59 @@ class TestThreadSynchronization:
         assert not handler._action_event.is_set()
 
 
-class TestBase64Encoding:
-    """Property-based tests for image base64 encoding."""
+class TestImageDelivery:
+    """Tests for image delivery (path-based)."""
 
-    @given(
-        width=st.integers(min_value=64, max_value=512),
-        height=st.integers(min_value=64, max_value=512),
-        r=st.integers(min_value=0, max_value=255),
-        g=st.integers(min_value=0, max_value=255),
-        b=st.integers(min_value=0, max_value=255),
-    )
-    def test_base64_encoding_roundtrip(self, width, height, r, g, b):
-        """Base64 encoded images can be decoded correctly."""
-        original_image = Image.new("RGB", (width, height), color=(r, g, b))
+    def test_image_delivery_sends_path(self):
+        """Image delivery thread saves to preview and sends path."""
+        import tempfile
 
-        buffer = io.BytesIO()
-        original_image.save(buffer, format="PNG")
-        encoded = base64.b64encode(buffer.getvalue()).decode()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = get_default_config()
+            handler = MessageHandler(config)
+            mock_server = Mock()
+            test_image = Image.new("RGB", (128, 128), color=(100, 150, 200))
+            buffered = BufferedImage(image=test_image, seed=12345)
 
-        decoded_data = base64.b64decode(encoded)
-        decoded_image = Image.open(io.BytesIO(decoded_data))
+            # Create a mock preview path
+            preview_path = tmp_path / "preview.png"
 
-        assert decoded_image.size == (width, height)
-        assert decoded_image.mode == "RGB"
+            mock_backend = Mock(spec=TextbrushBackend)
+            mock_backend.get_next_image = Mock(side_effect=[buffered, None])
+            mock_backend.check_worker_error = Mock(return_value=None)
+            mock_backend.save_to_preview = Mock(return_value=preview_path)
+            mock_backend.buffer = Mock()
+            mock_backend.buffer.__len__ = Mock(return_value=1)
+            mock_backend.buffer.max_size = 8
+            handler.backend = mock_backend
 
-    @given(seed=st.integers(min_value=0, max_value=2**31 - 1))
-    def test_image_delivery_encodes_correctly(self, seed):
-        """Image delivery thread encodes images as base64 PNG."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
-        test_image = Image.new("RGB", (128, 128), color=(100, 150, 200))
-        buffered = BufferedImage(image=test_image, seed=seed)
+            delivery_done = threading.Event()
 
-        mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
-        mock_backend.check_worker_error = Mock(return_value=None)
-        mock_backend.buffer = Mock()
-        mock_backend.buffer.__len__ = Mock(return_value=1)
-        mock_backend.buffer.max_size = 8
-        handler.backend = mock_backend
+            def signal_after_delivery():
+                time.sleep(0.1)
+                handler._signal_action()
+                delivery_done.set()
 
-        delivery_done = threading.Event()
+            threading.Thread(target=signal_after_delivery, daemon=True).start()
 
-        def signal_after_delivery():
-            time.sleep(0.1)
-            handler._signal_action()
-            delivery_done.set()
+            handler._start_image_delivery(mock_server, None)
 
-        threading.Thread(target=signal_after_delivery, daemon=True).start()
+            assert delivery_done.wait(timeout=2.0)
 
-        handler._start_image_delivery(mock_server, None)
+            image_ready_sent = False
+            for call in mock_server.send.call_args_list:
+                msg = call[0][0]
+                if msg.type == MessageType.IMAGE_READY:
+                    image_ready_sent = True
+                    assert "path" in msg.payload
+                    assert msg.payload["path"] == str(preview_path.absolute())
+                    # Seed is now in PNG metadata, not in payload
+                    assert "seed" not in msg.payload
+                    assert "image_data" not in msg.payload
 
-        assert delivery_done.wait(timeout=2.0)
-
-        image_ready_sent = False
-        for call in mock_server.send.call_args_list:
-            msg = call[0][0]
-            if msg.type == MessageType.IMAGE_READY:
-                image_ready_sent = True
-                assert "image_data" in msg.payload
-                assert msg.payload["seed"] == seed
-
-                encoded = msg.payload["image_data"]
-                decoded_data = base64.b64decode(encoded)
-                decoded_image = Image.open(io.BytesIO(decoded_data))
-                assert decoded_image.size == (128, 128)
-
-        assert image_ready_sent
+            assert image_ready_sent
+            mock_backend.save_to_preview.assert_called_once_with(buffered)
 
 
 class TestBackendInitialization:
@@ -494,207 +481,28 @@ class TestErrorHandling:
         assert payload["fatal"] is False
 
 
-class TestDimensionTransmission:
-    """Property-based tests for dimension field extraction and transmission."""
+class TestImageReadyEventSerialization:
+    """Tests for ImageReadyEvent serialization (path-based protocol)."""
 
-    @given(
-        generated_width=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
-        generated_height=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
-        crop_x=st.integers(min_value=0, max_value=50),
-        crop_y=st.integers(min_value=0, max_value=50),
-        seed=st.integers(min_value=0, max_value=2**31 - 1),
-    )
-    def test_dimension_extraction_with_cropping(
-        self, generated_width, generated_height, crop_x, crop_y, seed
-    ):
-        """Dimensions extracted correctly when image was cropped."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
-
-        final_width = generated_width - crop_x
-        final_height = generated_height - crop_y
-        test_image = Image.new("RGB", (final_width, final_height), color=(100, 150, 200))
-        buffered = BufferedImage(
-            image=test_image,
-            seed=seed,
-            generated_width=generated_width,
-            generated_height=generated_height,
-        )
-
-        mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
-        mock_backend.check_worker_error = Mock(return_value=None)
-        mock_backend.buffer = Mock()
-        mock_backend.buffer.__len__ = Mock(return_value=1)
-        mock_backend.buffer.max_size = 8
-        handler.backend = mock_backend
-
-        delivery_done = threading.Event()
-
-        def signal_after_delivery():
-            time.sleep(0.1)
-            handler._signal_action()
-            delivery_done.set()
-
-        threading.Thread(target=signal_after_delivery, daemon=True).start()
-
-        handler._start_image_delivery(mock_server, None)
-
-        assert delivery_done.wait(timeout=2.0)
-
-        image_ready_sent = False
-        for call in mock_server.send.call_args_list:
-            msg = call[0][0]
-            if msg.type == MessageType.IMAGE_READY:
-                image_ready_sent = True
-                assert msg.payload["generated_width"] == generated_width
-                assert msg.payload["generated_height"] == generated_height
-                assert msg.payload["final_width"] == final_width
-                assert msg.payload["final_height"] == final_height
-
-        assert image_ready_sent
-
-    @given(
-        width=st.integers(min_value=512, max_value=2048),
-        height=st.integers(min_value=512, max_value=2048),
-        seed=st.integers(min_value=0, max_value=2**31 - 1),
-    )
-    def test_dimension_extraction_without_cropping(self, width, height, seed):
-        """Dimensions extracted correctly when no cropping occurred."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
-
-        test_image = Image.new("RGB", (width, height), color=(100, 150, 200))
-        buffered = BufferedImage(
-            image=test_image, seed=seed, generated_width=None, generated_height=None
-        )
-
-        mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
-        mock_backend.check_worker_error = Mock(return_value=None)
-        mock_backend.buffer = Mock()
-        mock_backend.buffer.__len__ = Mock(return_value=1)
-        mock_backend.buffer.max_size = 8
-        handler.backend = mock_backend
-
-        delivery_done = threading.Event()
-
-        def signal_after_delivery():
-            time.sleep(0.1)
-            handler._signal_action()
-            delivery_done.set()
-
-        threading.Thread(target=signal_after_delivery, daemon=True).start()
-
-        handler._start_image_delivery(mock_server, None)
-
-        assert delivery_done.wait(timeout=2.0)
-
-        image_ready_sent = False
-        for call in mock_server.send.call_args_list:
-            msg = call[0][0]
-            if msg.type == MessageType.IMAGE_READY:
-                image_ready_sent = True
-                assert msg.payload["generated_width"] is None
-                assert msg.payload["generated_height"] is None
-                assert msg.payload["final_width"] == width
-                assert msg.payload["final_height"] == height
-
-        assert image_ready_sent
-
-    @given(
-        generated_width=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
-        generated_height=st.integers(min_value=512, max_value=2048).map(lambda x: (x // 16) * 16),
-    )
-    def test_dimension_serialization_json_compatible(self, generated_width, generated_height):
-        """Dimension fields serialize to valid JSON."""
+    def test_image_ready_event_serialization(self):
+        """ImageReadyEvent serializes path and buffer stats to valid JSON."""
         from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
 
-        event_with_dims = ImageReadyEvent(
-            image_data="base64data",
-            seed=42,
-            buffer_count=1,
+        event = ImageReadyEvent(
+            path="/path/to/preview.png",
+            buffer_count=3,
             buffer_max=8,
-            generated_width=generated_width,
-            generated_height=generated_height,
-            final_width=generated_width - 10,
-            final_height=generated_height - 10,
         )
-        payload = dataclass_to_dict(event_with_dims)
+        payload = dataclass_to_dict(event)
 
-        assert isinstance(payload["generated_width"], int)
-        assert isinstance(payload["generated_height"], int)
-        assert isinstance(payload["final_width"], int)
-        assert isinstance(payload["final_height"], int)
-        assert payload["generated_width"] == generated_width
-        assert payload["generated_height"] == generated_height
-        assert payload["final_width"] == generated_width - 10
-        assert payload["final_height"] == generated_height - 10
-
-    def test_dimension_serialization_handles_none_values(self):
-        """Serialization handles None dimension values correctly."""
-        from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
-
-        event_with_none = ImageReadyEvent(
-            image_data="base64data",
-            seed=42,
-            buffer_count=1,
-            buffer_max=8,
-            generated_width=None,
-            generated_height=None,
-            final_width=1024,
-            final_height=768,
-        )
-        payload = dataclass_to_dict(event_with_none)
-
-        assert payload["generated_width"] is None
-        assert payload["generated_height"] is None
-        assert payload["final_width"] == 1024
-        assert payload["final_height"] == 768
-
-    @given(
-        width=st.integers(min_value=512, max_value=2048),
-        height=st.integers(min_value=512, max_value=2048),
-    )
-    def test_final_dimensions_match_image_size(self, width, height):
-        """Final dimensions always match PIL Image.size."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
-
-        test_image = Image.new("RGB", (width, height), color=(100, 150, 200))
-        buffered = BufferedImage(image=test_image, seed=42)
-
-        mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.get_next_image = Mock(side_effect=[buffered, None])
-        mock_backend.check_worker_error = Mock(return_value=None)
-        mock_backend.buffer = Mock()
-        mock_backend.buffer.__len__ = Mock(return_value=1)
-        mock_backend.buffer.max_size = 8
-        handler.backend = mock_backend
-
-        delivery_done = threading.Event()
-
-        def signal_after_delivery():
-            time.sleep(0.1)
-            handler._signal_action()
-            delivery_done.set()
-
-        threading.Thread(target=signal_after_delivery, daemon=True).start()
-
-        handler._start_image_delivery(mock_server, None)
-
-        assert delivery_done.wait(timeout=2.0)
-
-        for call in mock_server.send.call_args_list:
-            msg = call[0][0]
-            if msg.type == MessageType.IMAGE_READY:
-                assert msg.payload["final_width"] == width
-                assert msg.payload["final_height"] == height
-                assert msg.payload["final_width"] == test_image.size[0]
-                assert msg.payload["final_height"] == test_image.size[1]
+        assert payload["path"] == "/path/to/preview.png"
+        assert payload["buffer_count"] == 3
+        assert payload["buffer_max"] == 8
+        # Seed and dimensions are in PNG metadata, not in payload
+        assert "seed" not in payload
+        assert "image_data" not in payload
+        assert "generated_width" not in payload
+        assert "final_width" not in payload
 
 
 class TestUpdateConfigCommand:

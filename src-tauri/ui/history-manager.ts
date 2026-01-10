@@ -1,9 +1,9 @@
 // Image History Navigation and Management
 // Extends main.js navigation to support bidirectional navigation and deletion
 
-import type { HistoryEntry, AppState } from './types';
+import type { ImageRecord, AppState } from './types';
 
-type DisplayImageCallback = (entry: HistoryEntry) => void;
+type DisplayImageCallback = (record: ImageRecord) => void;
 type ShowEmptyStateCallback = () => void;
 type RequestNextImageCallback = () => void;
 
@@ -19,9 +19,9 @@ export function navigateToPrevious(
   }
 
   state.historyIndex--;
-  const entry = state.imageHistory[state.historyIndex];
-  if (entry) {
-    displayImage(entry);
+  const record = state.imageHistory[state.historyIndex];
+  if (record) {
+    displayImage(record);
   }
   return true;
 }
@@ -36,9 +36,9 @@ export function navigateToNext(
 ): boolean {
   if (state.historyIndex < state.imageHistory.length - 1) {
     state.historyIndex++;
-    const entry = state.imageHistory[state.historyIndex];
-    if (entry) {
-      displayImage(entry);
+    const record = state.imageHistory[state.historyIndex];
+    if (record) {
+      displayImage(record);
     }
     return true;
   }
@@ -50,48 +50,48 @@ export function navigateToNext(
 
 /**
  * Delete current image from history and navigate away.
+ * Note: Asset URLs from convertFileSrc don't need revoking.
  */
 export function deleteCurrentImage(
   state: AppState,
   displayImage: DisplayImageCallback,
   showEmptyState: ShowEmptyStateCallback
-): HistoryEntry | null {
+): ImageRecord | null {
   if (state.historyIndex < 0 || state.historyIndex >= state.imageHistory.length) {
     return null;
   }
 
-  const deletedEntry = state.imageHistory.splice(state.historyIndex, 1)[0];
-  if (!deletedEntry) {
+  const deletedRecord = state.imageHistory.splice(state.historyIndex, 1)[0];
+  if (!deletedRecord) {
     return null;
   }
 
-  if (deletedEntry.blobUrl) {
-    URL.revokeObjectURL(deletedEntry.blobUrl);
-  }
+  // Note: Asset URLs from convertFileSrc don't need revoking like blob URLs
 
   if (state.imageHistory.length === 0) {
     state.historyIndex = -1;
     showEmptyState();
-    return deletedEntry;
+    return deletedRecord;
   }
 
   if (state.historyIndex >= state.imageHistory.length) {
     state.historyIndex = state.imageHistory.length - 1;
   }
 
-  const entry = state.imageHistory[state.historyIndex];
-  if (entry) {
-    displayImage(entry);
+  const record = state.imageHistory[state.historyIndex];
+  if (record) {
+    displayImage(record);
   }
-  return deletedEntry;
+  return deletedRecord;
 }
 
 /**
- * Get all retained image paths for multi-path exit.
+ * Get all accepted image output paths for multi-path exit.
+ * Only returns paths for images that have been accepted (have outputPath set).
  */
 export function getAllRetainedPaths(state: AppState): string[] {
   return state.imageHistory
-    .map(entry => entry.path)
+    .map(record => record.outputPath)
     .filter((path): path is string => path !== null && path !== undefined);
 }
 

@@ -42,13 +42,18 @@ global.URL = {
 // PROPERTY-BASED TESTS
 // ============================================================================
 
-// Helper to generate test data
+// Helper to generate test data (ImageRecord structure)
 function generateImageEntry(seed = Math.random()) {
   return {
-    image_data: `data-${seed}`,
+    path: `/preview/img-${seed}.png`,
     seed: Math.floor(seed * 1000),
-    blobUrl: `blob:${seed}`,
-    path: undefined,
+    blobUrl: null,  // No longer using blob URLs
+    prompt: `test prompt ${seed}`,
+    model: 'test-model',
+    aspectRatio: '1:1',
+    width: 1024,
+    height: 1024,
+    outputPath: undefined,  // Set when accepted
   };
 }
 
@@ -101,7 +106,7 @@ function test_navigateToPrevious_validPositionDecrements() {
   assert(result, 'navigateToPrevious should return true');
   assertEqual(state.historyIndex, 1, 'index should decrement by 1');
   assertEqual(callLog.length, 1, 'displayImage should be called once');
-  assertEqual(callLog[0].image_data, 'data-1', 'should display image at index 1');
+  assertEqual(callLog[0].path, '/preview/img-1.png', 'should display image at index 1');
 }
 
 function test_navigateToPrevious_idempotentAtBoundary() {
@@ -296,7 +301,7 @@ function test_deleteCurrentImage_fromMiddle() {
   assertEqual(state.imageHistory.length, 4, 'should have 4 images left');
   assertEqual(state.historyIndex, 2, 'index should stay at 2');
   assertEqual(displayLog.length, 1, 'displayImage should be called');
-  assertEqual(displayLog[0].image_data, 'data-3', 'should display what was next (now at index 2)');
+  assertEqual(displayLog[0].path, '/preview/img-3.png', 'should display what was next (now at index 2)');
 }
 
 function test_deleteCurrentImage_fromEnd() {
@@ -311,20 +316,19 @@ function test_deleteCurrentImage_fromEnd() {
   assertEqual(state.imageHistory.length, 4, 'should have 4 images left');
   assertEqual(state.historyIndex, 3, 'index should adjust to new end');
   assertEqual(displayLog.length, 1, 'displayImage should be called');
-  assertEqual(displayLog[0].image_data, 'data-3', 'should display new end');
+  assertEqual(displayLog[0].path, '/preview/img-3.png', 'should display new end');
 }
 
-function test_deleteCurrentImage_revokesBlobUrl() {
-  const revokeLog = [];
-  global.URL.revokeObjectURL = (url) => revokeLog.push(url);
-
+function test_deleteCurrentImage_noLongerUsesBlobUrls() {
+  // Note: With the new path-based architecture using Tauri asset protocol,
+  // we no longer need to revoke blob URLs. Asset URLs are managed by Tauri.
+  // This test verifies deletion still works correctly without blob URL cleanup.
   const state = createState(3, 1);
-  state.imageHistory[1].blobUrl = 'blob:test-123';
+  const originalLength = state.imageHistory.length;
 
   HistoryManager.deleteCurrentImage(state, () => {}, () => {});
 
-  assertEqual(revokeLog.length, 1, 'revokeObjectURL should be called');
-  assertEqual(revokeLog[0], 'blob:test-123', 'should revoke correct URL');
+  assertEqual(state.imageHistory.length, originalLength - 1, 'image should be deleted');
 }
 
 function test_deleteCurrentImage_property_doesNotRevokeNull() {
@@ -380,34 +384,36 @@ function test_getAllRetainedPaths_noPathsSet() {
   assertArrayEqual(paths, [], 'should return empty array when no paths set');
 }
 
-function test_getAllRetainedPaths_allPathsSet() {
+function test_getAllRetainedPaths_allOutputPathsSet() {
+  // getAllRetainedPaths returns outputPath (set when accepted), not path (preview)
   const state = createState(3, 0);
-  state.imageHistory[0].path = '/path/to/image-0.png';
-  state.imageHistory[1].path = '/path/to/image-1.png';
-  state.imageHistory[2].path = '/path/to/image-2.png';
+  state.imageHistory[0].outputPath = '/output/image-0.png';
+  state.imageHistory[1].outputPath = '/output/image-1.png';
+  state.imageHistory[2].outputPath = '/output/image-2.png';
 
   const paths = HistoryManager.getAllRetainedPaths(state);
 
   assertArrayEqual(
     paths,
-    ['/path/to/image-0.png', '/path/to/image-1.png', '/path/to/image-2.png'],
-    'should return all paths in order'
+    ['/output/image-0.png', '/output/image-1.png', '/output/image-2.png'],
+    'should return all output paths in order'
   );
 }
 
-function test_getAllRetainedPaths_filtersMissing() {
+function test_getAllRetainedPaths_filtersMissingOutputPaths() {
+  // Only images with outputPath (accepted) should be included
   const state = createState(4, 0);
-  state.imageHistory[0].path = '/path/0.png';
-  state.imageHistory[1].path = null;
-  state.imageHistory[2].path = undefined;
-  state.imageHistory[3].path = '/path/3.png';
+  state.imageHistory[0].outputPath = '/output/0.png';
+  state.imageHistory[1].outputPath = null;  // Not accepted
+  state.imageHistory[2].outputPath = undefined;  // Not accepted
+  state.imageHistory[3].outputPath = '/output/3.png';
 
   const paths = HistoryManager.getAllRetainedPaths(state);
 
   assertArrayEqual(
     paths,
-    ['/path/0.png', '/path/3.png'],
-    'should filter out null/undefined paths'
+    ['/output/0.png', '/output/3.png'],
+    'should filter out images without outputPath (not accepted)'
   );
 }
 
@@ -511,15 +517,15 @@ const tests = [
   test_deleteCurrentImage_lastImage,
   test_deleteCurrentImage_fromMiddle,
   test_deleteCurrentImage_fromEnd,
-  test_deleteCurrentImage_revokesBlobUrl,
+  test_deleteCurrentImage_noLongerUsesBlobUrls,
   test_deleteCurrentImage_property_doesNotRevokeNull,
   test_deleteCurrentImage_property_indexAlwaysValid,
 
   // getAllRetainedPaths
   test_getAllRetainedPaths_emptyHistory,
   test_getAllRetainedPaths_noPathsSet,
-  test_getAllRetainedPaths_allPathsSet,
-  test_getAllRetainedPaths_filtersMissing,
+  test_getAllRetainedPaths_allOutputPathsSet,
+  test_getAllRetainedPaths_filtersMissingOutputPaths,
   test_getAllRetainedPaths_property_readOnly,
 
   // getPositionIndicator

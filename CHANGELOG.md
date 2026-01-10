@@ -19,7 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Modular frontend architecture: ThemeManager, HistoryManager, ButtonFlash modules
   - localStorage persistence for theme preference (key: textbrush-theme)
   - System theme preference detection on first launch
-  - Blob URL memory cleanup for deleted images
+- **Path-based IPC Protocol**: Improved image delivery using file paths instead of base64
+  - Images saved to preview directory (`.preview/`) on generation
+  - IPC sends file path instead of base64-encoded image data
+  - Frontend uses Tauri asset protocol for direct file access
+  - Preview files moved to output on accept, deleted on skip
+  - PNG metadata parsing with ExifReader for prompt/model/seed/dimensions
 - **Headless Mode**: CLI operation without UI for CI/CD and automated testing
   - `--headless` flag for non-interactive operation
   - `--auto-accept` to accept first generated image and exit with code 0

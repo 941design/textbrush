@@ -12,6 +12,22 @@ pub struct LaunchArgs {
     pub seed: Option<i64>,
     pub aspect_ratio: String,
     pub buffer_max: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Get default resolution for an aspect ratio.
+/// Returns (width, height) tuple.
+fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
+    match aspect_ratio {
+        "1:1" => (256, 256),
+        "16:9" => (1280, 720),
+        "3:1" => (1500, 500),
+        "4:1" => (1600, 400),
+        "4:5" => (1080, 1350),
+        "9:16" => (1080, 1920),
+        _ => (256, 256), // Fallback to square
+    }
 }
 
 /// Get launch arguments for UI initialization.
@@ -49,16 +65,10 @@ pub struct LaunchArgs {
 ///       3. Validate required arguments (prompt)
 ///       4. Return LaunchArgs struct
 ///
-/// IMPLEMENTATION GUIDANCE (Initial Version):
-///   - Return hardcoded LaunchArgs for testing:
-///     LaunchArgs {
-///       prompt: "A watercolor painting of a cat".to_string(),
-///       output_path: None,
-///       seed: None,
-///       aspect_ratio: "1:1".to_string(),
-///     }
+/// IMPLEMENTATION GUIDANCE:
 ///   - Mark as #[tauri::command]
 ///   - Return Result<LaunchArgs, String> for error handling
+///   - Prompt is required; return error if not provided
 ///
 /// IMPLEMENTATION GUIDANCE (Production Version - Future):
 ///   - Access Tauri's CLI argument parsing or std::env::args()
@@ -74,6 +84,8 @@ pub fn get_launch_args() -> Result<LaunchArgs, String> {
     let mut seed: Option<i64> = None;
     let mut aspect_ratio = "1:1".to_string();
     let mut buffer_max: u32 = 8;
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
 
     let mut i = 1; // Skip program name
     while i < args.len() {
@@ -120,16 +132,37 @@ pub fn get_launch_args() -> Result<LaunchArgs, String> {
                     return Err("--buffer-max requires a value".to_string());
                 }
             }
+            "--width" => {
+                if i + 1 < args.len() {
+                    width = Some(args[i + 1].parse().map_err(|_| "Invalid width value")?);
+                    i += 2;
+                } else {
+                    return Err("--width requires a value".to_string());
+                }
+            }
+            "--height" => {
+                if i + 1 < args.len() {
+                    height = Some(args[i + 1].parse().map_err(|_| "Invalid height value")?);
+                    i += 2;
+                } else {
+                    return Err("--height requires a value".to_string());
+                }
+            }
             _ => {
                 i += 1; // Skip unknown arguments
             }
         }
     }
 
-    // Use default prompt for development if none provided
+    // Prompt is required
     if prompt.is_empty() {
-        prompt = "A watercolor painting of a cat".to_string();
+        return Err("--prompt is required".to_string());
     }
+
+    // Use default resolution for aspect ratio if dimensions not specified
+    let (default_width, default_height) = get_default_resolution(&aspect_ratio);
+    let final_width = width.unwrap_or(default_width);
+    let final_height = height.unwrap_or(default_height);
 
     Ok(LaunchArgs {
         prompt,
@@ -137,6 +170,8 @@ pub fn get_launch_args() -> Result<LaunchArgs, String> {
         seed,
         aspect_ratio,
         buffer_max,
+        width: final_width,
+        height: final_height,
     })
 }
 
@@ -145,15 +180,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_launch_args_uses_default_prompt_when_not_provided() {
+    fn get_launch_args_requires_prompt() {
         // In test environment, CLI args won't include --prompt
         let result = get_launch_args();
-        assert!(result.is_ok());
-        let args = result.unwrap();
-        // Should use default prompt
-        assert!(!args.prompt.is_empty());
-        assert_eq!(args.aspect_ratio, "1:1");
-        assert_eq!(args.buffer_max, 8);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "--prompt is required");
     }
 
     #[test]
@@ -164,6 +195,8 @@ mod tests {
             seed: Some(42),
             aspect_ratio: "16:9".to_string(),
             buffer_max: 4,
+            width: 1920,
+            height: 1080,
         };
         let json = serde_json::to_string(&args).unwrap();
         assert!(json.contains("test prompt"));
@@ -171,5 +204,19 @@ mod tests {
         assert!(json.contains("42"));
         assert!(json.contains("16:9"));
         assert!(json.contains("4"));
+        assert!(json.contains("1920"));
+        assert!(json.contains("1080"));
+    }
+
+    #[test]
+    fn get_default_resolution_returns_correct_values() {
+        assert_eq!(get_default_resolution("1:1"), (256, 256));
+        assert_eq!(get_default_resolution("16:9"), (1280, 720));
+        assert_eq!(get_default_resolution("3:1"), (1500, 500));
+        assert_eq!(get_default_resolution("4:1"), (1600, 400));
+        assert_eq!(get_default_resolution("4:5"), (1080, 1350));
+        assert_eq!(get_default_resolution("9:16"), (1080, 1920));
+        // Unknown aspect ratios fall back to 256x256
+        assert_eq!(get_default_resolution("unknown"), (256, 256));
     }
 }

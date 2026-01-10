@@ -67,7 +67,7 @@ uv run textbrush "a serene mountain landscape" --output output.png
 The UI provides:
 - **Real-time buffer status**: Visual indicator showing how many images are ready to review
 - **Smooth transitions**: GPU-accelerated animations between images (<100ms skip latency)
-- **Memory efficiency**: Uses blob URLs instead of base64 encoding for large images
+- **Memory efficiency**: Uses Tauri asset protocol for direct file access (no base64 encoding)
 - **Exit contracts**: Predictable stdout/exit-code behavior for scripting integration
 - **Theme customization**: Toggle between dark and light themes with persistent preference
 - **Image navigation**: Review previously viewed images with ← and → arrow keys

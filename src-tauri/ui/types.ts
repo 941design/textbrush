@@ -1,17 +1,11 @@
 // Type definitions for Textbrush UI
 
 // IPC Message types from Python backend
+// ImagePayload is path-based; all metadata (including seed) is parsed from PNG tEXt chunks
 export interface ImagePayload {
-  image_data: string;
-  seed: number;
+  path: string;              // Absolute path to preview PNG file
   buffer_count: number;
   buffer_max: number;
-  prompt?: string;
-  model_name?: string;
-  generated_width?: number;  // Dimension passed to model (multiple of 16), optional for backward compat
-  generated_height?: number; // Dimension passed to model (multiple of 16), optional for backward compat
-  final_width?: number;      // Final image width after cropping
-  final_height?: number;     // Final image height after cropping
 }
 
 export interface BufferStatusPayload {
@@ -57,22 +51,29 @@ export interface LaunchArgs {
   buffer_max: number;
   output_path: string | null;
   seed: number | null;
+  width: number;
+  height: number;
 }
 
-// History entry for image navigation
-export interface HistoryEntry {
-  image_data: string;
+// Image record for navigation history
+// Metadata parsed from PNG tEXt chunks on arrival, stored for navigation
+export interface ImageRecord {
+  path: string;                    // Absolute path to preview PNG file
   seed: number;
-  blobUrl: string | null;
+  blobUrl: string | null;          // Object URL for display (from asset protocol)
   prompt: string;
-  model_name: string;
-  path?: string;
+  model: string;
+  aspectRatio: string;
+  width: number;                   // Final image width (after cropping)
+  height: number;                  // Final image height (after cropping)
+  generatedWidth?: number;         // Width passed to model (multiple of 16)
+  generatedHeight?: number;        // Height passed to model (multiple of 16)
+  outputPath?: string;             // Final output path after accept (moved from preview)
 }
 
 // Application state
 export interface AppState {
   currentImage: ImagePayload | null;
-  currentSeed: number | null;
   bufferCount: number;
   bufferMax: number;
   isGenerating: boolean;
@@ -85,7 +86,7 @@ export interface AppState {
   outputPath: string | null;
   actionQueue: Promise<void>;
   currentBlobUrl: string | null;
-  imageHistory: HistoryEntry[];
+  imageHistory: ImageRecord[];
   historyIndex: number;
   waitingForNext: boolean;
 }

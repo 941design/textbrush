@@ -129,16 +129,17 @@ function updateResolutionButtons(ratio: string, width: number, height: number): 
 export function initConfigControls(
   initialPrompt: string,
   initialAspectRatio: string,
+  initialWidth: number,
+  initialHeight: number,
   state: AppState,
   elements: Elements
 ): void {
   // Validate and set aspect ratio
   state.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : '1:1';
 
-  // Initialize dimensions from aspect ratio
-  const initialDims = getDefaultResolution(state.aspectRatio);
-  state.width = initialDims.width;
-  state.height = initialDims.height;
+  // Use dimensions from launch args (already resolved by Rust backend)
+  state.width = initialWidth;
+  state.height = initialHeight;
 
   // Get existing HTML elements (they're already in the DOM from index.html)
   const promptInput = document.getElementById('prompt-input') as HTMLInputElement | null;
@@ -209,14 +210,18 @@ export function initConfigControls(
     decreaseBtn.addEventListener('click', () => {
       const prevRes = getPreviousResolution(state.aspectRatio, state.width, state.height);
       if (prevRes) {
-        state.width = prevRes.width;
-        state.height = prevRes.height;
+        // Update UI immediately with new resolution
         if (dimensionDisplay) {
           dimensionDisplay.textContent = `${prevRes.width}×${prevRes.height}`;
         }
-        updateResolutionButtons(state.aspectRatio, state.width, state.height);
+        updateResolutionButtons(state.aspectRatio, prevRes.width, prevRes.height);
+
+        // Get current prompt and aspect ratio
         const config = getCurrentConfig(elements, state);
-        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+
+        // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
+        // (Don't update state.width/height here, as handleConfigUpdate compares against state)
+        void handleConfigUpdate(config.prompt, config.aspectRatio, prevRes.width, prevRes.height, state);
       }
     });
   }
@@ -226,14 +231,18 @@ export function initConfigControls(
     increaseBtn.addEventListener('click', () => {
       const nextRes = getNextResolution(state.aspectRatio, state.width, state.height);
       if (nextRes) {
-        state.width = nextRes.width;
-        state.height = nextRes.height;
+        // Update UI immediately with new resolution
         if (dimensionDisplay) {
           dimensionDisplay.textContent = `${nextRes.width}×${nextRes.height}`;
         }
-        updateResolutionButtons(state.aspectRatio, state.width, state.height);
+        updateResolutionButtons(state.aspectRatio, nextRes.width, nextRes.height);
+
+        // Get current prompt and aspect ratio
         const config = getCurrentConfig(elements, state);
-        void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+
+        // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
+        // (Don't update state.width/height here, as handleConfigUpdate compares against state)
+        void handleConfigUpdate(config.prompt, config.aspectRatio, nextRes.width, nextRes.height, state);
       }
     });
   }

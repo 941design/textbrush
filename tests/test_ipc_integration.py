@@ -4,8 +4,6 @@ These tests validate the complete workflow from command input to event output,
 ensuring all components (protocol, server, handler) work together correctly.
 """
 
-import base64
-import io
 import json
 import threading
 import time
@@ -28,7 +26,7 @@ def config():
 
 
 @pytest.fixture
-def mock_backend():
+def mock_backend(tmp_path):
     """Create a mock backend for testing without real model loading."""
     backend = Mock()
     backend.initialize = Mock()
@@ -48,6 +46,13 @@ def mock_backend():
 
     backend.get_next_image = Mock(return_value=buffered_image)
     backend.accept_current = Mock(return_value=Path("/tmp/test.png"))
+
+    # Preview management methods (path-based protocol)
+    preview_path = tmp_path / ".preview" / "test_preview.png"
+    preview_path.parent.mkdir(parents=True, exist_ok=True)
+    backend.save_to_preview = Mock(return_value=preview_path)
+    backend.accept_from_preview = Mock(return_value=tmp_path / "output.png")
+    backend.delete_preview = Mock()
 
     return backend
 
@@ -126,22 +131,26 @@ class TestIPCCompleteWorkflow:
             assert handler.backend is not None
 
     def test_skip_command_advances_to_next_image(self, config, mock_backend):
-        """SKIP command should clear current image and signal delivery thread."""
+        """SKIP command should delete preview, clear current image, and signal delivery thread."""
         handler = MessageHandler(config)
         handler.backend = mock_backend
         server = IPCServer(handler)
 
         # Set a current image
-        handler._current_image = Mock()
+        current_image = Mock()
+        handler._current_image = current_image
 
         # Send SKIP command
         handler.handle_skip(server)
+
+        # Preview should be deleted
+        mock_backend.delete_preview.assert_called_once_with(current_image)
 
         # Current image should be cleared
         assert handler._current_image is None
 
     def test_accept_command_saves_image_and_returns_path(self, config, mock_backend):
-        """ACCEPT command should save image via backend and return path."""
+        """ACCEPT command should move preview to output via backend and return path."""
         handler = MessageHandler(config)
         handler.backend = mock_backend
         server = IPCServer(handler)
@@ -166,8 +175,8 @@ class TestIPCCompleteWorkflow:
         # Send ACCEPT command
         handler.handle_accept(server)
 
-        # Backend should be called
-        mock_backend.accept_current.assert_called_once()
+        # Backend accept_from_preview should be called
+        mock_backend.accept_from_preview.assert_called_once()
 
         # ACCEPTED event should be sent
         assert any(msg.type == MessageType.ACCEPTED for msg in messages)
@@ -223,8 +232,8 @@ class TestIPCCompleteWorkflow:
             error_msgs = [line for line in written if "error" in line.lower()]
             assert len(error_msgs) > 0, "Expected ERROR event for invalid JSON"
 
-    def test_base64_image_encoding_in_image_ready_event(self, config, mock_backend):
-        """IMAGE_READY event should contain correctly base64-encoded image."""
+    def test_path_based_image_delivery_in_image_ready_event(self, config, mock_backend, tmp_path):
+        """IMAGE_READY event should contain path to preview image file."""
         handler = MessageHandler(config)
         handler.backend = mock_backend
         server = IPCServer(handler)
@@ -234,6 +243,11 @@ class TestIPCCompleteWorkflow:
         buffered_image = Mock()
         buffered_image.image = test_image
         buffered_image.seed = 777
+
+        # Set up preview path for save_to_preview
+        preview_path = tmp_path / ".preview" / "img_777.png"
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        mock_backend.save_to_preview = Mock(return_value=preview_path)
 
         # Mock get_next_image to return our test image once, then None
         mock_backend.get_next_image = Mock(side_effect=[buffered_image, None])
@@ -262,14 +276,15 @@ class TestIPCCompleteWorkflow:
         image_ready_msgs = [msg for msg in messages if msg.type == MessageType.IMAGE_READY]
         assert len(image_ready_msgs) > 0, "Expected IMAGE_READY event"
 
-        # Decode and verify image
+        # Verify path-based payload (seed is in PNG metadata, not payload)
         img_msg = image_ready_msgs[0]
-        image_b64 = img_msg.payload["image_data"]
-        image_bytes = base64.b64decode(image_b64)
-        decoded_image = Image.open(io.BytesIO(image_bytes))
+        assert "path" in img_msg.payload, "Expected 'path' field in IMAGE_READY payload"
+        assert "image_data" not in img_msg.payload, "Should not have 'image_data' in payload"
+        assert "seed" not in img_msg.payload, "Seed should be in PNG metadata, not payload"
+        assert img_msg.payload["path"] == str(preview_path)
 
-        assert decoded_image.size == (32, 32)
-        assert decoded_image.mode == "RGB"
+        # Verify save_to_preview was called
+        mock_backend.save_to_preview.assert_called_once_with(buffered_image)
 
 
 @pytest.mark.integration

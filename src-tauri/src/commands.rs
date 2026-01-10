@@ -50,6 +50,7 @@ pub struct AppState {
 ///     5. Store sidecar in AppState.sidecar mutex
 ///     6. Return Ok or Err
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn init_generation(
     state: State<'_, AppState>,
     window: Window,
@@ -57,6 +58,8 @@ pub async fn init_generation(
     output_path: Option<String>,
     seed: Option<i64>,
     aspect_ratio: String,
+    width: Option<u32>,
+    height: Option<u32>,
 ) -> Result<(), String> {
     let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])?;
 
@@ -72,6 +75,8 @@ pub async fn init_generation(
             "output_path": output_path,
             "seed": seed,
             "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
         }),
     };
 
