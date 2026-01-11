@@ -662,4 +662,17 @@ The config file is automatically created with defaults on first run if it does n
 * Image editing or post-processing
 * Model training
 
-**Note:** For planned features not yet implemented, see separate feature specifications in `specs/` directory.
+---
+
+### 16. Scope of This Specification
+
+**This specification describes ONLY the currently implemented functionality of Textbrush.**
+
+For planned features that are not yet implemented, see the following separate feature specifications in the `specs/` directory:
+
+* **`cli-download-model-spec.md`** - Planned `--download-model` CLI flag for automated model download
+* **`update-check-spec.md`** - Planned `--check-updates` CLI flag for release notifications
+* **`flux-dimension-alignment-spec.md`** - Planned automatic dimension rounding and metadata enhancement
+* **`feature-backend-owns-image-list.md`** - Planned refactor for backend-owned image lifecycle management
+
+These feature specifications are separate requirements documents describing WHAT to build, not HOW. They are not part of the current production system described in this spec.md.

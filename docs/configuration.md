@@ -189,9 +189,11 @@ All options can be overridden on the command line (highest priority).
 
 **`--aspect-ratio CHOICE`**
 - Image aspect ratio preset
-- Choices: `1:1` (1024x1024), `16:9` (1344x768), `9:16` (768x1344)
-- Default: `1:1`
+- Choices: `1:1`, `16:9`, `3:1`, `4:1`, `4:5`, `9:16`
+- Each ratio has multiple available resolutions (smallest selected by default)
+- Default: `1:1` (defaults to 256×256, smallest 1:1 resolution)
 - Example: `--aspect-ratio 16:9`
+- Note: UI provides resolution selector (+/− buttons) to cycle through available sizes for each ratio
 
 **`--format CHOICE`**
 - Output format

@@ -21,10 +21,49 @@ Text-to-image generation tool with customizable workflows and local model infere
 - **Reproducible results** via seed parameter for deterministic generation
 - **IPC Protocol** for Tauri-Python communication with thread-safe message delivery
 
+## Requirements
+
+- **Python 3.11+** - For running the inference backend
+- **Rust 1.70+ and Cargo** - For building the Tauri desktop application
+- **uv** - Package and virtual environment manager
+- **System dependencies** - For GPU acceleration and UI rendering (see [GPU Setup Guide](docs/gpu-setup.md))
+
+**Supported Platforms:**
+- macOS (Apple Silicon ARM64, Intel x64)
+- Linux (x64)
+
 ## Installation
 
+### From Source
+
 ```bash
+# Install dependencies
 uv sync
+
+# Download model (requires HuggingFace token)
+export HUGGINGFACE_HUB_TOKEN="hf_xxxxxxxxxxxxx"
+make download-model
+
+# Build the application
+make build
+```
+
+### From Release Binaries
+
+Download pre-built binaries from [GitHub Releases](https://github.com/941design/textbrush/releases/latest):
+
+**macOS:**
+- `textbrush-aarch64-apple-darwin.tar.gz` (Apple Silicon M1/M2/M3/M4)
+- `textbrush-x86_64-apple-darwin.tar.gz` (Intel)
+
+**Linux:**
+- `textbrush-x86_64-unknown-linux-gnu.tar.gz`
+
+Extract and run:
+```bash
+tar -xzf textbrush-*.tar.gz
+cd textbrush
+./textbrush --help
 ```
 
 ## Usage
