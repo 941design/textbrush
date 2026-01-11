@@ -146,36 +146,28 @@ class TestSkipCommand:
 
         assert handler._action_event.is_set()
 
-    @given(
-        buffer_count=st.integers(min_value=0, max_value=8),
-        buffer_max=st.integers(min_value=1, max_value=16),
-    )
-    def test_skip_sends_buffer_status(self, buffer_count, buffer_max):
-        """Skip sends BUFFER_STATUS with correct values."""
+    def test_skip_no_buffer_status_sent(self):
+        """Skip no longer sends BUFFER_STATUS (deprecated per FR7)."""
         config = get_default_config()
         handler = MessageHandler(config)
         mock_server = Mock()
         handler.backend = Mock(spec=TextbrushBackend)
         handler.backend.buffer = Mock()
-        handler.backend.buffer.__len__ = Mock(return_value=buffer_count)
-        handler.backend.buffer.max_size = buffer_max
+        handler.backend.buffer.__len__ = Mock(return_value=2)
+        handler.backend.buffer.max_size = 8
 
         handler.handle_skip(mock_server)
 
-        mock_server.send.assert_called()
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.BUFFER_STATUS
-        assert call_args.payload["count"] == buffer_count
-        assert call_args.payload["max"] == buffer_max
-        assert call_args.payload["generating"] is True
+        # BUFFER_STATUS is deprecated - no message should be sent
+        mock_server.send.assert_not_called()
 
 
 class TestAcceptCommand:
     """Property-based tests for ACCEPT command handling."""
 
     def test_accept_no_image_sends_error(self, handler, mock_server):
-        """Accept with no current image sends non-fatal error."""
-        handler._current_image = None
+        """Accept with no delivered images sends non-fatal error."""
+        handler._delivered_images = []
         handler.backend = None
 
         handler.handle_accept(mock_server)
@@ -184,47 +176,54 @@ class TestAcceptCommand:
         call_args = mock_server.send.call_args[0][0]
         assert call_args.type == MessageType.ERROR
         assert call_args.payload["fatal"] is False
-        assert "No image to accept" in call_args.payload["message"]
+        assert "No images to accept" in call_args.payload["message"]
 
     def test_accept_saves_image(self, handler, mock_server, tmp_path):
-        """Accept command moves preview to output via backend."""
-        current_image = Mock()
-        handler._current_image = current_image
-        handler._output_path = tmp_path / "test.png"
+        """Accept command batch saves all delivered images via backend."""
+        image1 = Mock()
+        image2 = Mock()
+        handler._delivered_images = [image1, image2]
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_from_preview = Mock(return_value=tmp_path / "test.png")
+        output_paths = [tmp_path / "img1.png", tmp_path / "img2.png"]
+        mock_backend.accept_all = Mock(return_value=output_paths)
         handler.backend = mock_backend
 
         handler.handle_accept(mock_server)
 
-        mock_backend.accept_from_preview.assert_called_once_with(
-            current_image, handler._output_path
-        )
+        mock_backend.accept_all.assert_called_once()
+        # Verify it was called with the delivered images
+        call_args = mock_backend.accept_all.call_args[0][0]
+        assert call_args == [image1, image2]
+
+        # Verify ACCEPTED event was sent with paths
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]
         assert call_args.type == MessageType.ACCEPTED
+        assert len(call_args.payload["paths"]) == 2
 
     def test_accept_signals_delivery_thread(self, handler, mock_server, tmp_path):
-        """Accept command signals waiting delivery thread."""
-        handler._current_image = Mock()
-        handler._output_path = tmp_path / "test.png"
+        """Accept command does NOT signal delivery thread (process exits)."""
+        image1 = Mock()
+        handler._delivered_images = [image1]
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_from_preview = Mock(return_value=tmp_path / "test.png")
+        mock_backend.accept_all = Mock(return_value=[tmp_path / "test.png"])
         handler.backend = mock_backend
 
         handler._action_event.clear()
         handler.handle_accept(mock_server)
 
-        assert handler._action_event.is_set()
+        # ACCEPT does NOT signal action event - process will exit
+        assert not handler._action_event.is_set()
 
     def test_accept_exception_sends_error(self, handler, mock_server):
         """Accept handles backend exceptions gracefully."""
-        handler._current_image = Mock()
+        image1 = Mock()
+        handler._delivered_images = [image1]
 
         mock_backend = Mock(spec=TextbrushBackend)
-        mock_backend.accept_from_preview = Mock(side_effect=RuntimeError("Disk full"))
+        mock_backend.accept_all = Mock(side_effect=RuntimeError("Disk full"))
         handler.backend = mock_backend
 
         handler.handle_accept(mock_server)
@@ -281,36 +280,23 @@ class TestAbortCommand:
 
 
 class TestStatusCommand:
-    """Property-based tests for STATUS command handling."""
+    """Property-based tests for STATUS command handling (deprecated per FR7)."""
 
-    @given(
-        buffer_count=st.integers(min_value=0, max_value=8),
-        buffer_max=st.integers(min_value=1, max_value=16),
-        has_worker=st.booleans(),
-    )
-    def test_status_reports_buffer_state(self, buffer_count, buffer_max, has_worker):
-        """Status command reports accurate buffer state."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
+    def test_status_is_noop(self, handler, mock_server):
+        """Status command is deprecated and does nothing."""
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
-        mock_backend.buffer.__len__ = Mock(return_value=buffer_count)
-        mock_backend.buffer.max_size = buffer_max
-        mock_backend._worker = Mock() if has_worker else None
+        mock_backend.buffer.__len__ = Mock(return_value=5)
+        mock_backend.buffer.max_size = 8
         handler.backend = mock_backend
 
         handler.handle_status(mock_server)
 
-        mock_server.send.assert_called()
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.BUFFER_STATUS
-        assert call_args.payload["count"] == buffer_count
-        assert call_args.payload["max"] == buffer_max
-        assert call_args.payload["generating"] is has_worker
+        # STATUS is deprecated - no message should be sent
+        mock_server.send.assert_not_called()
 
     def test_status_no_backend_no_send(self, handler, mock_server):
-        """Status command does nothing if no backend."""
+        """Status command does nothing if no backend (deprecated per FR7)."""
         handler.backend = None
 
         handler.handle_status(mock_server)
@@ -485,26 +471,221 @@ class TestImageReadyEventSerialization:
     """Tests for ImageReadyEvent serialization (path-based protocol)."""
 
     def test_image_ready_event_serialization(self):
-        """ImageReadyEvent serializes path, display_path, and buffer stats to valid JSON."""
+        """ImageReadyEvent serializes index, path, display_path to valid JSON."""
         from textbrush.ipc.protocol import ImageReadyEvent, dataclass_to_dict
 
         event = ImageReadyEvent(
+            index=0,
             path="/Users/test/Pictures/preview.png",
             display_path="~/Pictures/preview.png",
-            buffer_count=3,
-            buffer_max=8,
         )
         payload = dataclass_to_dict(event)
 
+        assert payload["index"] == 0
         assert payload["path"] == "/Users/test/Pictures/preview.png"
         assert payload["display_path"] == "~/Pictures/preview.png"
-        assert payload["buffer_count"] == 3
-        assert payload["buffer_max"] == 8
+        # Buffer fields removed from protocol
+        assert "buffer_count" not in payload
+        assert "buffer_max" not in payload
         # Seed and dimensions are in PNG metadata, not in payload
         assert "seed" not in payload
         assert "image_data" not in payload
         assert "generated_width" not in payload
         assert "final_width" not in payload
+
+
+class TestEmitStateChanged:
+    """Property-based tests for _emit_state_changed method."""
+
+    @given(prompt=st.text(min_size=1, max_size=200))
+    def test_generating_state_requires_prompt(self, prompt):
+        """GENERATING state requires prompt field."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(mock_server, BackendState.GENERATING.value, prompt=prompt)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.STATE_CHANGED
+        assert call_args.payload["state"] == BackendState.GENERATING.value
+        assert call_args.payload["prompt"] == prompt
+        assert handler._current_state == BackendState.GENERATING.value
+
+    def test_generating_state_without_prompt_raises_error(self):
+        """GENERATING state without prompt raises ValueError."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        with pytest.raises(ValueError, match="prompt must be provided"):
+            handler._emit_state_changed(mock_server, BackendState.GENERATING.value)
+
+    @given(
+        message=st.text(min_size=1, max_size=200),
+        fatal=st.booleans(),
+    )
+    def test_error_state_requires_message(self, message, fatal):
+        """ERROR state requires message field."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(
+            mock_server, BackendState.ERROR.value, message=message, fatal=fatal
+        )
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.STATE_CHANGED
+        assert call_args.payload["state"] == BackendState.ERROR.value
+        assert call_args.payload["message"] == message
+        assert call_args.payload["fatal"] == fatal
+        assert handler._current_state == BackendState.ERROR.value
+
+    def test_error_state_without_message_raises_error(self):
+        """ERROR state without message raises ValueError."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        with pytest.raises(ValueError, match="message must be provided"):
+            handler._emit_state_changed(mock_server, BackendState.ERROR.value, fatal=True)
+
+    @given(state=st.sampled_from(["loading", "idle", "paused"]))
+    def test_simple_states_no_extra_fields(self, state):
+        """LOADING, IDLE, PAUSED states don't require extra fields."""
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(mock_server, state)
+
+        mock_server.send.assert_called_once()
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.type == MessageType.STATE_CHANGED
+        assert call_args.payload["state"] == state
+        assert call_args.payload.get("prompt") is None
+        assert call_args.payload.get("message") is None
+        assert call_args.payload.get("fatal") is None
+        assert handler._current_state == state
+
+    @given(
+        prompt1=st.text(min_size=1, max_size=100),
+        prompt2=st.text(min_size=1, max_size=100),
+    )
+    def test_state_transitions_update_current_state(self, prompt1, prompt2):
+        """State transitions correctly update _current_state."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(mock_server, BackendState.LOADING.value)
+        assert handler._current_state == BackendState.LOADING.value
+
+        handler._emit_state_changed(mock_server, BackendState.IDLE.value)
+        assert handler._current_state == BackendState.IDLE.value
+
+        handler._emit_state_changed(mock_server, BackendState.GENERATING.value, prompt=prompt1)
+        assert handler._current_state == BackendState.GENERATING.value
+
+        handler._emit_state_changed(mock_server, BackendState.GENERATING.value, prompt=prompt2)
+        assert handler._current_state == BackendState.GENERATING.value
+
+        handler._emit_state_changed(mock_server, BackendState.PAUSED.value)
+        assert handler._current_state == BackendState.PAUSED.value
+
+    def test_payload_constraints_generating_no_message(self):
+        """GENERATING state should not have message/fatal fields in payload."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(
+            mock_server, BackendState.GENERATING.value, prompt="test prompt"
+        )
+
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.payload.get("message") is None
+        assert call_args.payload.get("fatal") is None
+
+    def test_payload_constraints_error_no_prompt(self):
+        """ERROR state should not have prompt field in payload."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        handler._emit_state_changed(
+            mock_server, BackendState.ERROR.value, message="error occurred", fatal=True
+        )
+
+        call_args = mock_server.send.call_args[0][0]
+        assert call_args.payload.get("prompt") is None
+
+    def test_thread_safety_concurrent_state_changes(self):
+        """Concurrent state changes are thread-safe."""
+        import concurrent.futures
+
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        states = [
+            BackendState.LOADING.value,
+            BackendState.IDLE.value,
+            BackendState.PAUSED.value,
+        ]
+
+        def change_state(state):
+            handler._emit_state_changed(mock_server, state)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(change_state, state) for state in states * 10]
+            concurrent.futures.wait(futures)
+
+        assert handler._current_state in states
+
+    @given(
+        prompt=st.text(min_size=1, max_size=200),
+        message=st.text(min_size=1, max_size=200),
+    )
+    def test_all_valid_state_transitions(self, prompt, message):
+        """All valid state transitions work correctly."""
+        from textbrush.ipc.protocol import BackendState
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+
+        transitions = [
+            (BackendState.LOADING.value, {}),
+            (BackendState.IDLE.value, {}),
+            (BackendState.GENERATING.value, {"prompt": prompt}),
+            (BackendState.IDLE.value, {}),
+            (BackendState.PAUSED.value, {}),
+            (BackendState.GENERATING.value, {"prompt": prompt}),
+            (BackendState.ERROR.value, {"message": message, "fatal": False}),
+        ]
+
+        for state, kwargs in transitions:
+            handler._emit_state_changed(mock_server, state, **kwargs)
+            assert handler._current_state == state
 
 
 class TestUpdateConfigCommand:
@@ -515,7 +696,7 @@ class TestUpdateConfigCommand:
         aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16"]),
     )
     def test_update_config_valid_inputs(self, prompt, aspect_ratio):
-        """Valid config updates call update_config correctly."""
+        """Valid config updates call update_config and send BUFFER_STATUS."""
         config = get_default_config()
         handler = MessageHandler(config)
         mock_server = Mock()
@@ -535,12 +716,13 @@ class TestUpdateConfigCommand:
             height=None,
             on_generation_start=ANY,
         )
-        mock_server.send.assert_called()
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.BUFFER_STATUS
-        assert call_args.payload["count"] == 0
-        assert call_args.payload["max"] == 8
-        assert call_args.payload["generating"] is True
+        # BUFFER_STATUS sent to indicate buffer was cleared
+        mock_server.send.assert_called_once()
+        message = mock_server.send.call_args[0][0]
+        assert message.type == MessageType.BUFFER_STATUS
+        assert message.payload["count"] == 0
+        assert message.payload["max"] == 8
+        assert message.payload["generating"] is True
 
     def test_update_config_no_backend_sends_error(self, handler, mock_server):
         """Update config with no backend sends non-fatal error."""
@@ -562,6 +744,8 @@ class TestUpdateConfigCommand:
         handler = MessageHandler(config)
         mock_server = Mock()
         mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
         handler.backend = mock_backend
 
         payload = {"prompt": "test prompt", "aspect_ratio": invalid_aspect}
@@ -616,8 +800,8 @@ class TestUpdateConfigCommand:
         assert call_kwargs["prompt"] == "new prompt"
         assert call_kwargs["aspect_ratio"] == "16:9"
 
-    def test_update_config_sends_buffer_status_after_restart(self, handler, mock_server):
-        """Update config sends buffer status showing cleared buffer."""
+    def test_update_config_sends_buffer_status(self, handler, mock_server):
+        """Update config sends BUFFER_STATUS showing cleared buffer."""
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
         mock_backend.buffer.max_size = 8
@@ -627,14 +811,15 @@ class TestUpdateConfigCommand:
         payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
         handler.handle_update_config(payload, mock_server)
 
+        # BUFFER_STATUS sent to indicate buffer was cleared after config update
         mock_server.send.assert_called_once()
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.BUFFER_STATUS
-        assert call_args.payload["count"] == 0
-        assert call_args.payload["generating"] is True
+        message = mock_server.send.call_args[0][0]
+        assert message.type == MessageType.BUFFER_STATUS
+        assert message.payload["count"] == 0
+        assert message.payload["generating"] is True
 
     def test_update_config_preserves_pause_state(self, handler, mock_server):
-        """Update config preserves paused state - buffer status reflects pause state."""
+        """Update config preserves paused state in BUFFER_STATUS."""
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
         mock_backend.buffer.max_size = 8
@@ -644,10 +829,12 @@ class TestUpdateConfigCommand:
         payload = {"prompt": "new prompt", "aspect_ratio": "1:1"}
         handler.handle_update_config(payload, mock_server)
 
-        # Buffer status should reflect the paused state
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.BUFFER_STATUS
-        assert call_args.payload["generating"] is False
+        # BUFFER_STATUS sent with generating=False since paused
+        mock_server.send.assert_called_once()
+        message = mock_server.send.call_args[0][0]
+        assert message.type == MessageType.BUFFER_STATUS
+        assert message.payload["count"] == 0
+        assert message.payload["generating"] is False  # Paused state preserved
 
     @given(
         prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),
@@ -716,25 +903,139 @@ class TestUpdateConfigCommand:
 
             mock_delivery.assert_not_called()
 
-    @given(
-        prompt=st.text(min_size=1, max_size=200).filter(lambda x: x.strip()),
-        aspect_ratio=st.sampled_from(["1:1", "16:9", "9:16"]),
-        buffer_max=st.integers(min_value=1, max_value=16),
-    )
-    def test_update_config_buffer_status_uses_backend_max_size(
-        self, prompt, aspect_ratio, buffer_max
+
+class TestGenerationStartCallbackPromptBinding:
+    """Tests for on_generation_start callback prompt binding.
+
+    BUG SCENARIO (pre-fix):
+    1. INIT command with prompt "cat" - sets _current_prompt = "cat"
+    2. Worker starts generating with prompt "cat"
+    3. UPDATE_CONFIG with prompt "dog" - sets _current_prompt = "dog"
+    4. Worker fires on_generation_start callback (still generating "cat")
+    5. BUG: state_changed emitted with prompt="dog" (from _current_prompt)
+       CORRECT: state_changed should emit prompt="cat" (the actual generation prompt)
+
+    The fix is to capture the prompt at callback registration time, not read
+    _current_prompt dynamically in the callback.
+    """
+
+    def test_init_on_generation_start_uses_correct_prompt_after_config_update(
+        self, handler, mock_server
     ):
-        """Buffer status event uses backend's actual max_size."""
-        config = get_default_config()
-        handler = MessageHandler(config)
-        mock_server = Mock()
+        """on_generation_start callback from handle_init uses INIT prompt, not updated prompt.
+
+        This tests the race condition where UPDATE_CONFIG changes _current_prompt
+        but the worker's on_generation_start callback should still use the original
+        prompt from when the generation was started.
+        """
+        # Capture the on_generation_start callback passed to start_generation
+        captured_callback = None
+
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
-        mock_backend.buffer.max_size = buffer_max
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = False
+        mock_backend.initialize.return_value = None
+
+        def capture_start_generation(**kwargs):
+            nonlocal captured_callback
+            captured_callback = kwargs.get("on_generation_start")
+
+        mock_backend.start_generation.side_effect = capture_start_generation
+        mock_backend.update_config.return_value = None
+
+        # Step 1: INIT with prompt "cat"
+        init_payload = {"prompt": "cat painting", "aspect_ratio": "1:1"}
+
+        # Mock _init_backend to call on_ready synchronously for testing
+        def mock_init_backend(on_ready, server):
+            handler.backend.initialize()
+            on_ready()
+
+        # Patch TextbrushBackend constructor to return our mock
+        with (
+            patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend),
+            patch.object(handler, "_init_backend", side_effect=mock_init_backend),
+        ):
+            handler.handle_init(init_payload, mock_server)
+
+        # Verify callback was captured
+        assert captured_callback is not None, "on_generation_start callback should be captured"
+
+        # Step 2: UPDATE_CONFIG with prompt "dog" (changes _current_prompt)
+        update_payload = {"prompt": "dog portrait", "aspect_ratio": "1:1"}
+        handler.handle_update_config(update_payload, mock_server)
+
+        # Verify _current_prompt changed
+        assert handler._current_prompt == "dog portrait"
+
+        # Step 3: Simulate worker calling on_generation_start for the ORIGINAL "cat" generation
+        mock_server.reset_mock()
+        captured_callback(seed=12345, queue_position=0)
+
+        # Step 4: Verify state_changed was emitted with ORIGINAL prompt "cat painting"
+        # NOT the current _current_prompt "dog portrait"
+        state_changed_calls = [
+            call
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert len(state_changed_calls) == 1
+
+        state_payload = state_changed_calls[0][0][0].payload
+        assert state_payload["state"] == "generating"
+        # This is the key assertion - prompt should be "cat painting", not "dog portrait"
+        assert state_payload["prompt"] == "cat painting", (
+            f"Expected prompt 'cat painting' from original generation, "
+            f"got '{state_payload['prompt']}' (likely using stale _current_prompt)"
+        )
+
+    def test_update_config_on_generation_start_uses_correct_prompt_after_another_update(
+        self, handler, mock_server
+    ):
+        """on_generation_start callback from handle_update_config uses that UPDATE's prompt.
+
+        Similar race condition test but for update_config's callback.
+        """
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = False
         handler.backend = mock_backend
 
-        payload = {"prompt": prompt, "aspect_ratio": aspect_ratio}
-        handler.handle_update_config(payload, mock_server)
+        # Capture the on_generation_start callbacks
+        captured_callbacks = []
 
-        call_args = mock_server.send.call_args[0][0]
-        assert call_args.payload["max"] == buffer_max
+        def capture_update_config(**kwargs):
+            callback = kwargs.get("on_generation_start")
+            if callback:
+                captured_callbacks.append(callback)
+
+        mock_backend.update_config.side_effect = capture_update_config
+
+        # Step 1: First UPDATE_CONFIG with prompt "cat"
+        payload1 = {"prompt": "cat painting", "aspect_ratio": "1:1"}
+        handler.handle_update_config(payload1, mock_server)
+
+        # Step 2: Second UPDATE_CONFIG with prompt "dog" (before first generation completes)
+        payload2 = {"prompt": "dog portrait", "aspect_ratio": "1:1"}
+        handler.handle_update_config(payload2, mock_server)
+
+        assert len(captured_callbacks) == 2
+
+        # Step 3: Simulate worker calling on_generation_start for FIRST update ("cat")
+        mock_server.reset_mock()
+        captured_callbacks[0](seed=12345, queue_position=0)
+
+        # Step 4: Verify state_changed uses "cat painting", not "dog portrait"
+        state_changed_calls = [
+            call
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert len(state_changed_calls) == 1
+
+        state_payload = state_changed_calls[0][0][0].payload
+        assert state_payload["prompt"] == "cat painting", (
+            f"Expected prompt 'cat painting' from first update, got '{state_payload['prompt']}'"
+        )

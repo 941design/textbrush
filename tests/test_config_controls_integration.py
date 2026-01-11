@@ -213,7 +213,9 @@ class TestJavaScriptIntegration:
         """State object must include aspectRatio property."""
         js = load_javascript()
 
-        state_match = re.search(r"const state = \{([^}]+)\}", js, re.DOTALL)
+        # Match state block from 'const state = {' to closing '};' on its own line
+        # This handles nested objects like backendState: {...}
+        state_match = re.search(r"const state = \{(.*?)^\};", js, re.DOTALL | re.MULTILINE)
         assert state_match, "State object must exist"
 
         state_content = state_match.group(1)

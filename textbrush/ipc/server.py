@@ -171,6 +171,8 @@ class IPCServer:
             self.handler.handle_update_config(message.payload, self)
         elif message.type == MessageType.PAUSE:
             self.handler.handle_pause(self)
+        elif message.type == MessageType.DELETE:
+            self.handler.handle_delete(message.payload, self)
         else:
             logger.warning(f"Unknown message type: {message.type}")
 

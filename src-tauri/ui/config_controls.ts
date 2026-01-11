@@ -305,17 +305,7 @@ export async function handleConfigUpdate(
       height: height,
     });
     console.log('Configuration updated successfully');
-
-    // Update generationPrompt since backend clears buffer on config update.
-    // Any new images will use the new prompt, so spinner should reflect this.
-    state.generationPrompt = trimmedPrompt;
-
-    // Update loading prompt immediately if overlay is visible
-    const loadingOverlay = document.getElementById('loading-overlay');
-    const loadingPrompt = document.getElementById('loading-prompt');
-    if (loadingOverlay && !loadingOverlay.classList.contains('hidden') && loadingPrompt) {
-      loadingPrompt.textContent = trimmedPrompt;
-    }
+    // generationPrompt will be updated by state_changed event from backend (FR9: No optimistic updates)
   } catch (error) {
     console.error('Configuration update failed:', error);
 

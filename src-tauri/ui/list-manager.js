@@ -31,42 +31,6 @@ export function navigateToNext(state, displayImage, requestNextImage) {
     return true;
 }
 /**
- * Delete current image from list and navigate away.
- * Note: Asset URLs from convertFileSrc don't need revoking.
- */
-export function deleteCurrentImage(state, displayImage, showEmptyState) {
-    if (state.currentIndex < 0 || state.currentIndex >= state.imageList.length) {
-        return null;
-    }
-    const deletedRecord = state.imageList.splice(state.currentIndex, 1)[0];
-    if (!deletedRecord) {
-        return null;
-    }
-    // Note: Asset URLs from convertFileSrc don't need revoking like blob URLs
-    if (state.imageList.length === 0) {
-        state.currentIndex = -1;
-        showEmptyState();
-        return deletedRecord;
-    }
-    if (state.currentIndex >= state.imageList.length) {
-        state.currentIndex = state.imageList.length - 1;
-    }
-    const record = state.imageList[state.currentIndex];
-    if (record) {
-        displayImage(record);
-    }
-    return deletedRecord;
-}
-/**
- * Get all accepted image output paths for multi-path exit.
- * Only returns paths for images that have been accepted (have outputPath set).
- */
-export function getAllRetainedPaths(state) {
-    return state.imageList
-        .map(record => record.outputPath)
-        .filter((path) => path !== null && path !== undefined);
-}
-/**
  * Get formatted position indicator string.
  */
 export function getPositionIndicator(state) {

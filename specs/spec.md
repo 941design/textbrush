@@ -134,17 +134,22 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
   * Position indicator updates to show current position
 * **Delete**
 
-  * Remove current image from history
+  * Backend soft-deletes image by index (flags as deleted, maintains index stability)
+  * Frontend sends DELETE command with backend index
+  * Waits for `delete_ack` event before removing from display
+  * Display list remains gapless (frontend maps sparse indices to dense positions)
   * Revoke blob URL for memory cleanup
   * Navigate to next image after deletion
   * Show empty state if all images deleted
   * Deleted images excluded from acceptance
+  * Index never reused (append-only with gaps)
 * **Accept**
 
-  * Save all retained images (excluding deleted ones)
+  * Save all retained images (excluding soft-deleted ones)
   * Print absolute paths to stdout (newline-separated)
   * Exit application with code 0
   * Multi-path acceptance when multiple images retained
+  * Paths printed in chronological order (viewing order)
 * **Abort**
 
   * Discard all images
@@ -276,10 +281,36 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 
 **IPC Layer (`textbrush.ipc`):**
 * JSON-over-stdio protocol for Tauri communication
-* Commands: INIT, SKIP, ACCEPT, ABORT, STATUS
-* Events: READY, IMAGE_READY, BUFFER_STATUS, ERROR, ACCEPTED, ABORTED
+* Backend is single source of truth for all state
+* Commands:
+  - `INIT`: Initialize generation with prompt and options
+  - `SKIP`: Navigate to next image
+  - `ACCEPT`: Accept all retained images and exit
+  - `ABORT`: Abort generation and exit
+  - `PAUSE`: Pause/resume generation
+  - `DELETE`: Delete image by backend index (soft delete)
+  - `UPDATE_CONFIG`: Update prompt and aspect ratio
+  - `GET_IMAGE_LIST`: Request full image list for recovery
+* Events:
+  - `state_changed`: Unified state notification (loading, idle, generating, paused, error)
+    * State machine with 5 states tracking backend status
+    * Includes prompt when generating, error message when error
+    * Frontend reflects received state without inference or optimistic updates
+  - `image_ready`: New image available with metadata
+    * Backend index for stable identification (never reused)
+    * Absolute path and display path with ~ for home
+    * Metadata (prompt, seed, model, dimensions) stored in PNG tEXt chunks
+  - `image_list`: Full image list sync for recovery
+    * Ordered list with stable indices (append-only)
+    * Soft-deleted images flagged but not removed (maintains index stability)
+    * Frontend filters deleted, maps sparse indices to dense display
+  - `delete_ack`: Backend confirms soft deletion by index
+  - `accepted`: Session completed with retained image paths
+  - `aborted`: Session aborted
+  - `error`: Error event with fatal flag
 * Thread-safe message delivery
-* Error propagation from worker to UI
+* No optimistic updates - UI state changes only after backend events
+* Event ordering guaranteed for consistency
 
 #### 5.4 Tauri Desktop Shell
 
@@ -293,16 +324,32 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 | `exit_handlers.rs` | Exit code contract handling |
 
 **Frontend (`src-tauri/ui/`):**
-* Single-page HTML/CSS/JS application
+* Single-page HTML/CSS/JS application (TypeScript source)
 * Dark/light theme support with toggle button
-* Real-time buffer status visualization
 * GPU-accelerated image transitions
 * Keyboard shortcuts: → (skip), ← (previous), Space (pause/resume), Enter (accept), Esc (abort), Cmd/Ctrl+Delete (delete)
-* State machine: idle → loading → ready → action states
+* Backend-driven state synchronization:
+  - Unified `backendState` object with 5 states (loading, idle, generating, paused, error)
+  - UI reflects `state_changed` events without inference or optimistic updates
+  - Spinner/status screen always displayed as last navigation item
+  - Displays current prompt from backend when generating (not from user input)
+  - State recovery via `get_image_list` command on reconnect
+* Index-based image management:
+  - Images identified by stable backend index (never reused or shifted)
+  - Soft deletion: Images flagged but not removed from backend list
+  - Frontend maps sparse backend indices to dense display positions
+  - Delete command sends index, waits for `delete_ack` before removing from display
+  - Display remains gapless despite sparse backend indices
+* No optimistic updates:
+  - All state changes wait for backend confirmation via events
+  - Commands sent fire-and-forget, responses trigger UI updates
+  - Generation prompt only updated from `state_changed` events
+* Discriminated union types for type-safe message handling
 * Modular architecture:
   - ThemeManager: Theme toggle and persistence
-  - HistoryManager: Image history and navigation
+  - ListManager: Image list navigation with index mapping
   - ButtonFlash: Visual feedback for keyboard shortcuts
+  - ConfigControls: Prompt and aspect ratio editing
 
 **Window Configuration:**
 * Fixed size: 800x700 pixels
@@ -331,6 +378,45 @@ For CI/CD and automated workflows:
 * Binary packaging: .app, .dmg (macOS), .tar.gz (Linux)
 * SHA256 checksums for verification
 * GitHub Releases upload
+
+---
+
+### 5.7 Backend State Machine
+
+The backend maintains an explicit state machine broadcast to the frontend via `state_changed` events.
+
+**States:**
+
+| State | Description | Payload Fields |
+|-------|-------------|----------------|
+| `loading` | Model initializing on startup | — |
+| `idle` | Model ready, not generating | — |
+| `generating` | Actively generating image | `prompt: string` |
+| `paused` | Generation paused by user | — |
+| `error` | Error occurred | `message: string`, `fatal: boolean` |
+
+**State Transitions:**
+
+- `loading` → `idle` (model loaded successfully)
+- `loading` → `paused` (if start_paused=true; overrides loading for display)
+- `loading` → `error` (model load failed)
+- `idle` → `generating` (generation starts)
+- `generating` → `idle` (image completed, buffer check)
+- `generating` → `paused` (user pauses)
+- `paused` → `generating` (user resumes)
+- Any → `error` (on error)
+
+**Display Priority:**
+- `paused` state overrides `loading` for display purposes (more actionable for user)
+- Frontend never infers state; only reflects received `state_changed` events
+
+**Spinner/Status Display:**
+The spinner is always the last item in navigation, displaying backend state:
+- `loading`: "loading model" with spinner visible
+- `idle`: "ready" with spinner hidden
+- `generating`: Shows `prompt` from payload with spinner visible
+- `paused`: "generation paused" with spinner hidden
+- `error`: Shows `message` from payload with spinner hidden
 
 ---
 

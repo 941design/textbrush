@@ -40,7 +40,7 @@ use tauri::Manager;
  *       - abort_generation: Abort generation, kill sidecar
  *
  *     From exit_handlers module (NEW):
- *       - print_and_exit: Print path to stdout and exit with code 0
+ *       - print_paths_and_exit: Print paths to stdout and exit with code 0
  *       - abort_exit: Exit with code 1 (no output)
  *
  *   Algorithm:
@@ -54,7 +54,7 @@ use tauri::Manager;
  *   Changes from Previous Version:
  *     - Added: mod exit_handlers
  *     - Added: mod launch_args
- *     - Added: exit_handlers::print_and_exit to invoke handler
+ *     - Added: exit_handlers::print_paths_and_exit to invoke handler
  *     - Added: exit_handlers::abort_exit to invoke handler
  *     - Added: launch_args::get_launch_args to invoke handler
  *
@@ -66,7 +66,7 @@ use tauri::Manager;
  *         commands::skip_image,
  *         commands::accept_image,
  *         commands::abort_generation,
- *         exit_handlers::print_and_exit,
+ *         exit_handlers::print_paths_and_exit,
  *         exit_handlers::abort_exit,
  *         launch_args::get_launch_args,
  *     ]
@@ -85,8 +85,8 @@ fn main() {
             commands::accept_image,
             commands::abort_generation,
             commands::pause_generation,
+            commands::delete_image,
             commands_update_config::update_generation_config,
-            exit_handlers::print_and_exit,
             exit_handlers::print_paths_and_exit,
             exit_handlers::abort_exit,
             launch_args::get_launch_args,

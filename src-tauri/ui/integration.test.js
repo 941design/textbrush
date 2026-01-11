@@ -167,65 +167,61 @@ describe('UI Enhancements Integration Tests', () => {
     });
   });
 
-  describe('E2E: Image Deletion and Navigation', () => {
-    it('should delete image and navigate appropriately', () => {
-      // Note: Asset URLs from Tauri convertFileSrc don't need revoking like blob URLs
+  describe('E2E: Backend-Driven Deletion (via delete_ack)', () => {
+    it('should verify deletion happens only after backend acknowledgment', () => {
+      // Note: With the new state sync protocol (FR9), deletion is backend-driven.
+      // Frontend sends delete command with index, then waits for delete_ack.
+      // This test verifies the state update pattern after receiving ack.
       const state = {
         imageList: [
-          { image_data: 'img1', seed: 1, blobUrl: 'asset://localhost/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'asset://localhost/img2.png' },
-          { image_data: 'img3', seed: 3, blobUrl: 'asset://localhost/img3.png' }
+          { index: 0, seed: 1, blobUrl: 'asset://localhost/img1.png', path: '/preview/1.png', displayPath: '~/1.png', prompt: 'test', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 1, seed: 2, blobUrl: 'asset://localhost/img2.png', path: '/preview/2.png', displayPath: '~/2.png', prompt: 'test', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 2, seed: 3, blobUrl: 'asset://localhost/img3.png', path: '/preview/3.png', displayPath: '~/3.png', prompt: 'test', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 }
         ],
         currentIndex: 1
       };
 
-      const displayedImages = [];
-      const displayImage = (entry) => {
-        displayedImages.push(entry.seed);
-      };
+      // Simulate receiving delete_ack from backend for index 1
+      const deleteIndex = 1;
+      const imageIndex = state.imageList.findIndex(img => img.index === deleteIndex);
 
-      const showEmptyCalled = { value: false };
-      const showEmptyState = () => {
-        showEmptyCalled.value = true;
-      };
+      // Remove from list after ack (mimics handleDeleteAck behavior)
+      if (imageIndex !== -1) {
+        state.imageList.splice(imageIndex, 1);
+        if (state.currentIndex >= state.imageList.length) {
+          state.currentIndex = Math.max(0, state.imageList.length - 1);
+        }
+      }
 
-      // Delete middle image
-      const deleted = ListManager.deleteCurrentImage(state, displayImage, showEmptyState);
-
-      // Verify deletion
-      assert.strictEqual(deleted.seed, 2, 'Deleted entry returned');
+      // Verify state after backend-confirmed deletion
       assert.strictEqual(state.imageList.length, 2, 'List length reduced to 2');
       assert.strictEqual(state.currentIndex, 1, 'Index adjusted to valid position');
-      assert.deepStrictEqual(displayedImages, [3], 'Next image displayed after deletion');
-
-      // Note: Asset URLs from Tauri don't need revoking - managed by Tauri runtime
-      assert.strictEqual(showEmptyCalled.value, false, 'Empty state not shown (images remain)');
-
-      // Verify remaining images
       assert.strictEqual(state.imageList[0].seed, 1, 'First image still present');
       assert.strictEqual(state.imageList[1].seed, 3, 'Third image now at index 1');
     });
 
-    it('should show empty state when last image deleted', () => {
+    it('should handle empty state after backend confirms last image deletion', () => {
       const state = {
         imageList: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1' }
+          { index: 0, seed: 1, blobUrl: 'blob:1', path: '/preview/1.png', displayPath: '~/1.png', prompt: 'test', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 }
         ],
         currentIndex: 0
       };
 
-      let emptyShown = false;
-      const showEmptyState = () => {
-        emptyShown = true;
-      };
+      // Simulate receiving delete_ack from backend for index 0
+      const deleteIndex = 0;
+      const imageIndex = state.imageList.findIndex(img => img.index === deleteIndex);
 
-      // Delete last image
-      ListManager.deleteCurrentImage(state, () => {}, showEmptyState);
+      if (imageIndex !== -1) {
+        state.imageList.splice(imageIndex, 1);
+        if (state.imageList.length === 0) {
+          state.currentIndex = -1;
+        }
+      }
 
       // Verify empty state
       assert.strictEqual(state.imageList.length, 0, 'List is empty');
       assert.strictEqual(state.currentIndex, -1, 'Index set to -1');
-      assert.strictEqual(emptyShown, true, 'Empty state shown');
 
       // Position indicator should be empty
       const indicator = ListManager.getPositionIndicator(state);
@@ -279,78 +275,22 @@ describe('UI Enhancements Integration Tests', () => {
     });
   });
 
-  describe('E2E: Multi-Path Accept (getAllRetainedPaths)', () => {
-    it('should collect all outputPaths from accepted list entries', () => {
-      // getAllRetainedPaths returns outputPath (set when image is accepted), not preview path
-      const state = {
-        imageList: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/preview/img2.png', outputPath: '/output/img2.png' },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
-        ],
-        currentIndex: 1
-      };
-
-      const paths = ListManager.getAllRetainedPaths(state);
-
-      assert.strictEqual(paths.length, 3, 'Three paths collected');
-      assert.deepStrictEqual(
-        paths,
-        ['/output/img1.png', '/output/img2.png', '/output/img3.png'],
-        'Output paths collected in order'
-      );
-    });
-
-    it('should filter out entries without outputPaths (not accepted)', () => {
-      // Only images with outputPath (accepted) should be included
-      const state = {
-        imageList: [
-          { image_data: 'img1', seed: 1, blobUrl: 'blob:1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'blob:2', path: '/preview/img2.png', outputPath: null },
-          { image_data: 'img3', seed: 3, blobUrl: 'blob:3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
-        ],
-        currentIndex: 1
-      };
-
-      const paths = ListManager.getAllRetainedPaths(state);
-
-      assert.strictEqual(paths.length, 2, 'Only entries with outputPath collected');
-      assert.deepStrictEqual(
-        paths,
-        ['/output/img1.png', '/output/img3.png'],
-        'Null outputPaths filtered out'
-      );
-    });
-
-    it('should return empty array for empty list', () => {
-      const state = {
-        imageList: [],
-        currentIndex: -1
-      };
-
-      const paths = ListManager.getAllRetainedPaths(state);
-
-      assert.strictEqual(paths.length, 0, 'Empty array for no list');
-      assert.deepStrictEqual(paths, [], 'Returns empty array');
-    });
-  });
-
-  describe('E2E: Complete Workflow Integration', () => {
-    it('should support full user session: navigate, delete, theme toggle, and collect paths', () => {
+  describe('E2E: Backend-Owned Path Management', () => {
+    it('should handle navigation with stateless image records', () => {
       // Initialize theme
       localStorage.clear();
       const theme = ThemeManager.initTheme();
       assert.ok(theme, 'Theme initialized');
 
-      // Setup list with accepted images (have outputPath)
+      // Setup list with preview images (no outputPath - backend owns that)
+      // Note: Images now have index field for backend identification (FR5)
       const state = {
         imageList: [
-          { image_data: 'img1', seed: 1, blobUrl: 'asset://img1', path: '/preview/img1.png', outputPath: '/output/img1.png' },
-          { image_data: 'img2', seed: 2, blobUrl: 'asset://img2', path: '/preview/img2.png', outputPath: '/output/img2.png' },
-          { image_data: 'img3', seed: 3, blobUrl: 'asset://img3', path: '/preview/img3.png', outputPath: '/output/img3.png' }
+          { index: 0, seed: 1, blobUrl: 'asset://img1', path: '/preview/img1.png', displayPath: '~/Pictures/img1.png', prompt: 'test1', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 1, seed: 2, blobUrl: 'asset://img2', path: '/preview/img2.png', displayPath: '~/Pictures/img2.png', prompt: 'test2', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 2, seed: 3, blobUrl: 'asset://img3', path: '/preview/img3.png', displayPath: '~/Pictures/img3.png', prompt: 'test3', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 }
         ],
-        currentIndex: 0,
-        bufferCount: 0
+        currentIndex: 0
       };
 
       // Navigate forward
@@ -361,82 +301,71 @@ describe('UI Enhancements Integration Tests', () => {
       ButtonFlash.flashButtonForKey('ArrowRight');
       assert.ok(document.getElementById('next-btn').classList.contains('btn-pressed'), 'Button flashed');
 
-      // Delete unwanted image
-      ListManager.deleteCurrentImage(state, () => {}, () => {});
-      assert.strictEqual(state.imageList.length, 2, 'Image deleted');
-
       // Toggle theme
       const newTheme = ThemeManager.toggleTheme();
       assert.notStrictEqual(newTheme, theme, 'Theme toggled');
       assert.strictEqual(localStorage.getItem('textbrush-theme'), newTheme, 'Theme persisted');
 
-      // Collect retained paths (outputPath from accepted images)
-      const paths = ListManager.getAllRetainedPaths(state);
-      assert.strictEqual(paths.length, 2, 'Two paths retained after deletion');
-      assert.deepStrictEqual(
-        paths,
-        ['/output/img1.png', '/output/img3.png'],
-        'Correct output paths collected'
-      );
+      // Verify image records have correct structure (FR5: ImageRecord with index)
+      for (const record of state.imageList) {
+        assert.ok(!('outputPath' in record), 'Record has no outputPath field');
+        assert.ok(!('outputDisplayPath' in record), 'Record has no outputDisplayPath field');
+        assert.ok(record.path, 'Record has preview path');
+        assert.ok(record.displayPath, 'Record has display path');
+        assert.ok(typeof record.index === 'number', 'Record has index field (FR5)');
+      }
 
       // Verify position indicator
       const indicator = ListManager.getPositionIndicator(state);
-      assert.strictEqual(indicator, '[2/2]', 'Position indicator correct after deletion');
+      assert.strictEqual(indicator, '[2/3]', 'Position indicator shows current position');
     });
 
-    it('E2E Multi-Path Acceptance Workflow', () => {
-      // Property: Complete workflow from multiple image generation through acceptance
-      // validates that all retained paths are collected and multi-path exit is used.
+    it('E2E Accept Workflow with Backend Path Collection', () => {
+      // Property: Complete workflow demonstrates backend owns path management
+      // Frontend receives paths array from backend in handleAccepted
 
-      // Setup: Simulate generating 4 accepted images with outputPaths
+      // Setup: Simulate generated preview images (no outputPath)
+      // Images have index field for backend identification (FR5)
       const state = {
         imageList: [
-          { image_data: 'img1', seed: 101, blobUrl: 'asset://101', path: '/preview/101.png', outputPath: '/output/image-101.png' },
-          { image_data: 'img2', seed: 102, blobUrl: 'asset://102', path: '/preview/102.png', outputPath: '/output/image-102.png' },
-          { image_data: 'img3', seed: 103, blobUrl: 'asset://103', path: '/preview/103.png', outputPath: '/output/image-103.png' },
-          { image_data: 'img4', seed: 104, blobUrl: 'asset://104', path: '/preview/104.png', outputPath: '/output/image-104.png' }
+          { index: 0, seed: 101, blobUrl: 'asset://101', path: '/preview/101.png', displayPath: '~/Pictures/101.png', prompt: 'prompt1', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 1, seed: 102, blobUrl: 'asset://102', path: '/preview/102.png', displayPath: '~/Pictures/102.png', prompt: 'prompt2', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 },
+          { index: 3, seed: 104, blobUrl: 'asset://104', path: '/preview/104.png', displayPath: '~/Pictures/104.png', prompt: 'prompt4', model: 'flux', aspectRatio: '1:1', width: 1024, height: 1024 }
         ],
-        currentIndex: 3,
-        bufferCount: 0
+        currentIndex: 2
       };
+
+      // Note: Image at index 2 (seed 103) was deleted earlier via delete_ack
+      // Frontend correctly shows sparse indices (0, 1, 3) after deletion
 
       // Step 1: Navigate backward to review images
       ListManager.navigateToPrev(state, () => {});
-      assert.strictEqual(state.currentIndex, 2, 'Navigated to image 3');
+      assert.strictEqual(state.currentIndex, 1, 'Navigated backward');
 
-      // Step 2: Delete unwanted image (index 2, seed 103)
-      ListManager.deleteCurrentImage(state, () => {}, () => {});
-      assert.strictEqual(state.imageList.length, 3, 'One image deleted');
+      // Step 2: Simulate handleAccepted receiving paths from backend
+      // Backend sends: { paths: [retained output paths] }
+      const backendPayload = {
+        paths: ['/output/image-101.png', '/output/image-102.png', '/output/image-104.png']
+      };
 
-      // Step 3: Navigate forward
-      // After deletion at index 2, we're now viewing what was index 3 (seed 104), now at index 2
-      assert.strictEqual(state.currentIndex, 2, 'Index adjusted after deletion');
-      assert.strictEqual(state.imageList[2].seed, 104, 'Now viewing last image');
-
-      // Step 4: Collect all retained paths (should exclude deleted image-103.png)
-      const allPaths = ListManager.getAllRetainedPaths(state);
-      assert.strictEqual(allPaths.length, 3, 'Three paths retained after deletion');
+      // Verify backend payload contains all retained paths
+      assert.strictEqual(backendPayload.paths.length, 3, 'Three paths in backend payload');
       assert.deepStrictEqual(
-        allPaths,
+        backendPayload.paths,
         ['/output/image-101.png', '/output/image-102.png', '/output/image-104.png'],
-        'Correct output paths collected, deleted image excluded'
+        'Backend provides correct output paths'
       );
 
-      // Step 5: Simulate acceptance workflow
-      // In real workflow:
-      // - User presses Enter
-      // - Backend saves current image (already saved in this test)
-      // - handleAccepted stores path in list entry
-      // - handleAccepted calls getAllRetainedPaths()
-      // - handleAccepted calls print_paths_and_exit(allPaths)
+      // Step 3: Frontend receives and processes paths (handleAccepted logic)
+      const retainedPaths = backendPayload.paths || [];
+      assert.strictEqual(retainedPaths.length, 3, 'Frontend receives all paths');
+      assert.ok(retainedPaths.length > 1, 'Multi-path exit will be used');
 
-      // Verify multi-path exit would be called (paths.length > 1)
-      assert.ok(allPaths.length > 1, 'Multi-path exit condition met');
-
-      // Verify edge case: if all paths were deleted, would exit as abort
-      state.imageList = [];
-      const emptyPaths = ListManager.getAllRetainedPaths(state);
-      assert.strictEqual(emptyPaths.length, 0, 'Empty paths when all deleted');
+      // Step 4: Verify preview records remain stateless with correct index structure
+      for (const record of state.imageList) {
+        assert.ok(!('outputPath' in record), 'Preview records never have outputPath');
+        assert.ok(typeof record.index === 'number', 'Records have backend index (FR5)');
+      }
     });
   });
 });

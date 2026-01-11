@@ -16,12 +16,9 @@ import type {
   LaunchArgs,
   SidecarMessage,
   ImagePayload,
-  BufferStatusPayload,
+  StateChangedPayload,
   AcceptedPayload,
-  ErrorPayload,
-  PausedPayload,
-  ReadyPayload,
-  GenerationStartedPayload,
+  DeleteAckPayload,
   ImageRecord,
 } from './types';
 
@@ -31,14 +28,13 @@ const appWindow = getCurrentWindow();
 // State Management
 const state: AppState = {
   currentImage: null,
-  bufferCount: 0,
-  bufferMax: 8,
-  isGenerating: false,
-  isPaused: false,
+  backendState: {
+    state: "loading",  // Initial state - waiting for backend to load model
+  },
+  isPaused: false,  // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
-  backendReady: false,  // Becomes true when backend sends 'ready' message
   prompt: '',
-  generationPrompt: '',  // Confirmed prompt the backend is generating with
+  generationPrompt: '',
   aspectRatio: '1:1',
   width: 1024,
   height: 1024,
@@ -47,7 +43,6 @@ const state: AppState = {
   currentBlobUrl: null,
   imageList: [],
   currentIndex: -1,
-  waitingForNext: false,
 };
 
 // DOM Element References
@@ -164,7 +159,6 @@ async function init(): Promise<void> {
     state.prompt = launchArgs.prompt || '';
     state.generationPrompt = launchArgs.prompt || '';  // Initially, generation uses launch prompt
     state.aspectRatio = launchArgs.aspect_ratio || '1:1';
-    state.bufferMax = launchArgs.buffer_max || 8;
     state.outputPath = launchArgs.output_path || null;
 
     // Display the prompt (legacy support if config controls not initialized)
@@ -190,7 +184,6 @@ async function init(): Promise<void> {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
-    setupResizeObserver();
 
     // Initialize image generation
     await invoke('init_generation', {
@@ -231,20 +224,12 @@ function handleMessage(msg: SidecarMessage): void {
   }
 
   switch (msg.type) {
-    case 'ready':
-      handleReady(msg.payload as ReadyPayload);
+    case 'state_changed':
+      handleStateChanged(msg.payload as StateChangedPayload);
       break;
 
     case 'image_ready':
       handleImageReady(msg.payload as ImagePayload);
-      break;
-
-    case 'generation_started':
-      handleGenerationStarted(msg.payload as GenerationStartedPayload);
-      break;
-
-    case 'buffer_status':
-      handleBufferStatus(msg.payload as BufferStatusPayload);
       break;
 
     case 'accepted':
@@ -255,12 +240,8 @@ function handleMessage(msg: SidecarMessage): void {
       handleAborted();
       break;
 
-    case 'error':
-      handleError(msg.payload as ErrorPayload);
-      break;
-
-    case 'paused':
-      handlePaused(msg.payload as PausedPayload);
+    case 'delete_ack':
+      handleDeleteAck(msg.payload as DeleteAckPayload);
       break;
 
     default:
@@ -269,33 +250,91 @@ function handleMessage(msg: SidecarMessage): void {
 }
 
 // Message Handlers
-function handleReady(payload: ReadyPayload): void {
-  state.isGenerating = true;
-  state.backendReady = true;
-  state.bufferCount = payload.buffer_count || 0;
+function handleStateChanged(payload: StateChangedPayload): void {
+  state.backendState = payload;
 
-  // Update loading overlay to "waiting for image" state with prompt
-  if (elements.loadingLabel) {
-    elements.loadingLabel.textContent = 'waiting for image';
+  // Update deprecated isPaused flag for compatibility
+  state.isPaused = payload.state === "paused";
+
+  // Update generationPrompt when entering generating state
+  if (payload.state === "generating" && 'prompt' in payload) {
+    state.generationPrompt = payload.prompt;
   }
-  if (elements.loadingPrompt) {
-    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+
+  // Handle fatal errors immediately - disable all operations before anything else
+  if (payload.state === "error" && 'fatal' in payload && payload.fatal) {
+    handleFatalError(payload.message);
+    return; // Don't process any further state updates
   }
+
+  // Update spinner/loading display
+  updateLoadingOverlayForState();
+
+  // Update pause button if paused state changes
+  updatePauseButton();
+
+  console.log('Backend state changed:', payload.state, payload);
 }
 
-function handleGenerationStarted(payload: GenerationStartedPayload): void {
-  // Update loading overlay to show generation is active
-  // Only update if loading overlay is currently visible (waiting for image)
-  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains('hidden')) {
-    elements.loadingLabel.textContent = 'generating';
+/**
+ * Handle fatal error: immediately disable all controls and schedule window close.
+ * This ensures no further operations can be initiated after a fatal error.
+ */
+function handleFatalError(message: string): void {
+  console.error('Fatal error received:', message);
+
+  // Immediately disable all interactive buttons
+  const buttons = [
+    elements.prevButton,
+    elements.nextButton,
+    elements.acceptButton,
+    elements.deleteButton,
+    elements.abortButton,
+    elements.pauseButton,
+    elements.themeToggle,
+    elements.resolutionDecrease,
+    elements.resolutionIncrease,
+    elements.copyPathBtn,
+  ];
+
+  buttons.forEach(btn => {
+    if (btn) btn.disabled = true;
+  });
+
+  // Disable prompt input
+  if (elements.promptInput) {
+    elements.promptInput.disabled = true;
   }
-  console.log(`Generation started: seed=${payload.seed}, queue_position=${payload.queue_position}`);
+
+  // Disable aspect ratio radios
+  if (elements.aspectRatioRadios) {
+    elements.aspectRatioRadios.forEach(radio => {
+      radio.disabled = true;
+    });
+  }
+
+  // Show error prominently in loading overlay
+  showLoading(true);
+  if (elements.loadingSpinner) {
+    elements.loadingSpinner.classList.add('hidden');
+  }
+  if (elements.loadingLabel) {
+    elements.loadingLabel.textContent = `Fatal Error: ${message}`;
+    elements.loadingLabel.classList.add('error');
+  }
+  if (elements.loadingPrompt) {
+    elements.loadingPrompt.textContent = 'Application will close shortly...';
+    elements.loadingPrompt.classList.remove('hidden');
+  }
+
+  // Schedule window close after showing error
+  setTimeout(() => {
+    void appWindow.close();
+  }, 3000);
 }
 
 async function handleImageReady(payload: ImagePayload): Promise<void> {
   state.currentImage = payload;
-  state.bufferCount = payload.buffer_count || 0;
-  state.bufferMax = payload.buffer_max || 8;
 
   // Convert file path to asset URL for display
   const assetUrl = convertFileSrc(payload.path);
@@ -307,6 +346,7 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
 
   // Create image record with parsed metadata
   const record: ImageRecord = {
+    index: payload.index,  // NEW: Store backend index for deletion
     path: payload.path,
     displayPath: payload.display_path,
     seed: metadata.seed ?? 0,
@@ -323,45 +363,18 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
   // Add to list
   state.imageList.push(record);
   state.currentIndex = state.imageList.length - 1;
-  state.waitingForNext = false;
 
   // Immediately update nav dots so new image appears in indicator
   updateNavDots();
-
-  // Update generationPrompt when we receive confirmation via image metadata
-  // This ensures the loading prompt reflects the actual prompt being generated
-  if (record.prompt && record.prompt !== state.generationPrompt) {
-    state.generationPrompt = record.prompt;
-    if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = state.generationPrompt;
-    }
-  }
 
   void displayImageRecord(record);
   showLoading(false);
   enableAcceptButton();
 }
 
-function handleBufferStatus(payload: BufferStatusPayload): void {
-  state.bufferCount = payload.count || 0;
-  state.isGenerating = payload.generating || false;
-
-  // Show loading if waiting for next image and buffer is empty
-  if (state.waitingForNext && state.bufferCount === 0) {
-    showLoading(true);
-  }
-}
-
 async function handleAccepted(payload: AcceptedPayload): Promise<void> {
-  if (payload.path && state.currentIndex >= 0 && state.currentIndex < state.imageList.length) {
-    const entry = state.imageList[state.currentIndex];
-    if (entry) {
-      entry.outputPath = payload.path;
-      entry.outputDisplayPath = payload.display_path;
-    }
-  }
-
-  const allPaths = ListManager.getAllRetainedPaths(state);
+  // Backend now provides the list of retained paths directly
+  const retainedPaths = payload.paths || [];
 
   visualSuccessFeedback();
   setTimeout(() => {
@@ -369,12 +382,10 @@ async function handleAccepted(payload: AcceptedPayload): Promise<void> {
       try {
         // Note: asset URLs from convertFileSrc don't need revoking like blob URLs
 
-        if (allPaths.length === 0) {
+        if (retainedPaths.length === 0) {
           await invoke('abort_exit');
-        } else if (allPaths.length === 1) {
-          await invoke('print_and_exit', { path: allPaths[0] });
         } else {
-          await invoke('print_paths_and_exit', { paths: allPaths });
+          await invoke('print_paths_and_exit', { paths: retainedPaths });
         }
       } catch (err) {
         console.error('Failed to call exit handler:', err);
@@ -399,56 +410,89 @@ function handleAborted(): void {
   }, 500);
 }
 
-function handleError(payload: ErrorPayload): void {
-  const message = payload.message || 'Unknown error';
-  const fatal = payload.fatal || false;
+function handleDeleteAck(payload: DeleteAckPayload): void {
+  const index = payload.index;
+  console.log('Image deleted from backend, index:', index);
 
-  console.error('Backend error:', message, 'fatal:', fatal);
+  // Remove image from imageList by matching backend index
+  const imageIndex = state.imageList.findIndex(img => img.index === index);
+  if (imageIndex !== -1) {
+    state.imageList.splice(imageIndex, 1);
 
-  if (fatal) {
-    setTimeout(() => {
-      void appWindow.close();
-    }, 2000);
+    // Adjust currentIndex to keep pointing at the same image after splice
+    if (state.imageList.length === 0) {
+      // No images left
+      state.currentIndex = -1;
+    } else if (imageIndex < state.currentIndex) {
+      // Deleted image was before current position - decrement to follow the shift
+      state.currentIndex--;
+    } else if (imageIndex === state.currentIndex) {
+      // Deleted the current image - stay at same index (now shows next image)
+      // But clamp to valid range if we were at the end
+      if (state.currentIndex >= state.imageList.length) {
+        state.currentIndex = state.imageList.length - 1;
+      }
+    }
+    // If imageIndex > currentIndex, no adjustment needed
+
+    // Update UI
+    if (state.imageList.length === 0) {
+      showLoadingPlaceholder();
+    } else {
+      const currentRecord = state.imageList[state.currentIndex];
+      if (currentRecord) {
+        void displayImageRecord(currentRecord);
+      }
+    }
+    updateNavDots();
   }
 }
 
-function handlePaused(payload: PausedPayload): void {
-  state.isPaused = payload.paused || false;
-  updatePauseButton();
-  updateLoadingOverlayForPause();
+function updateLoadingOverlayForState(): void {
+  const backendStateValue = state.backendState.state;
 
-  // Flash the pause button when generation is paused to draw attention
-  if (state.isPaused && elements.pauseButton) {
-    ButtonFlash.flashButton(elements.pauseButton);
-  }
-
-  console.log('Generation', state.isPaused ? 'paused' : 'resumed');
-}
-
-function updateLoadingOverlayForPause(): void {
-  // Update spinner visibility, label text, and prompt visibility based on paused state
+  // Determine if spinner should be visible
+  const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating";
   if (elements.loadingSpinner) {
-    if (state.isPaused) {
-      elements.loadingSpinner.classList.add('hidden');
-    } else {
+    if (spinnerVisible) {
       elements.loadingSpinner.classList.remove('hidden');
+    } else {
+      elements.loadingSpinner.classList.add('hidden');
     }
   }
 
+  // Update label text based on state (use type narrowing for state-specific fields)
   if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains('hidden')) {
-    if (state.isPaused) {
-      elements.loadingLabel.textContent = 'generation paused';
-    } else {
-      elements.loadingLabel.textContent = 'waiting for image';
+    let labelText: string;
+    switch (state.backendState.state) {
+      case "loading":
+        labelText = "loading model";
+        break;
+      case "idle":
+        labelText = "ready";
+        break;
+      case "generating":
+        labelText = "generating";
+        break;
+      case "paused":
+        labelText = "generation paused";
+        break;
+      case "error":
+        labelText = state.backendState.message || "error";
+        break;
+      default:
+        labelText = backendStateValue;
     }
+    elements.loadingLabel.textContent = labelText;
   }
 
-  // Hide prompt when paused, show when active
+  // Show/hide prompt based on state (use type narrowing for prompt field)
   if (elements.loadingPrompt) {
-    if (state.isPaused) {
-      elements.loadingPrompt.classList.add('hidden');
-    } else {
+    if (state.backendState.state === "generating") {
+      elements.loadingPrompt.textContent = state.backendState.prompt;
       elements.loadingPrompt.classList.remove('hidden');
+    } else {
+      elements.loadingPrompt.classList.add('hidden');
     }
   }
 }
@@ -485,14 +529,12 @@ async function displayImageRecord(record: ImageRecord, listIdx: number | null = 
   state.isTransitioning = true;
 
   try {
-    const skipAnimations = state.bufferCount > 1;
-    const fadeOutDuration = skipAnimations ? 0 : 100;
-    const fadeInDuration = skipAnimations ? 0 : 200;
+    // Always use animations (buffer concept removed)
+    const fadeOutDuration = 100;
+    const fadeInDuration = 200;
 
     if (elements.currentImage && elements.currentImage.src) {
-      if (!skipAnimations) {
-        elements.currentImage.classList.add('image-exit');
-      }
+      elements.currentImage.classList.add('image-exit');
       await new Promise(resolve => setTimeout(resolve, fadeOutDuration));
     }
 
@@ -511,9 +553,7 @@ async function displayImageRecord(record: ImageRecord, listIdx: number | null = 
 
     if (elements.currentImage) {
       elements.currentImage.classList.remove('image-exit');
-      if (!skipAnimations) {
-        elements.currentImage.classList.add('image-enter');
-      }
+      elements.currentImage.classList.add('image-enter');
       await new Promise(resolve => setTimeout(resolve, fadeInDuration));
       elements.currentImage.classList.remove('image-enter');
     }
@@ -561,10 +601,10 @@ function updateMetadataPanelFromRecord(record: ImageRecord | null, _listIdx: num
       metadataFinalSize.textContent = '—';
     }
 
-    // Update path display in status bar - show output path if accepted, else preview path
+    // Update path display in status bar - show preview path
     // Use display paths (with ~ for home dir) for UI, keep absolute paths for copy
-    const displayPathStr = record.outputDisplayPath || record.displayPath || '—';
-    const absolutePath = record.outputPath || record.path || '';
+    const displayPathStr = record.displayPath || '—';
+    const absolutePath = record.path || '';
     if (elements.pathText) {
       elements.pathText.textContent = displayPathStr;
     }
@@ -590,21 +630,9 @@ function clearMetadataPanel(): void {
   updateMetadataPanelFromRecord(null, null);
 }
 
-// Dimensions for nav dot layout calculation (must match CSS)
-const DOT_WIDTH = 8;      // .nav-dot width
-const DOT_GAP = 6;        // .nav-dots gap
-const GAP_INDICATOR_WIDTH = 20; // Width of gap indicator (3 small dots + spacing)
-
-/**
- * Calculate max number of dots that fit in given width.
- * For N dots: width = N * DOT_WIDTH + (N - 1) * DOT_GAP = N * (DOT_WIDTH + DOT_GAP) - DOT_GAP
- */
-function maxDotsForWidth(width: number): number {
-  if (width <= 0) return 0;
-  // N * (DOT_WIDTH + DOT_GAP) - DOT_GAP <= width
-  // N <= (width + DOT_GAP) / (DOT_WIDTH + DOT_GAP)
-  return Math.floor((width + DOT_GAP) / (DOT_WIDTH + DOT_GAP));
-}
+// Navigation dots configuration
+// Fixed maximum provides consistent behavior across all screen sizes
+const MAX_VISIBLE_DOTS = 25;  // Maximum dots before using gap indicators
 
 /**
  * Update navigation dots display.
@@ -614,7 +642,7 @@ function maxDotsForWidth(width: number): number {
  * - Position 0 to imageList.length-1 are images
  * - Position imageList.length is always the "loading/spinner" position
  * - Minimum 1 dot (spinner when no images)
- * - Active position: waitingForNext or no images → spinner; otherwise → currentIndex
+ * - Active position: viewing spinner (loading overlay visible) → spinner; otherwise → currentIndex
  */
 function updateNavDots(): void {
   if (!elements.navDots) {
@@ -625,11 +653,11 @@ function updateNavDots(): void {
   // Total positions = images + 1 (spinner is always the last position)
   const totalPositions = imageCount + 1;
 
-  // Determine active position
-  // If waitingForNext or no images, active is the spinner (last position)
-  // Otherwise, active is currentIndex
+  // Determine active position based on what user is actually viewing
+  // Check if loading overlay is visible (user is viewing spinner)
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains('hidden');
   let activePosition: number;
-  if (state.waitingForNext || imageCount === 0) {
+  if (imageCount === 0 || isViewingSpinner) {
     activePosition = imageCount; // Last position = spinner
   } else {
     activePosition = state.currentIndex;
@@ -638,13 +666,8 @@ function updateNavDots(): void {
   // Clear existing dots
   elements.navDots.innerHTML = '';
 
-  // Calculate available width from parent container
-  const container = elements.navDots.parentElement;
-  const availableWidth = container ? container.clientWidth - 32 : 400; // 32px padding buffer
-  const maxDots = maxDotsForWidth(availableWidth);
-
-  // If all positions fit, show them all
-  if (totalPositions <= maxDots) {
+  // If all positions fit within max, show them all (simple case)
+  if (totalPositions <= MAX_VISIBLE_DOTS) {
     for (let i = 0; i < totalPositions; i++) {
       const isSpinner = i === imageCount;
       const dot = createNavDot(i, i === activePosition, isSpinner);
@@ -654,48 +677,54 @@ function updateNavDots(): void {
     return;
   }
 
-  // Need gap indicators - calculate how many dots we can show
-  // Reserve space for up to 2 gap indicators
-  const maxGapIndicators = 2;
-  const widthForDots = availableWidth - (maxGapIndicators * (GAP_INDICATOR_WIDTH + DOT_GAP));
-  const dotsAvailable = Math.max(3, maxDotsForWidth(widthForDots)); // At least 3 dots (first, active, last)
+  // Need gap indicators - show subset of dots with gaps
+  // Strategy: collect indices to show, sort them, then add gaps where needed
+  const edgeDots = 3;  // Show first 3 and last 3 image dots
+  const activeRadius = 2;  // Show 2 dots on each side of active
 
-  // Strategy: always show first dot, last dot (spinner), and current area
-  // Distribute remaining dots to edges
-  const minEdgeDots = 1; // At least first and last
-  const remainingDots = dotsAvailable - 2; // After reserving first and spinner
-  const currentRadius = Math.max(0, Math.floor(remainingDots / 2));
+  // Collect all image indices to show (use Set to avoid duplicates)
+  const indicesToShow = new Set<number>();
 
-  const dotsToShow: Array<number | 'gap'> = [];
-
-  // Always add first dot (position 0) if there are images
-  if (imageCount > 0) {
-    dotsToShow.push(0);
+  // Add first edge dots (0, 1, 2)
+  for (let i = 0; i < Math.min(edgeDots, imageCount); i++) {
+    indicesToShow.add(i);
   }
 
-  // Calculate middle section around active (if not first or last)
-  const middleStart = Math.max(minEdgeDots, activePosition - currentRadius);
-  const middleEnd = Math.min(imageCount - 1, activePosition + currentRadius);
-
-  // Add gap if there's a jump from first dot to middle section
-  if (middleStart > minEdgeDots) {
-    dotsToShow.push('gap');
-  }
-
-  // Add middle section (images around active position)
-  for (let i = middleStart; i <= middleEnd; i++) {
-    if (!dotsToShow.includes(i) && i < imageCount) {
-      dotsToShow.push(i);
+  // Add active region (if active is an image, not spinner)
+  if (activePosition < imageCount) {
+    const activeStart = Math.max(0, activePosition - activeRadius);
+    const activeEnd = Math.min(imageCount - 1, activePosition + activeRadius);
+    for (let i = activeStart; i <= activeEnd; i++) {
+      indicesToShow.add(i);
     }
   }
 
-  // Add gap if there's a jump from middle section to spinner
-  // (if active is not near the spinner position)
-  if (middleEnd < imageCount - 1) {
+  // Add last edge dots
+  const lastEdgeStart = Math.max(0, imageCount - edgeDots);
+  for (let i = lastEdgeStart; i < imageCount; i++) {
+    indicesToShow.add(i);
+  }
+
+  // Sort indices and build final array with gaps
+  const sortedIndices = Array.from(indicesToShow).sort((a, b) => a - b);
+  const dotsToShow: Array<number | 'gap'> = [];
+
+  for (let i = 0; i < sortedIndices.length; i++) {
+    const idx = sortedIndices[i];
+    // Add gap if there's a jump from previous index
+    if (i > 0 && idx > sortedIndices[i - 1] + 1) {
+      dotsToShow.push('gap');
+    }
+    dotsToShow.push(idx);
+  }
+
+  // Add gap before spinner if needed (last image index + 1 < imageCount means gap)
+  const lastImageIdx = sortedIndices[sortedIndices.length - 1];
+  if (lastImageIdx !== undefined && lastImageIdx < imageCount - 1) {
     dotsToShow.push('gap');
   }
 
-  // Always add spinner dot (last position)
+  // Always add spinner dot at the end
   dotsToShow.push(imageCount);
 
   // Render the dots
@@ -796,12 +825,14 @@ function navigateToIndex(index: number, isSpinner = false): void {
     return;
   }
 
+  // Check if currently viewing spinner (loading overlay visible)
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains('hidden');
+
   // Handle spinner dot click - show loading placeholder
   if (isSpinner) {
-    if (state.waitingForNext) {
+    if (isViewingSpinner) {
       return; // Already on spinner
     }
-    state.waitingForNext = true;
     showLoadingPlaceholder();
     return;
   }
@@ -811,13 +842,8 @@ function navigateToIndex(index: number, isSpinner = false): void {
     return;
   }
 
-  if (index === state.currentIndex && !state.waitingForNext) {
+  if (index === state.currentIndex && !isViewingSpinner) {
     return; // Already on this image
-  }
-
-  // If coming from spinner, clear waitingForNext
-  if (state.waitingForNext) {
-    state.waitingForNext = false;
   }
 
   state.currentIndex = index;
@@ -939,8 +965,9 @@ function prev(): void {
     return;
   }
 
-  if (state.waitingForNext && state.imageList.length > 0) {
-    state.waitingForNext = false;
+  // If currently showing spinner but we have images, navigate to last image
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains('hidden');
+  if (isViewingSpinner && state.imageList.length > 0) {
     state.currentIndex = state.imageList.length - 1;
     const entry = state.imageList[state.currentIndex];
     showLoading(false);
@@ -965,13 +992,13 @@ function next(): void {
     return;
   }
 
-  if (state.waitingForNext) {
+  const isAlreadyGenerating = (state.backendState.state === "generating" || state.backendState.state === "loading");
+  if (isAlreadyGenerating && state.currentIndex >= state.imageList.length - 1) {
     console.log('Already waiting for next image');
     return;
   }
 
   const requestNextImage = () => {
-    state.waitingForNext = true;
     showLoadingPlaceholder();
 
     state.actionQueue = state.actionQueue
@@ -980,7 +1007,6 @@ function next(): void {
       })
       .catch(err => {
         console.error('Next failed:', err);
-        state.waitingForNext = false;
         if (state.imageList.length > 0) {
           const entry = state.imageList[state.currentIndex];
           showLoading(false);
@@ -1051,18 +1077,40 @@ function deleteCurrentImage(): void {
     return;
   }
 
-  ListManager.deleteCurrentImage(
-    state,
-    (entry: ImageRecord) => {
-      void displayImageRecord(entry, state.currentIndex);
-      updateNavDots();
-    },
-    () => {
-      // When last image is deleted, show spinner screen
-      state.waitingForNext = true;
-      showLoadingPlaceholder();
-    }
-  );
+  if (state.currentIndex < 0 || state.currentIndex >= state.imageList.length) {
+    return;
+  }
+
+  const imageToDelete = state.imageList[state.currentIndex];
+  if (!imageToDelete) {
+    return;
+  }
+
+  // Send DELETE command to backend with index (not path)
+  state.actionQueue = state.actionQueue
+    .then(async () => {
+      try {
+        await invoke('delete_image', { index: imageToDelete.index });
+        // Wait for delete_ack event - no optimistic removal
+        // The handleDeleteAck function will handle UI updates
+        console.log('Delete command sent, waiting for backend acknowledgment');
+      } catch (err) {
+        console.error('Delete failed:', err);
+        // Show error message to user
+        if (elements.loadingPrompt) {
+          elements.loadingPrompt.textContent = `Delete failed: ${err instanceof Error ? err.message : String(err)}`;
+          setTimeout(() => {
+            // Restore prompt if still in generating state (use type narrowing)
+            if (elements.loadingPrompt && state.backendState.state === "generating") {
+              elements.loadingPrompt.textContent = state.backendState.prompt;
+            }
+          }, 2000);
+        }
+      }
+    })
+    .catch((err: unknown) => {
+      console.error('Delete action queue error:', err);
+    });
 }
 
 function enableAcceptButton(): void {
@@ -1118,8 +1166,8 @@ function setupButtonListeners(): void {
     elements.copyPathBtn.addEventListener('click', () => {
       const idx = state.currentIndex;
       const entry = idx >= 0 && idx < state.imageList.length ? state.imageList[idx] : null;
-      // Copy output path if accepted, otherwise preview path
-      const path = entry?.outputPath || entry?.path;
+      // Copy preview path to clipboard
+      const path = entry?.path;
       if (path) {
         navigator.clipboard.writeText(path).then(() => {
           // Visual feedback - temporarily change path text
@@ -1189,17 +1237,6 @@ function setupKeyboardListeners(): void {
       togglePause();
     }
   });
-}
-
-function setupResizeObserver(): void {
-  if (!elements.navIndicator) return;
-
-  const resizeObserver = new ResizeObserver(() => {
-    // Always update dots (we always have at least the spinner dot)
-    updateNavDots();
-  });
-
-  resizeObserver.observe(elements.navIndicator);
 }
 
 // Expose for testing

@@ -291,12 +291,6 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
       height
     });
     console.log("Configuration updated successfully");
-    state2.generationPrompt = trimmedPrompt;
-    const loadingOverlay = document.getElementById("loading-overlay");
-    const loadingPrompt = document.getElementById("loading-prompt");
-    if (loadingOverlay && !loadingOverlay.classList.contains("hidden") && loadingPrompt) {
-      loadingPrompt.textContent = trimmedPrompt;
-    }
   } catch (error) {
     console.error("Configuration update failed:", error);
     state2.prompt = previousPrompt;
@@ -418,31 +412,6 @@ function navigateToNext(state2, displayImage, requestNextImage) {
   }
   requestNextImage();
   return true;
-}
-function deleteCurrentImage(state2, displayImage, showEmptyState) {
-  if (state2.currentIndex < 0 || state2.currentIndex >= state2.imageList.length) {
-    return null;
-  }
-  const deletedRecord = state2.imageList.splice(state2.currentIndex, 1)[0];
-  if (!deletedRecord) {
-    return null;
-  }
-  if (state2.imageList.length === 0) {
-    state2.currentIndex = -1;
-    showEmptyState();
-    return deletedRecord;
-  }
-  if (state2.currentIndex >= state2.imageList.length) {
-    state2.currentIndex = state2.imageList.length - 1;
-  }
-  const record = state2.imageList[state2.currentIndex];
-  if (record) {
-    displayImage(record);
-  }
-  return deletedRecord;
-}
-function getAllRetainedPaths(state2) {
-  return state2.imageList.map((record) => record.outputPath).filter((path) => path !== null && path !== void 0);
 }
 
 // button-flash.ts
@@ -8973,16 +8942,15 @@ async function fetchAndParsePngMetadata(url) {
 var appWindow = getCurrentWindow();
 var state = {
   currentImage: null,
-  bufferCount: 0,
-  bufferMax: 8,
-  isGenerating: false,
+  backendState: {
+    state: "loading"
+    // Initial state - waiting for backend to load model
+  },
   isPaused: false,
+  // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
-  backendReady: false,
-  // Becomes true when backend sends 'ready' message
   prompt: "",
   generationPrompt: "",
-  // Confirmed prompt the backend is generating with
   aspectRatio: "1:1",
   width: 1024,
   height: 1024,
@@ -8990,8 +8958,7 @@ var state = {
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
   imageList: [],
-  currentIndex: -1,
-  waitingForNext: false
+  currentIndex: -1
 };
 var elements = {
   app: null,
@@ -9092,7 +9059,6 @@ async function init() {
     state.prompt = launchArgs.prompt || "";
     state.generationPrompt = launchArgs.prompt || "";
     state.aspectRatio = launchArgs.aspect_ratio || "1:1";
-    state.bufferMax = launchArgs.buffer_max || 8;
     state.outputPath = launchArgs.output_path || null;
     if (elements.promptDisplay) {
       elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
@@ -9110,7 +9076,6 @@ async function init() {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
-    setupResizeObserver();
     await invoke("init_generation", {
       prompt: state.prompt,
       outputPath: launchArgs.output_path || null,
@@ -9143,17 +9108,11 @@ function handleMessage(msg) {
     return;
   }
   switch (msg.type) {
-    case "ready":
-      handleReady(msg.payload);
+    case "state_changed":
+      handleStateChanged(msg.payload);
       break;
     case "image_ready":
       handleImageReady(msg.payload);
-      break;
-    case "generation_started":
-      handleGenerationStarted(msg.payload);
-      break;
-    case "buffer_status":
-      handleBufferStatus(msg.payload);
       break;
     case "accepted":
       void handleAccepted(msg.payload);
@@ -9161,42 +9120,77 @@ function handleMessage(msg) {
     case "aborted":
       handleAborted();
       break;
-    case "error":
-      handleError(msg.payload);
-      break;
-    case "paused":
-      handlePaused(msg.payload);
+    case "delete_ack":
+      handleDeleteAck(msg.payload);
       break;
     default:
       console.warn("Unknown message type:", msg.type);
   }
 }
-function handleReady(payload) {
-  state.isGenerating = true;
-  state.backendReady = true;
-  state.bufferCount = payload.buffer_count || 0;
+function handleStateChanged(payload) {
+  state.backendState = payload;
+  state.isPaused = payload.state === "paused";
+  if (payload.state === "generating" && "prompt" in payload) {
+    state.generationPrompt = payload.prompt;
+  }
+  if (payload.state === "error" && "fatal" in payload && payload.fatal) {
+    handleFatalError(payload.message);
+    return;
+  }
+  updateLoadingOverlayForState();
+  updatePauseButton();
+  console.log("Backend state changed:", payload.state, payload);
+}
+function handleFatalError(message) {
+  console.error("Fatal error received:", message);
+  const buttons = [
+    elements.prevButton,
+    elements.nextButton,
+    elements.acceptButton,
+    elements.deleteButton,
+    elements.abortButton,
+    elements.pauseButton,
+    elements.themeToggle,
+    elements.resolutionDecrease,
+    elements.resolutionIncrease,
+    elements.copyPathBtn
+  ];
+  buttons.forEach((btn) => {
+    if (btn) btn.disabled = true;
+  });
+  if (elements.promptInput) {
+    elements.promptInput.disabled = true;
+  }
+  if (elements.aspectRatioRadios) {
+    elements.aspectRatioRadios.forEach((radio) => {
+      radio.disabled = true;
+    });
+  }
+  showLoading(true);
+  if (elements.loadingSpinner) {
+    elements.loadingSpinner.classList.add("hidden");
+  }
   if (elements.loadingLabel) {
-    elements.loadingLabel.textContent = "waiting for image";
+    elements.loadingLabel.textContent = `Fatal Error: ${message}`;
+    elements.loadingLabel.classList.add("error");
   }
   if (elements.loadingPrompt) {
-    elements.loadingPrompt.textContent = state.generationPrompt || state.prompt;
+    elements.loadingPrompt.textContent = "Application will close shortly...";
+    elements.loadingPrompt.classList.remove("hidden");
   }
-}
-function handleGenerationStarted(payload) {
-  if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains("hidden")) {
-    elements.loadingLabel.textContent = "generating";
-  }
-  console.log(`Generation started: seed=${payload.seed}, queue_position=${payload.queue_position}`);
+  setTimeout(() => {
+    void appWindow.close();
+  }, 3e3);
 }
 async function handleImageReady(payload) {
   state.currentImage = payload;
-  state.bufferCount = payload.buffer_count || 0;
-  state.bufferMax = payload.buffer_max || 8;
   const assetUrl = convertFileSrc(payload.path);
   console.log("Loading image from:", payload.path, "-> asset URL:", assetUrl);
   const metadata = await fetchAndParsePngMetadata(assetUrl);
   console.log("Parsed metadata:", metadata);
   const record = {
+    index: payload.index,
+    // NEW: Store backend index for deletion
     path: payload.path,
     displayPath: payload.display_path,
     seed: metadata.seed ?? 0,
@@ -9211,44 +9205,21 @@ async function handleImageReady(payload) {
   };
   state.imageList.push(record);
   state.currentIndex = state.imageList.length - 1;
-  state.waitingForNext = false;
   updateNavDots();
-  if (record.prompt && record.prompt !== state.generationPrompt) {
-    state.generationPrompt = record.prompt;
-    if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = state.generationPrompt;
-    }
-  }
   void displayImageRecord(record);
   showLoading(false);
   enableAcceptButton();
 }
-function handleBufferStatus(payload) {
-  state.bufferCount = payload.count || 0;
-  state.isGenerating = payload.generating || false;
-  if (state.waitingForNext && state.bufferCount === 0) {
-    showLoading(true);
-  }
-}
 async function handleAccepted(payload) {
-  if (payload.path && state.currentIndex >= 0 && state.currentIndex < state.imageList.length) {
-    const entry = state.imageList[state.currentIndex];
-    if (entry) {
-      entry.outputPath = payload.path;
-      entry.outputDisplayPath = payload.display_path;
-    }
-  }
-  const allPaths = getAllRetainedPaths(state);
+  const retainedPaths = payload.paths || [];
   visualSuccessFeedback();
   setTimeout(() => {
     void (async () => {
       try {
-        if (allPaths.length === 0) {
+        if (retainedPaths.length === 0) {
           await invoke("abort_exit");
-        } else if (allPaths.length === 1) {
-          await invoke("print_and_exit", { path: allPaths[0] });
         } else {
-          await invoke("print_paths_and_exit", { paths: allPaths });
+          await invoke("print_paths_and_exit", { paths: retainedPaths });
         }
       } catch (err) {
         console.error("Failed to call exit handler:", err);
@@ -9269,45 +9240,71 @@ function handleAborted() {
     })();
   }, 500);
 }
-function handleError(payload) {
-  const message = payload.message || "Unknown error";
-  const fatal = payload.fatal || false;
-  console.error("Backend error:", message, "fatal:", fatal);
-  if (fatal) {
-    setTimeout(() => {
-      void appWindow.close();
-    }, 2e3);
-  }
-}
-function handlePaused(payload) {
-  state.isPaused = payload.paused || false;
-  updatePauseButton();
-  updateLoadingOverlayForPause();
-  if (state.isPaused && elements.pauseButton) {
-    flashButton(elements.pauseButton);
-  }
-  console.log("Generation", state.isPaused ? "paused" : "resumed");
-}
-function updateLoadingOverlayForPause() {
-  if (elements.loadingSpinner) {
-    if (state.isPaused) {
-      elements.loadingSpinner.classList.add("hidden");
+function handleDeleteAck(payload) {
+  const index = payload.index;
+  console.log("Image deleted from backend, index:", index);
+  const imageIndex = state.imageList.findIndex((img) => img.index === index);
+  if (imageIndex !== -1) {
+    state.imageList.splice(imageIndex, 1);
+    if (state.imageList.length === 0) {
+      state.currentIndex = -1;
+    } else if (imageIndex < state.currentIndex) {
+      state.currentIndex--;
+    } else if (imageIndex === state.currentIndex) {
+      if (state.currentIndex >= state.imageList.length) {
+        state.currentIndex = state.imageList.length - 1;
+      }
+    }
+    if (state.imageList.length === 0) {
+      showLoadingPlaceholder();
     } else {
+      const currentRecord = state.imageList[state.currentIndex];
+      if (currentRecord) {
+        void displayImageRecord(currentRecord);
+      }
+    }
+    updateNavDots();
+  }
+}
+function updateLoadingOverlayForState() {
+  const backendStateValue = state.backendState.state;
+  const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating";
+  if (elements.loadingSpinner) {
+    if (spinnerVisible) {
       elements.loadingSpinner.classList.remove("hidden");
+    } else {
+      elements.loadingSpinner.classList.add("hidden");
     }
   }
   if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains("hidden")) {
-    if (state.isPaused) {
-      elements.loadingLabel.textContent = "generation paused";
-    } else {
-      elements.loadingLabel.textContent = "waiting for image";
+    let labelText;
+    switch (state.backendState.state) {
+      case "loading":
+        labelText = "loading model";
+        break;
+      case "idle":
+        labelText = "ready";
+        break;
+      case "generating":
+        labelText = "generating";
+        break;
+      case "paused":
+        labelText = "generation paused";
+        break;
+      case "error":
+        labelText = state.backendState.message || "error";
+        break;
+      default:
+        labelText = backendStateValue;
     }
+    elements.loadingLabel.textContent = labelText;
   }
   if (elements.loadingPrompt) {
-    if (state.isPaused) {
-      elements.loadingPrompt.classList.add("hidden");
-    } else {
+    if (state.backendState.state === "generating") {
+      elements.loadingPrompt.textContent = state.backendState.prompt;
       elements.loadingPrompt.classList.remove("hidden");
+    } else {
+      elements.loadingPrompt.classList.add("hidden");
     }
   }
 }
@@ -9337,13 +9334,10 @@ async function displayImageRecord(record, listIdx = null) {
   }
   state.isTransitioning = true;
   try {
-    const skipAnimations = state.bufferCount > 1;
-    const fadeOutDuration = skipAnimations ? 0 : 100;
-    const fadeInDuration = skipAnimations ? 0 : 200;
+    const fadeOutDuration = 100;
+    const fadeInDuration = 200;
     if (elements.currentImage && elements.currentImage.src) {
-      if (!skipAnimations) {
-        elements.currentImage.classList.add("image-exit");
-      }
+      elements.currentImage.classList.add("image-exit");
       await new Promise((resolve) => setTimeout(resolve, fadeOutDuration));
     }
     state.currentBlobUrl = record.blobUrl;
@@ -9358,9 +9352,7 @@ async function displayImageRecord(record, listIdx = null) {
     }
     if (elements.currentImage) {
       elements.currentImage.classList.remove("image-exit");
-      if (!skipAnimations) {
-        elements.currentImage.classList.add("image-enter");
-      }
+      elements.currentImage.classList.add("image-enter");
       await new Promise((resolve) => setTimeout(resolve, fadeInDuration));
       elements.currentImage.classList.remove("image-enter");
     }
@@ -9396,8 +9388,8 @@ function updateMetadataPanelFromRecord(record, _listIdx = null) {
     } else {
       metadataFinalSize.textContent = "\u2014";
     }
-    const displayPathStr = record.outputDisplayPath || record.displayPath || "\u2014";
-    const absolutePath = record.outputPath || record.path || "";
+    const displayPathStr = record.displayPath || "\u2014";
+    const absolutePath = record.path || "";
     if (elements.pathText) {
       elements.pathText.textContent = displayPathStr;
     }
@@ -9421,30 +9413,22 @@ function updateMetadataPanelFromRecord(record, _listIdx = null) {
 function clearMetadataPanel() {
   updateMetadataPanelFromRecord(null, null);
 }
-var DOT_WIDTH = 8;
-var DOT_GAP = 6;
-var GAP_INDICATOR_WIDTH = 20;
-function maxDotsForWidth(width) {
-  if (width <= 0) return 0;
-  return Math.floor((width + DOT_GAP) / (DOT_WIDTH + DOT_GAP));
-}
+var MAX_VISIBLE_DOTS = 25;
 function updateNavDots() {
   if (!elements.navDots) {
     return;
   }
   const imageCount = state.imageList.length;
   const totalPositions = imageCount + 1;
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains("hidden");
   let activePosition;
-  if (state.waitingForNext || imageCount === 0) {
+  if (imageCount === 0 || isViewingSpinner) {
     activePosition = imageCount;
   } else {
     activePosition = state.currentIndex;
   }
   elements.navDots.innerHTML = "";
-  const container = elements.navDots.parentElement;
-  const availableWidth = container ? container.clientWidth - 32 : 400;
-  const maxDots = maxDotsForWidth(availableWidth);
-  if (totalPositions <= maxDots) {
+  if (totalPositions <= MAX_VISIBLE_DOTS) {
     for (let i = 0; i < totalPositions; i++) {
       const isSpinner = i === imageCount;
       const dot = createNavDot(i, i === activePosition, isSpinner);
@@ -9453,27 +9437,34 @@ function updateNavDots() {
     announceNavigation(activePosition, totalPositions);
     return;
   }
-  const maxGapIndicators = 2;
-  const widthForDots = availableWidth - maxGapIndicators * (GAP_INDICATOR_WIDTH + DOT_GAP);
-  const dotsAvailable = Math.max(3, maxDotsForWidth(widthForDots));
-  const minEdgeDots = 1;
-  const remainingDots = dotsAvailable - 2;
-  const currentRadius = Math.max(0, Math.floor(remainingDots / 2));
-  const dotsToShow = [];
-  if (imageCount > 0) {
-    dotsToShow.push(0);
+  const edgeDots = 3;
+  const activeRadius = 2;
+  const indicesToShow = /* @__PURE__ */ new Set();
+  for (let i = 0; i < Math.min(edgeDots, imageCount); i++) {
+    indicesToShow.add(i);
   }
-  const middleStart = Math.max(minEdgeDots, activePosition - currentRadius);
-  const middleEnd = Math.min(imageCount - 1, activePosition + currentRadius);
-  if (middleStart > minEdgeDots) {
-    dotsToShow.push("gap");
-  }
-  for (let i = middleStart; i <= middleEnd; i++) {
-    if (!dotsToShow.includes(i) && i < imageCount) {
-      dotsToShow.push(i);
+  if (activePosition < imageCount) {
+    const activeStart = Math.max(0, activePosition - activeRadius);
+    const activeEnd = Math.min(imageCount - 1, activePosition + activeRadius);
+    for (let i = activeStart; i <= activeEnd; i++) {
+      indicesToShow.add(i);
     }
   }
-  if (middleEnd < imageCount - 1) {
+  const lastEdgeStart = Math.max(0, imageCount - edgeDots);
+  for (let i = lastEdgeStart; i < imageCount; i++) {
+    indicesToShow.add(i);
+  }
+  const sortedIndices = Array.from(indicesToShow).sort((a, b) => a - b);
+  const dotsToShow = [];
+  for (let i = 0; i < sortedIndices.length; i++) {
+    const idx = sortedIndices[i];
+    if (i > 0 && idx > sortedIndices[i - 1] + 1) {
+      dotsToShow.push("gap");
+    }
+    dotsToShow.push(idx);
+  }
+  const lastImageIdx = sortedIndices[sortedIndices.length - 1];
+  if (lastImageIdx !== void 0 && lastImageIdx < imageCount - 1) {
     dotsToShow.push("gap");
   }
   dotsToShow.push(imageCount);
@@ -9546,22 +9537,19 @@ function navigateToIndex(index, isSpinner = false) {
   if (state.isTransitioning) {
     return;
   }
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains("hidden");
   if (isSpinner) {
-    if (state.waitingForNext) {
+    if (isViewingSpinner) {
       return;
     }
-    state.waitingForNext = true;
     showLoadingPlaceholder();
     return;
   }
   if (index < 0 || index >= state.imageList.length) {
     return;
   }
-  if (index === state.currentIndex && !state.waitingForNext) {
+  if (index === state.currentIndex && !isViewingSpinner) {
     return;
-  }
-  if (state.waitingForNext) {
-    state.waitingForNext = false;
   }
   state.currentIndex = index;
   const entry = state.imageList[index];
@@ -9646,8 +9634,8 @@ function prev() {
   if (state.isTransitioning) {
     return;
   }
-  if (state.waitingForNext && state.imageList.length > 0) {
-    state.waitingForNext = false;
+  const isViewingSpinner = elements.loadingOverlay && !elements.loadingOverlay.classList.contains("hidden");
+  if (isViewingSpinner && state.imageList.length > 0) {
     state.currentIndex = state.imageList.length - 1;
     const entry = state.imageList[state.currentIndex];
     showLoading(false);
@@ -9668,18 +9656,17 @@ function next() {
   if (state.isTransitioning) {
     return;
   }
-  if (state.waitingForNext) {
+  const isAlreadyGenerating = state.backendState.state === "generating" || state.backendState.state === "loading";
+  if (isAlreadyGenerating && state.currentIndex >= state.imageList.length - 1) {
     console.log("Already waiting for next image");
     return;
   }
   const requestNextImage = () => {
-    state.waitingForNext = true;
     showLoadingPlaceholder();
     state.actionQueue = state.actionQueue.then(async () => {
       await invoke("skip_image");
     }).catch((err) => {
       console.error("Next failed:", err);
-      state.waitingForNext = false;
       if (state.imageList.length > 0) {
         const entry = state.imageList[state.currentIndex];
         showLoading(false);
@@ -9737,21 +9724,35 @@ function togglePause() {
     console.error("Pause toggle failed:", err);
   });
 }
-function deleteCurrentImage2() {
+function deleteCurrentImage() {
   if (state.isTransitioning) {
     return;
   }
-  deleteCurrentImage(
-    state,
-    (entry) => {
-      void displayImageRecord(entry, state.currentIndex);
-      updateNavDots();
-    },
-    () => {
-      state.waitingForNext = true;
-      showLoadingPlaceholder();
+  if (state.currentIndex < 0 || state.currentIndex >= state.imageList.length) {
+    return;
+  }
+  const imageToDelete = state.imageList[state.currentIndex];
+  if (!imageToDelete) {
+    return;
+  }
+  state.actionQueue = state.actionQueue.then(async () => {
+    try {
+      await invoke("delete_image", { index: imageToDelete.index });
+      console.log("Delete command sent, waiting for backend acknowledgment");
+    } catch (err) {
+      console.error("Delete failed:", err);
+      if (elements.loadingPrompt) {
+        elements.loadingPrompt.textContent = `Delete failed: ${err instanceof Error ? err.message : String(err)}`;
+        setTimeout(() => {
+          if (elements.loadingPrompt && state.backendState.state === "generating") {
+            elements.loadingPrompt.textContent = state.backendState.prompt;
+          }
+        }, 2e3);
+      }
     }
-  );
+  }).catch((err) => {
+    console.error("Delete action queue error:", err);
+  });
 }
 function enableAcceptButton() {
   if (elements.acceptButton) {
@@ -9769,7 +9770,7 @@ function setupButtonListeners() {
     elements.acceptButton.addEventListener("click", accept);
   }
   if (elements.deleteButton) {
-    elements.deleteButton.addEventListener("click", deleteCurrentImage2);
+    elements.deleteButton.addEventListener("click", deleteCurrentImage);
   }
   if (elements.abortButton) {
     elements.abortButton.addEventListener("click", abort);
@@ -9793,7 +9794,7 @@ function setupButtonListeners() {
     elements.copyPathBtn.addEventListener("click", () => {
       const idx = state.currentIndex;
       const entry = idx >= 0 && idx < state.imageList.length ? state.imageList[idx] : null;
-      const path = entry?.outputPath || entry?.path;
+      const path = entry?.path;
       if (path) {
         navigator.clipboard.writeText(path).then(() => {
           const original = elements.pathText?.textContent;
@@ -9849,19 +9850,12 @@ function setupKeyboardListeners() {
       }
     } else if ((e.key === "Delete" || e.key === "Backspace") && ctrlOrCmd) {
       e.preventDefault();
-      deleteCurrentImage2();
+      deleteCurrentImage();
     } else if (e.key === " ") {
       e.preventDefault();
       togglePause();
     }
   });
-}
-function setupResizeObserver() {
-  if (!elements.navIndicator) return;
-  const resizeObserver = new ResizeObserver(() => {
-    updateNavDots();
-  });
-  resizeObserver.observe(elements.navIndicator);
 }
 if (typeof window !== "undefined") {
   window.textbrushApp = {
@@ -9880,7 +9874,7 @@ if (typeof window !== "undefined") {
     abort,
     togglePause,
     updatePauseButton,
-    deleteCurrentImage: deleteCurrentImage2,
+    deleteCurrentImage,
     cacheElements,
     allElementsPresent,
     isMagnifierActive,

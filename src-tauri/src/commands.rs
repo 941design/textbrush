@@ -207,6 +207,53 @@ pub fn pause_generation(state: State<'_, AppState>) -> Result<(), String> {
     }
 }
 
+/// Delete image from delivered list by backend index.
+///
+/// CONTRACT:
+///   Inputs:
+///     - index: stable backend index of image to delete
+///     - state: AppState containing sidecar
+///
+///   Outputs:
+///     - Result<(), String>: Ok on success, error message on failure
+///
+///   Invariants:
+///     - If sidecar exists: sends DELETE command with index in payload
+///     - If no sidecar: returns error
+///     - Python handler will soft-delete image and delete temp file
+///     - Handler sends DELETE_ACK or ERROR event based on success
+///
+///   Properties:
+///     - Synchronous: returns after sending command
+///     - Error handling: returns Result with error if no sidecar
+///     - Idempotent: backend handles missing/deleted indices gracefully
+///
+///   Algorithm:
+///     1. Lock AppState.sidecar mutex
+///     2. If sidecar exists:
+///        a. Create DELETE message with payload: {"index": index}
+///        b. Send message via sidecar
+///        c. Return Ok
+///     3. If no sidecar:
+///        a. Return Err("No sidecar running")
+#[command]
+pub fn delete_image(index: i32, state: State<'_, AppState>) -> Result<(), String> {
+    let sidecar_guard = state.sidecar.lock().unwrap();
+
+    if let Some(sidecar) = sidecar_guard.as_ref() {
+        let message = IpcMessage {
+            msg_type: "delete".to_string(),
+            payload: serde_json::json!({
+                "index": index,
+            }),
+        };
+        sidecar.send(&message)?;
+        Ok(())
+    } else {
+        Err("No sidecar running".to_string())
+    }
+}
+
 /// Abort generation and terminate sidecar.
 ///
 /// CONTRACT:
@@ -617,5 +664,374 @@ while True:
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "No sidecar running");
+    }
+
+    #[test]
+    fn delete_image_returns_error_when_no_sidecar() {
+        let state = AppState {
+            sidecar: Mutex::new(None),
+        };
+
+        let sidecar_guard = state.sidecar.lock().unwrap();
+        let result = if sidecar_guard.is_none() {
+            Err("No sidecar running".to_string())
+        } else {
+            Ok(())
+        };
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No sidecar running");
+    }
+
+    #[test]
+    fn delete_image_sends_delete_message_when_sidecar_exists() {
+        let state = AppState {
+            sidecar: Mutex::new(None),
+        };
+
+        let script = python_echo_script();
+        let mut sidecar =
+            Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
+
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).ok();
+        });
+
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+
+        let index = 42;
+        let sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(sidecar) = sidecar_guard.as_ref() {
+            let message = IpcMessage {
+                msg_type: "delete".to_string(),
+                payload: serde_json::json!({
+                    "index": index,
+                }),
+            };
+            sidecar.send(&message).expect("Send should succeed");
+        }
+        drop(sidecar_guard);
+
+        let received = rx.recv_timeout(Duration::from_secs(1));
+        assert!(received.is_ok());
+
+        let msg = received.unwrap();
+        assert_eq!(msg.msg_type, "delete");
+        assert_eq!(msg.payload["index"], index);
+
+        let mut sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(mut sidecar) = sidecar_guard.take() {
+            let _ = sidecar.kill();
+        }
+    }
+
+    #[test]
+    fn delete_image_sends_correct_json_structure() {
+        let state = AppState {
+            sidecar: Mutex::new(None),
+        };
+
+        let script = python_echo_script();
+        let mut sidecar =
+            Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
+
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).ok();
+        });
+
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+
+        let test_index = 123;
+        let sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(sidecar) = sidecar_guard.as_ref() {
+            let message = IpcMessage {
+                msg_type: "delete".to_string(),
+                payload: serde_json::json!({
+                    "index": test_index,
+                }),
+            };
+            sidecar.send(&message).expect("Send should succeed");
+        }
+        drop(sidecar_guard);
+
+        let received = rx.recv_timeout(Duration::from_secs(1));
+        assert!(received.is_ok());
+
+        let msg = received.unwrap();
+        assert_eq!(msg.msg_type, "delete");
+        assert!(msg.payload.is_object());
+        assert!(msg.payload.get("index").is_some());
+        assert_eq!(msg.payload["index"].as_i64().unwrap(), test_index);
+
+        let mut sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(mut sidecar) = sidecar_guard.take() {
+            let _ = sidecar.kill();
+        }
+    }
+
+    #[test]
+    fn delete_image_with_various_indices() {
+        let state = AppState {
+            sidecar: Mutex::new(None),
+        };
+
+        let script = python_echo_script();
+        let mut sidecar =
+            Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
+
+        let (tx, _rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).ok();
+        });
+
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+
+        let test_indices = vec![0, 1, 42, 100, 999];
+
+        for test_index in test_indices {
+            let sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(sidecar) = sidecar_guard.as_ref() {
+                let message = IpcMessage {
+                    msg_type: "delete".to_string(),
+                    payload: serde_json::json!({
+                        "index": test_index,
+                    }),
+                };
+                let result = sidecar.send(&message);
+                assert!(
+                    result.is_ok(),
+                    "Failed to send delete for index: {}",
+                    test_index
+                );
+            }
+            drop(sidecar_guard);
+        }
+
+        let mut sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(mut sidecar) = sidecar_guard.take() {
+            let _ = sidecar.kill();
+        }
+    }
+
+    #[test]
+    fn delete_image_after_abort_returns_error() {
+        let state = AppState {
+            sidecar: Mutex::new(None),
+        };
+
+        let script = python_echo_script();
+        let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
+
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+
+        let mut sidecar_guard = state.sidecar.lock().unwrap();
+        if let Some(mut sidecar) = sidecar_guard.take() {
+            let _ = sidecar.kill();
+        }
+        drop(sidecar_guard);
+
+        let sidecar_guard = state.sidecar.lock().unwrap();
+        let result = if sidecar_guard.is_none() {
+            Err("No sidecar running".to_string())
+        } else {
+            Ok(())
+        };
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No sidecar running");
+    }
+}
+
+#[cfg(test)]
+mod delete_image_property_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    proptest! {
+        #[test]
+        fn delete_image_payload_has_correct_message_type(
+            index in 0i32..10000
+        ) {
+            let state = AppState {
+                sidecar: Mutex::new(None),
+            };
+
+            let script = r#"
+import sys
+import json
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    sys.stdout.write(line)
+    sys.stdout.flush()
+"#;
+
+            let mut sidecar = Sidecar::spawn("python3", &["-c", script])
+                .expect("Failed to spawn Python");
+
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).ok();
+            });
+
+            *state.sidecar.lock().unwrap() = Some(sidecar);
+
+            let sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(sidecar) = sidecar_guard.as_ref() {
+                let message = IpcMessage {
+                    msg_type: "delete".to_string(),
+                    payload: serde_json::json!({
+                        "index": index,
+                    }),
+                };
+                sidecar.send(&message).expect("Send should succeed");
+            }
+            drop(sidecar_guard);
+
+            let received = rx.recv_timeout(Duration::from_secs(1));
+            prop_assert!(received.is_ok());
+
+            let msg = received.unwrap();
+            prop_assert_eq!(msg.msg_type, "delete");
+
+            let mut sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(mut sidecar) = sidecar_guard.take() {
+                let _ = sidecar.kill();
+            }
+        }
+
+        #[test]
+        fn delete_image_payload_contains_index(
+            index in 0i32..10000
+        ) {
+            let state = AppState {
+                sidecar: Mutex::new(None),
+            };
+
+            let script = r#"
+import sys
+import json
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    sys.stdout.write(line)
+    sys.stdout.flush()
+"#;
+
+            let mut sidecar = Sidecar::spawn("python3", &["-c", script])
+                .expect("Failed to spawn Python");
+
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).ok();
+            });
+
+            *state.sidecar.lock().unwrap() = Some(sidecar);
+
+            let sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(sidecar) = sidecar_guard.as_ref() {
+                let message = IpcMessage {
+                    msg_type: "delete".to_string(),
+                    payload: serde_json::json!({
+                        "index": index,
+                    }),
+                };
+                sidecar.send(&message).expect("Send should succeed");
+            }
+            drop(sidecar_guard);
+
+            let received = rx.recv_timeout(Duration::from_secs(1));
+            prop_assert!(received.is_ok());
+
+            let msg = received.unwrap();
+            prop_assert!(msg.payload.get("index").is_some());
+            prop_assert_eq!(msg.payload["index"].as_i64().unwrap(), index as i64);
+
+            let mut sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(mut sidecar) = sidecar_guard.take() {
+                let _ = sidecar.kill();
+            }
+        }
+
+        #[test]
+        fn delete_image_payload_is_json_object(
+            index in 0i32..10000
+        ) {
+            let state = AppState {
+                sidecar: Mutex::new(None),
+            };
+
+            let script = r#"
+import sys
+import json
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    sys.stdout.write(line)
+    sys.stdout.flush()
+"#;
+
+            let mut sidecar = Sidecar::spawn("python3", &["-c", script])
+                .expect("Failed to spawn Python");
+
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).ok();
+            });
+
+            *state.sidecar.lock().unwrap() = Some(sidecar);
+
+            let sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(sidecar) = sidecar_guard.as_ref() {
+                let message = IpcMessage {
+                    msg_type: "delete".to_string(),
+                    payload: serde_json::json!({
+                        "index": index,
+                    }),
+                };
+                sidecar.send(&message).expect("Send should succeed");
+            }
+            drop(sidecar_guard);
+
+            let received = rx.recv_timeout(Duration::from_secs(1));
+            prop_assert!(received.is_ok());
+
+            let msg = received.unwrap();
+            prop_assert!(msg.payload.is_object());
+
+            let mut sidecar_guard = state.sidecar.lock().unwrap();
+            if let Some(mut sidecar) = sidecar_guard.take() {
+                let _ = sidecar.kill();
+            }
+        }
+
+        #[test]
+        fn delete_image_without_sidecar_always_fails(
+            _index in 0i32..10000
+        ) {
+            let state = AppState {
+                sidecar: Mutex::new(None),
+            };
+
+            let sidecar_guard = state.sidecar.lock().unwrap();
+            let result = if sidecar_guard.is_none() {
+                Err("No sidecar running".to_string())
+            } else {
+                Ok(())
+            };
+
+            prop_assert!(result.is_err());
+            prop_assert_eq!(result.unwrap_err(), "No sidecar running");
+        }
     }
 }

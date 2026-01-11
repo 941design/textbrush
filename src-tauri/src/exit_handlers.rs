@@ -3,43 +3,6 @@
 // Provides Tauri commands for controlled application exit with proper stdout handling
 // and exit codes as required by the CLI specification.
 
-/// Print accepted image path to stdout and exit with success code.
-///
-/// CONTRACT:
-///   Inputs:
-///     - path: file path string (absolute or relative) to the saved image
-///
-///   Outputs:
-///     - Prints path to stdout (single line, no additional formatting)
-///     - Process exits with code 0 (success)
-///
-///   Invariants:
-///     - Path is printed exactly as provided (no modification)
-///     - Stdout is flushed before exit (ensures output visible)
-///     - Exit code is always 0 (success)
-///     - No other output to stdout (no logging, no extra newlines)
-///
-///   Properties:
-///     - Synchronous: immediately prints and exits
-///     - Terminal: does not return (process terminates)
-///     - CLI contract: satisfies "accepted image path on stdout, exit 0" requirement
-///     - Backward compatible: single path still works
-///
-///   Algorithm:
-///     1. Call println!("{}", path) to write path to stdout
-///     2. Call std::process::exit(0) to terminate with success code
-///
-/// IMPLEMENTATION GUIDANCE:
-///   - Use println! macro (automatically adds newline and flushes)
-///   - Use std::process::exit(0) for clean exit
-///   - No error handling needed (println! to stdout cannot fail)
-///   - Mark as #[tauri::command] for IPC registration
-#[tauri::command]
-pub fn print_and_exit(path: String) {
-    println!("{}", path);
-    std::process::exit(0);
-}
-
 /// Print multiple accepted image paths to stdout and exit with success code.
 ///
 /// CONTRACT:
@@ -199,43 +162,7 @@ mod tests {
         }
 
         #[test]
-        fn print_and_exit_formats_path_correctly(path in r"[a-zA-Z0-9/_.\-]{1,200}") {
-            let test_path = path.clone();
-            assert_eq!(test_path, path, "Path should remain unchanged");
-        }
-
-        #[test]
-        fn print_and_exit_path_preserved_on_stdout(path in r"(/tmp|\.)/[a-zA-Z0-9/_.\-]{1,100}") {
-            let output = format!("{}", &path);
-            assert_eq!(output, path, "Output format must be identical to input");
-        }
-
-        #[test]
         fn abort_exit_is_silent(_unit in Just(())) {
-            let _ = ();
-        }
-
-        #[test]
-        fn print_and_exit_handles_empty_path(path in "") {
-            let test_path = path.clone();
-            assert_eq!(test_path, path);
-        }
-
-        #[test]
-        fn print_and_exit_handles_special_characters(path in r"[/\\.:\-_a-zA-Z0-9 ]{1,100}") {
-            let output = format!("{}", &path);
-            assert_eq!(output, path, "Special characters must be preserved");
-        }
-
-        #[test]
-        fn print_and_exit_unicode_paths_preserved(path in r"[a-zA-Z0-9/_.\-]{1,50}") {
-            let test_path = path.clone();
-            let formatted = format!("{}", test_path);
-            assert_eq!(formatted, path);
-        }
-
-        #[test]
-        fn print_and_exit_exit_code_zero_intended(_unit in Just(())) {
             let _ = ();
         }
 
@@ -245,19 +172,9 @@ mod tests {
         }
 
         #[test]
-        fn print_and_exit_stdout_flush_contract(_unit in Just(())) {
-            let _ = ();
-        }
-
-        #[test]
         fn abort_exit_no_stdout_contract(_unit in Just(())) {
             let _ = ();
         }
-    }
-
-    #[test]
-    fn tauri_command_macro_applied_to_print_and_exit() {
-        let _ = ();
     }
 
     #[test]

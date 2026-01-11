@@ -8,16 +8,13 @@ from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
 
 from textbrush.backend import TextbrushBackend
+from textbrush.buffer import BufferedImage
 from textbrush.config import Config
 from textbrush.ipc.protocol import (
-    BufferStatusEvent,
-    GenerationStartedEvent,
     Message,
     MessageType,
-    PausedEvent,
     dataclass_to_dict,
 )
 from textbrush.paths import display_path
@@ -45,17 +42,24 @@ class MessageHandler:
             - Backend is not created until handle_init()
             - No generation is running
             - No images are ready
+            - delivered_images list is empty
 
           Properties:
             - Lazy initialization: backend created on first INIT command
             - Configuration stored: config is saved for later backend creation
+            - delivered_images: backend owns authoritative list of delivered images
         """
         self.config = config
         self.backend: TextbrushBackend | None = None
         self._current_image = None
-        self._output_path: Path | None = None
         self._action_event = threading.Event()
-        self._state_lock = threading.Lock()  # Protects _current_image access
+        self._state_lock = threading.Lock()  # Protects _current_image and _delivered_images access
+        self._delivered_images: list[BufferedImage] = []  # Backend-owned list of delivered images
+        self._next_index = 0  # Monotonic counter for image indices
+        self._image_index_map: dict[int, BufferedImage] = {}  # Maps index → BufferedImage
+        self._deleted_indices: set[int] = set()  # Tracks soft-deleted indices
+        self._current_state: str | None = None  # Tracks current backend state
+        self._current_prompt: str = ""  # Tracks current generation prompt for state_changed events
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle INIT command: load model and start generation.
@@ -113,24 +117,23 @@ class MessageHandler:
             f"INIT received: prompt='{cmd.prompt[:50]}...', "
             f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
         )
+        self._current_prompt = cmd.prompt  # Store prompt for state_changed events
         self.backend = TextbrushBackend(self.config)
         logger.info("Backend created, starting init thread")
+
+        # Capture prompt at registration time to avoid race conditions with UPDATE_CONFIG
+        # The callback may fire after _current_prompt has been changed by UPDATE_CONFIG,
+        # so we need to use the prompt value that was active when generation started.
+        generation_prompt = cmd.prompt
 
         def on_generation_start(seed: int, queue_position: int) -> None:
             """Callback invoked when worker starts generating an image."""
             logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
-            server.send(
-                Message(
-                    MessageType.GENERATION_STARTED,
-                    dataclass_to_dict(
-                        GenerationStartedEvent(seed=seed, queue_position=queue_position)
-                    ),
-                )
-            )
+            self._emit_state_changed(server, "generating", prompt=generation_prompt)
 
         def on_ready():
-            logger.info("Backend ready, sending READY event")
-            server.send(Message(MessageType.READY))
+            logger.info("Backend ready, emitting state_changed(idle)")
+            self._emit_state_changed(server, "idle")
             logger.info(
                 f"Starting generation: prompt='{cmd.prompt[:50]}...', "
                 f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
@@ -172,7 +175,6 @@ class MessageHandler:
             1. Delete preview file for current image
             2. Clear current_image reference (set to None)
             3. Signal image delivery thread to continue (unblock wait)
-            4. If backend exists: send BUFFER_STATUS event
         """
         with self._state_lock:
             if self._current_image is not None and self.backend:
@@ -180,159 +182,160 @@ class MessageHandler:
             self._current_image = None
         self._signal_action()
 
-        if self.backend:
-            server.send(
-                Message(
-                    MessageType.BUFFER_STATUS,
-                    dataclass_to_dict(
-                        BufferStatusEvent(
-                            count=len(self.backend.buffer),
-                            max=self.backend.buffer.max_size,
-                            generating=True,
-                        )
-                    ),
-                )
-            )
-
     def handle_accept(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle ACCEPT command: move preview to output and report path.
+        """Handle ACCEPT command: move all delivered images to output and report paths.
 
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (moves preview file, sends event)
+          Outputs: none (moves all preview files, sends event, exits process)
 
           Invariants:
-            - If no current image: sends non-fatal ERROR event
-            - If current image exists: moves from preview to output directory
-            - ACCEPTED event sent with absolute path where image was moved
-            - Image delivery thread is signaled to continue
+            - If no delivered images: sends non-fatal ERROR event
+            - If delivered_images non-empty: moves all from preview to output directory
+            - ACCEPTED event sent with all absolute paths where images were moved
+            - delivered_images list is cleared after successful save
+            - Image delivery thread is NOT signaled (process will exit)
 
           Properties:
-            - Blocking: waits for file move to complete
-            - Error handling: sends non-fatal ERROR if no image or move fails
-            - Path reporting: sends absolute path in ACCEPTED event
-            - Uses stored output_path or auto-generates via backend
+            - Blocking: waits for all file moves to complete
+            - Error handling: sends non-fatal ERROR if no images or move fails
+            - Batch operation: all delivered images saved in one operation
+            - Order preservation: paths in ACCEPTED event match delivery order
+            - Terminal: process exits after this (no need to signal delivery thread)
 
           Algorithm:
-            1. Check if current_image exists
-            2. If not: send non-fatal ERROR event, return
-            3. Try:
-               a. Call backend.accept_from_preview(current_image, output_path)
-               b. Get absolute path returned
-               c. Send ACCEPTED event with path
-            4. Catch exceptions:
+            1. Acquire state lock
+            2. Check if delivered_images is empty or backend is None
+            3. If empty: send non-fatal ERROR event "No images to accept", return
+            4. Copy delivered_images to local variable
+            5. Clear delivered_images list
+            6. Release lock
+            7. Try:
+               a. Call backend.accept_all(images)
+               b. Get list of absolute paths returned
+               c. Create display_paths list using display_path() for each
+               d. Send ACCEPTED event with paths and display_paths
+               e. Log success
+            8. Catch exceptions:
                a. Log error
                b. Send non-fatal ERROR event
-            5. Signal image delivery thread to continue
+            9. Do NOT signal delivery thread (process will exit via Rust handler)
         """
         from textbrush.ipc.protocol import AcceptedEvent, ErrorEvent
 
         with self._state_lock:
-            if not self._current_image or not self.backend:
+            if not self._delivered_images or not self.backend:
                 server.send(
                     Message(
                         MessageType.ERROR,
-                        dataclass_to_dict(ErrorEvent(message="No image to accept", fatal=False)),
+                        dataclass_to_dict(ErrorEvent(message="No images to accept", fatal=False)),
                     )
                 )
                 return
 
+            # Copy list and clear (backend no longer owns these after accept)
+            images_to_accept = list(self._delivered_images)
+            self._delivered_images.clear()
+
         try:
-            path = self.backend.accept_from_preview(self._current_image, self._output_path)
-            logger.info(f"Image moved to: {display_path(path)}")
+            # Batch save all delivered images
+            paths = self.backend.accept_all(images_to_accept)
+            display_paths = [display_path(p) for p in paths]
+
+            logger.info(f"Accepted {len(paths)} images")
+            for p in display_paths:
+                logger.info(f"  - {p}")
+
             server.send(
                 Message(
                     MessageType.ACCEPTED,
                     dataclass_to_dict(
                         AcceptedEvent(
-                            path=str(path.absolute()),
-                            display_path=display_path(path),
+                            paths=[str(p.absolute()) for p in paths],
+                            display_paths=display_paths,
                         )
                     ),
                 )
             )
         except Exception as e:
-            logger.error(f"Failed to accept image: {e}")
+            logger.error(f"Failed to accept images: {e}")
             server.send(
                 Message(
                     MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(e), fatal=False))
                 )
             )
 
-        self._signal_action()
+        # Do NOT signal action - process will exit after ACCEPTED event
 
     def handle_abort(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle ABORT command: stop generation and cleanup.
+        """Handle ABORT command: stop generation, delete all delivered images, cleanup.
 
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (stops backend, sends event)
+          Outputs: none (stops backend, deletes temp files, sends event)
 
           Invariants:
             - If backend exists: backend.abort() is called
+            - All delivered_images temp files are deleted
+            - delivered_images list is cleared
             - All generation stops
             - Buffer is cleared
             - ABORTED event is sent
             - Server shutdown is triggered
 
           Properties:
-            - Blocking: waits for backend.abort() to complete
-            - Cleanup: releases all resources
+            - Blocking: waits for backend.abort() and file deletions to complete
+            - Comprehensive cleanup: deletes all delivered_images temp files
             - Terminal: server will exit after this command
             - Idempotent: safe to call even if no backend exists
 
           Algorithm:
-            1. If backend exists: call backend.abort() (blocks)
-            2. Send ABORTED event
-            3. Trigger server shutdown (server.shutdown())
+            1. Acquire state lock
+            2. Copy delivered_images to local variable
+            3. Clear delivered_images list
+            4. Release lock
+            5. For each buffered_image in copied list:
+               a. Call buffered_image.cleanup() to delete temp file
+            6. If backend exists: call backend.abort() (blocks - clears buffer)
+            7. Send ABORTED event
+            8. Trigger server shutdown (server.shutdown())
         """
+        with self._state_lock:
+            images_to_cleanup = list(self._delivered_images)
+            self._delivered_images.clear()
+
+        # Delete all delivered images temp files
+        for buffered_image in images_to_cleanup:
+            buffered_image.cleanup()
+
         if self.backend:
             self.backend.abort()
+
         server.send(Message(MessageType.ABORTED))
         server.shutdown()
 
     def handle_status(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle STATUS command: report current buffer status.
+        """Handle STATUS command: deprecated (buffer status removed).
 
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (sends status event)
+          Outputs: none (no-op, buffer status is deprecated)
 
           Invariants:
-            - If backend exists: sends BUFFER_STATUS event with current stats
-            - If no backend: no event sent (or could send error)
+            - DEPRECATED: Buffer status concept removed from state sync protocol
+            - This handler remains for backwards compatibility but does nothing
 
           Properties:
             - Non-blocking: returns immediately
-            - Read-only: does not modify state
-            - Optional: mostly for debugging/UI updates
-
-          Algorithm:
-            1. If backend exists:
-               a. Send BUFFER_STATUS event with:
-                  - count: len(backend.buffer)
-                  - max: backend.buffer.max_size
-                  - generating: backend._worker is not None
+            - No-op: does not send any event
         """
-        if self.backend:
-            server.send(
-                Message(
-                    MessageType.BUFFER_STATUS,
-                    dataclass_to_dict(
-                        BufferStatusEvent(
-                            count=len(self.backend.buffer),
-                            max=self.backend.buffer.max_size,
-                            generating=self.backend._worker is not None,
-                        )
-                    ),
-                )
-            )
+        logger.debug("STATUS command received (deprecated, no-op)")
 
     def handle_update_config(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle UPDATE_CONFIG command: update generation configuration.
@@ -390,7 +393,7 @@ class MessageHandler:
             * Receive new images when worker produces them
             * No race conditions: buffer operations are thread-safe
         """
-        from textbrush.ipc.protocol import ErrorEvent, UpdateConfigCommand
+        from textbrush.ipc.protocol import BufferStatusEvent, ErrorEvent, UpdateConfigCommand
 
         cmd = UpdateConfigCommand(**payload)
 
@@ -435,20 +438,19 @@ class MessageHandler:
             dims_info = f"aspect_ratio={cmd.aspect_ratio}"
         logger.info(f"UPDATE_CONFIG: prompt='{cmd.prompt[:50]}...', {dims_info}")
 
+        # Store new prompt for state_changed events
+        self._current_prompt = cmd.prompt
+
+        # Capture prompt at registration time to avoid race conditions with subsequent
+        # UPDATE_CONFIG calls. The callback may fire after _current_prompt has been
+        # changed by another UPDATE_CONFIG, so we need to use the prompt value that
+        # was active when this update_config was called.
+        generation_prompt = cmd.prompt
+
         def on_generation_start(seed: int, queue_position: int) -> None:
             """Callback invoked when worker starts generating an image."""
             logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
-            server.send(
-                Message(
-                    MessageType.GENERATION_STARTED,
-                    dataclass_to_dict(
-                        GenerationStartedEvent(seed=seed, queue_position=queue_position)
-                    ),
-                )
-            )
-
-        # Get pause state for buffer status event
-        was_paused = self.backend.is_paused()
+            self._emit_state_changed(server, "generating", prompt=generation_prompt)
 
         self.backend.update_config(
             prompt=cmd.prompt,
@@ -458,6 +460,8 @@ class MessageHandler:
             on_generation_start=on_generation_start,
         )
 
+        # Send BUFFER_STATUS event showing reset buffer
+        is_generating = not self.backend.is_paused()
         server.send(
             Message(
                 MessageType.BUFFER_STATUS,
@@ -465,7 +469,7 @@ class MessageHandler:
                     BufferStatusEvent(
                         count=0,
                         max=self.backend.buffer.max_size,
-                        generating=not was_paused,
+                        generating=is_generating,
                     )
                 ),
             )
@@ -478,14 +482,14 @@ class MessageHandler:
           Inputs:
             - server: IPCServer instance for sending events
 
-          Outputs: none (modifies backend state, sends event)
+          Outputs: none (modifies backend state, sends state_changed event)
 
           Invariants:
             - If backend not initialized: sends non-fatal ERROR event
             - If backend exists:
               * If currently running: pauses generation
               * If currently paused: resumes generation
-            - PAUSED event sent with new pause state
+            - state_changed event sent with new state ("paused" or "generating")
 
           Properties:
             - Toggle behavior: alternates between paused and running
@@ -499,8 +503,7 @@ class MessageHandler:
             2. Check current pause state via backend.is_paused()
             3. If paused: call backend.resume_generation()
             4. If running: call backend.pause_generation()
-            5. Send PAUSED event with new state
-            6. Send BUFFER_STATUS event with updated generating flag
+            5. Send state_changed event with appropriate state
         """
         from textbrush.ipc.protocol import ErrorEvent
 
@@ -524,23 +527,86 @@ class MessageHandler:
 
         logger.info(f"Generation {'paused' if new_paused else 'resumed'}")
 
-        server.send(
-            Message(
-                MessageType.PAUSED,
-                dataclass_to_dict(PausedEvent(paused=new_paused)),
-            )
-        )
+        if new_paused:
+            self._emit_state_changed(server, "paused")
+        else:
+            self._emit_state_changed(server, "generating", prompt=self._current_prompt)
 
+    def handle_delete(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Handle DELETE command: soft-delete image by index.
+
+        CONTRACT:
+          Inputs:
+            - payload: dict with key "index" (int, backend index)
+            - server: IPCServer instance for sending events
+
+          Outputs: none (modifies state, deletes file, sends event)
+
+          Invariants:
+            - If index found in image_index_map:
+              * Image marked as deleted (added to deleted_indices)
+              * Temp file is deleted
+              * Image remains in index map (soft-delete)
+              * DELETE_ACK event is sent
+            - If index not found or already deleted:
+              * No state change (idempotent)
+              * DELETE_ACK event still sent (no-op)
+
+          Properties:
+            - Thread-safe: uses state lock for index map access
+            - Idempotent: deleting already-deleted index is no-op, sends DELETE_ACK
+            - Non-blocking: returns quickly after deletion
+            - Soft-delete: image stays in index map for recovery
+
+          Algorithm:
+            1. Parse payload to extract index integer
+            2. Acquire state lock
+            3. Check if index exists in image_index_map
+            4. If found:
+               a. Add index to deleted_indices set
+               b. Get BufferedImage reference
+               c. Release lock
+               d. Call buffered_image.cleanup() to delete temp file
+               e. Send DELETE_ACK event with index
+               f. Log deletion
+            5. If not found or already deleted:
+               a. Release lock
+               b. Send DELETE_ACK event with index (idempotent)
+               c. Log no-op
+        """
+        from textbrush.ipc.protocol import DeleteAckEvent, DeleteCommand
+
+        cmd = DeleteCommand(**payload)
+        logger.info(f"DELETE received: index={cmd.index}")
+
+        with self._state_lock:
+            if cmd.index in self._image_index_map:
+                if cmd.index not in self._deleted_indices:
+                    # First deletion - mark as deleted
+                    self._deleted_indices.add(cmd.index)
+                    buffered_image = self._image_index_map[cmd.index]
+                    needs_cleanup = True
+                else:
+                    # Already deleted - idempotent no-op
+                    buffered_image = None
+                    needs_cleanup = False
+            else:
+                # Index doesn't exist - idempotent no-op
+                buffered_image = None
+                needs_cleanup = False
+
+        # Cleanup temp file outside lock
+        if needs_cleanup and buffered_image:
+            buffered_image.cleanup()
+            logger.info(f"Deleted image at index {cmd.index}")
+        else:
+            logger.info(f"DELETE no-op for index {cmd.index} (already deleted or not found)")
+
+        # Always send DELETE_ACK (idempotent)
         server.send(
             Message(
-                MessageType.BUFFER_STATUS,
-                dataclass_to_dict(
-                    BufferStatusEvent(
-                        count=len(self.backend.buffer),
-                        max=self.backend.buffer.max_size,
-                        generating=not new_paused,
-                    )
-                ),
+                MessageType.DELETE_ACK,
+                dataclass_to_dict(DeleteAckEvent(index=cmd.index)),
             )
         )
 
@@ -558,14 +624,16 @@ class MessageHandler:
 
           Invariants:
             - Thread runs until backend.get_next_image() returns None
-            - Each image is encoded as base64 PNG
-            - IMAGE_READY events sent for each image
+            - Each image assigned unique stable index via _assign_image_index
+            - IMAGE_READY events sent for each image with index
+            - STATE_CHANGED(IDLE) emitted after each image ready
             - Thread blocks waiting for skip/accept between images
 
           Properties:
             - Daemon thread: exits when main thread exits
             - Error handling: logs errors but continues
             - Thread coordination: uses threading primitives to wait for actions
+            - Index assignment: monotonic, thread-safe, permanent
 
           Algorithm:
             1. Store output_path for later use in accept
@@ -573,23 +641,19 @@ class MessageHandler:
                a. Loop:
                   - Call backend.get_next_image() (blocks)
                   - If None: break
+                  - Assign index via _assign_image_index(buffered)
                   - Store as self._current_image
-                  - Encode image as base64 PNG:
-                    * Create BytesIO buffer
-                    * Save image to buffer as PNG
-                    * Base64 encode buffer contents
+                  - Save to preview directory
                   - Send IMAGE_READY event with:
-                    * image_data: base64 string
-                    * seed: buffered.seed
-                    * buffer_count: len(backend.buffer)
-                    * buffer_max: backend.buffer.max_size
+                    * index: stable backend index
+                    * path: absolute path to PNG file
+                    * display_path: path with ~ for home
+                  - Emit STATE_CHANGED(state=IDLE)
                   - Wait for skip/accept action (block on threading.Event or similar)
                b. Exit loop on shutdown
             3. Start daemon thread running deliver_loop
         """
         from textbrush.ipc.protocol import ErrorEvent, ImageReadyEvent
-
-        self._output_path = Path(output_path) if output_path else None
 
         def deliver_loop():
             logger.info("Image delivery loop started")
@@ -616,10 +680,12 @@ class MessageHandler:
                         )
                         break
 
+                    index = self._assign_image_index(buffered)
+
                     with self._state_lock:
                         self._current_image = buffered
 
-                    logger.info(f"Image ready: seed={buffered.seed}")
+                    logger.info(f"Image ready: index={index}, seed={buffered.seed}")
 
                     # Save to preview directory with full metadata in PNG tEXt chunks
                     preview_path = self.backend.save_to_preview(buffered)
@@ -630,14 +696,15 @@ class MessageHandler:
                             MessageType.IMAGE_READY,
                             dataclass_to_dict(
                                 ImageReadyEvent(
+                                    index=index,
                                     path=str(preview_path.absolute()),
                                     display_path=display_path(preview_path),
-                                    buffer_count=len(self.backend.buffer),
-                                    buffer_max=self.backend.buffer.max_size,
                                 )
                             ),
                         )
                     )
+
+                    self._emit_state_changed(server, "idle")
 
                     self._wait_for_action()
 
@@ -743,3 +810,170 @@ class MessageHandler:
                     MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(e), fatal=True))
                 )
             )
+
+    def handle_get_image_list(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Handle GET_IMAGE_LIST command: send full image list to frontend.
+
+        CONTRACT:
+          Inputs:
+            - server: IPCServer instance for sending events
+
+          Outputs: none (sends IMAGE_LIST event)
+
+          Invariants:
+            - Sends IMAGE_LIST event containing all images (including soft-deleted)
+            - Images ordered by index (ascending)
+            - Each entry has: index, path, display_path, deleted flag
+
+          Properties:
+            - Thread-safe: uses state lock for accessing image data
+            - Complete state: includes all images, even deleted ones
+            - Synchronous: sends response immediately
+            - Recovery mechanism: allows frontend to rebuild state
+
+          Algorithm:
+            1. Acquire state lock
+            2. Build list of ImageListEntry for all indices:
+               a. For each index in image_index_map:
+                  - Get BufferedImage
+                  - Determine if deleted (index in deleted_indices)
+                  - If deleted: path="", display_path=""
+                  - If not deleted: use buffered_image.temp_path
+                  - Create ImageListEntry
+               b. Sort by index
+            3. Release lock
+            4. Send IMAGE_LIST event with all entries
+        """
+        from textbrush.ipc.protocol import ImageListEvent
+
+        with self._state_lock:
+            image_entries = []
+            for index in sorted(self._image_index_map.keys()):
+                buffered_image = self._image_index_map[index]
+                is_deleted = index in self._deleted_indices
+
+                if is_deleted:
+                    path = ""
+                    display_path_str = ""
+                else:
+                    path = str(buffered_image.temp_path) if buffered_image.temp_path else ""
+                    display_path_str = (
+                        display_path(buffered_image.temp_path) if buffered_image.temp_path else ""
+                    )
+
+                image_entries.append(
+                    {
+                        "index": index,
+                        "path": path,
+                        "display_path": display_path_str,
+                        "deleted": is_deleted,
+                    }
+                )
+
+        server.send(
+            Message(
+                MessageType.IMAGE_LIST,
+                dataclass_to_dict(ImageListEvent(images=image_entries)),
+            )
+        )
+
+    def _emit_state_changed(
+        self,
+        server: "IPCServer",  # type: ignore  # noqa: F821
+        state: str,
+        prompt: str | None = None,
+        message: str | None = None,
+        fatal: bool | None = None,
+    ) -> None:
+        """Emit STATE_CHANGED event with current backend state.
+
+        CONTRACT:
+          Inputs:
+            - server: IPCServer instance for sending events
+            - state: BackendState enum value as string (loading, idle, generating, paused, error)
+            - prompt: string, present only when state = generating
+            - message: string, present only when state = error
+            - fatal: boolean, present only when state = error
+
+          Outputs: none (sends STATE_CHANGED event)
+
+          Invariants:
+            - state is one of: loading, idle, generating, paused, error
+            - If state = generating: prompt must be non-None
+            - If state = error: message must be non-None
+            - StateChangedEvent payload matches state requirements
+
+          Properties:
+            - Atomic state broadcast: single event for all state information
+            - Validation: ensures state-specific fields are present
+            - Non-blocking: returns immediately after sending
+
+          Algorithm:
+            1. Validate inputs:
+               a. If state = generating: assert prompt is not None
+               b. If state = error: assert message is not None
+            2. Create StateChangedEvent with state, prompt, message, fatal
+            3. Send STATE_CHANGED message via server
+            4. Log state change
+        """
+        from textbrush.ipc.protocol import BackendState, StateChangedEvent
+
+        # Validate state-specific fields
+        if state == BackendState.GENERATING.value:
+            if prompt is None:
+                raise ValueError("prompt must be provided when state=GENERATING")
+        if state == BackendState.ERROR.value:
+            if message is None:
+                raise ValueError("message must be provided when state=ERROR")
+
+        # Thread-safe state update
+        with self._state_lock:
+            self._current_state = state
+
+        # Create and send event
+        event = StateChangedEvent(state=state, prompt=prompt, message=message, fatal=fatal)
+        server.send(Message(MessageType.STATE_CHANGED, dataclass_to_dict(event)))
+
+        # Log state change
+        if state == BackendState.GENERATING.value:
+            logger.info(f"State changed: {state} (prompt: '{prompt[:50] if prompt else ''}...')")
+        elif state == BackendState.ERROR.value:
+            logger.error(f"State changed: {state} (message: {message}, fatal: {fatal})")
+        else:
+            logger.info(f"State changed: {state}")
+
+    def _assign_image_index(self, buffered_image: BufferedImage) -> int:
+        """Assign next available index to image and store in index map.
+
+        CONTRACT:
+          Inputs:
+            - buffered_image: BufferedImage instance to assign index to
+
+          Outputs:
+            - index: non-negative integer, stable and unique
+
+          Invariants:
+            - Acquires state lock before modifying _next_index
+            - Index is monotonically increasing (never reused)
+            - Stores mapping: index → buffered_image in _image_index_map
+            - Thread-safe: uses state lock
+
+          Properties:
+            - Monotonic counter: indices are 0, 1, 2, 3, ...
+            - Append-only: no gaps in assignment sequence
+            - Permanent: index never changes once assigned
+            - Thread-safe: protected by state lock
+
+          Algorithm:
+            1. Acquire state lock
+            2. Read current _next_index value
+            3. Store buffered_image in _image_index_map[_next_index]
+            4. Increment _next_index by 1
+            5. Release lock
+            6. Return assigned index
+        """
+        with self._state_lock:
+            index = self._next_index
+            self._image_index_map[index] = buffered_image
+            self._next_index += 1
+            return index

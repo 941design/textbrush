@@ -623,6 +623,53 @@ class TextbrushBackend:
         buffered_image.temp_path = None
         return output_path
 
+    def accept_all(self, images: list[BufferedImage], output_dir: Path | None = None) -> list[Path]:
+        """Move all delivered images from preview to output directory.
+
+        CONTRACT:
+          Inputs:
+            - images: collection of BufferedImage, each with temp_path set to preview file
+            - output_dir: optional Path to output directory (None = use config.output.directory)
+
+          Outputs:
+            - collection of Path: absolute paths where images were moved, in same order as inputs
+
+          Invariants:
+            - len(output paths) equals len(images)
+            - All preview files are moved to output directory
+            - All preview files no longer exist after call
+            - All buffered_image.temp_path fields are cleared (set to None)
+            - Order preservation: output_paths[i] corresponds to images[i]
+
+          Properties:
+            - Batch operation: moves all images in sequence
+            - Error handling: if any move fails, raises exception (partial state possible)
+            - Auto-naming: generates unique filename for each image
+            - Directory creation: ensures output directory exists
+
+          Algorithm:
+            1. Determine output_dir (use parameter or config.output.directory)
+            2. Ensure output_dir exists
+            3. Initialize empty output_paths list
+            4. For each buffered_image in images (in order):
+               a. Call accept_from_preview(buffered_image, output_path=None)
+                  - This auto-generates unique path in output_dir
+               b. Append returned path to output_paths
+            5. Return output_paths list
+        """
+        if output_dir is None:
+            output_dir = self.config.output.directory
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_paths: list[Path] = []
+        for buffered_image in images:
+            # accept_from_preview will auto-generate unique path
+            path = self.accept_from_preview(buffered_image, output_path=None)
+            output_paths.append(path)
+
+        return output_paths
+
     def delete_preview(self, buffered_image: BufferedImage) -> None:
         """Delete preview file for skipped image.
 
