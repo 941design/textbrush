@@ -48,24 +48,6 @@ make download-model
 make build
 ```
 
-### From Release Binaries
-
-Download pre-built binaries from [GitHub Releases](https://github.com/941design/textbrush/releases/latest):
-
-**macOS:**
-- `textbrush-aarch64-apple-darwin.tar.gz` (Apple Silicon M1/M2/M3/M4)
-- `textbrush-x86_64-apple-darwin.tar.gz` (Intel)
-
-**Linux:**
-- `textbrush-x86_64-unknown-linux-gnu.tar.gz`
-
-Extract and run:
-```bash
-tar -xzf textbrush-*.tar.gz
-cd textbrush
-./textbrush --help
-```
-
 ## Usage
 
 ### Basic Usage
