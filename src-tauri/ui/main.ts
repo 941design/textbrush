@@ -710,9 +710,10 @@ function updateNavDots(): void {
   const dotsToShow: Array<number | 'gap'> = [];
 
   for (let i = 0; i < sortedIndices.length; i++) {
-    const idx = sortedIndices[i];
+    const idx = sortedIndices[i]!;
+    const prevIdx = sortedIndices[i - 1];
     // Add gap if there's a jump from previous index
-    if (i > 0 && idx > sortedIndices[i - 1] + 1) {
+    if (i > 0 && prevIdx !== undefined && idx > prevIdx + 1) {
       dotsToShow.push('gap');
     }
     dotsToShow.push(idx);

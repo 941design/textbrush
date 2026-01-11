@@ -179,10 +179,12 @@ class TestAcceptCommand:
         assert "No images to accept" in call_args.payload["message"]
 
     def test_accept_saves_image(self, handler, mock_server, tmp_path):
-        """Accept command batch saves all delivered images via backend."""
+        """Accept command batch saves all non-deleted images via backend."""
         image1 = Mock()
         image2 = Mock()
-        handler._delivered_images = [image1, image2]
+        # Use index-based tracking (new architecture)
+        handler._image_index_map = {0: image1, 1: image2}
+        handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
         output_paths = [tmp_path / "img1.png", tmp_path / "img2.png"]
@@ -192,7 +194,7 @@ class TestAcceptCommand:
         handler.handle_accept(mock_server)
 
         mock_backend.accept_all.assert_called_once()
-        # Verify it was called with the delivered images
+        # Verify it was called with the delivered images (sorted by index)
         call_args = mock_backend.accept_all.call_args[0][0]
         assert call_args == [image1, image2]
 
@@ -205,7 +207,9 @@ class TestAcceptCommand:
     def test_accept_signals_delivery_thread(self, handler, mock_server, tmp_path):
         """Accept command does NOT signal delivery thread (process exits)."""
         image1 = Mock()
-        handler._delivered_images = [image1]
+        # Use index-based tracking (new architecture)
+        handler._image_index_map = {0: image1}
+        handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.accept_all = Mock(return_value=[tmp_path / "test.png"])
@@ -220,7 +224,9 @@ class TestAcceptCommand:
     def test_accept_exception_sends_error(self, handler, mock_server):
         """Accept handles backend exceptions gracefully."""
         image1 = Mock()
-        handler._delivered_images = [image1]
+        # Use index-based tracking (new architecture)
+        handler._image_index_map = {0: image1}
+        handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.accept_all = Mock(side_effect=RuntimeError("Disk full"))

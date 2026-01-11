@@ -149,18 +149,23 @@ class TestIPCCompleteWorkflow:
         # Current image should be cleared
         assert handler._current_image is None
 
-    def test_accept_command_saves_image_and_returns_path(self, config, mock_backend):
-        """ACCEPT command should move preview to output via backend and return path."""
+    def test_accept_command_saves_image_and_returns_path(self, config, mock_backend, tmp_path):
+        """ACCEPT command should move images to output via backend and return paths."""
         handler = MessageHandler(config)
         handler.backend = mock_backend
         server = IPCServer(handler)
 
-        # Set a current image
+        # Set up an image in the index map (as handle_accept now uses _image_index_map)
         test_image = Image.new("RGB", (64, 64), color="blue")
         buffered_image = Mock()
         buffered_image.image = test_image
         buffered_image.seed = 99
-        handler._current_image = buffered_image
+        handler._image_index_map[0] = buffered_image
+
+        # Mock accept_all to return paths (handle_accept calls accept_all, not accept_from_preview)
+        output_path = tmp_path / "output" / "accepted.png"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        mock_backend.accept_all = Mock(return_value=[output_path])
 
         # Mock stdout to capture messages
         messages = []
@@ -175,8 +180,11 @@ class TestIPCCompleteWorkflow:
         # Send ACCEPT command
         handler.handle_accept(server)
 
-        # Backend accept_from_preview should be called
-        mock_backend.accept_from_preview.assert_called_once()
+        # Backend accept_all should be called with the image
+        mock_backend.accept_all.assert_called_once()
+        call_args = mock_backend.accept_all.call_args[0][0]
+        assert len(call_args) == 1
+        assert call_args[0] is buffered_image
 
         # ACCEPTED event should be sent
         assert any(msg.type == MessageType.ACCEPTED for msg in messages)

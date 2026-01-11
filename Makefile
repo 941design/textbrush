@@ -26,6 +26,8 @@ dev:  ## Run textbrush CLI with --help
 	uv run textbrush --help
 
 # Example prompt and dimensions for development
+# NOTE: DEV_WIDTH and DEV_HEIGHT are internal Tauri launch args used during development only.
+# They are NOT part of the textbrush CLI interface. The user-facing CLI uses --aspect-ratio instead.
 DEV_PROMPT ?= "A watercolor painting of a cat"
 DEV_WIDTH ?= 256
 DEV_HEIGHT ?= 256
@@ -41,7 +43,7 @@ test:  ## Run test suite with pytest (excludes slow/integration tests)
 	cd src-tauri && cargo check
 
 test-all:  ## Run full test suite including slow/integration tests
-	uv run pytest tests -v
+	uv run pytest tests -v --run-slow
 	cd src-tauri && cargo check
 
 test-e2e:  ## Run end-to-end smoke tests

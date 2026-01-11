@@ -9458,7 +9458,8 @@ function updateNavDots() {
   const dotsToShow = [];
   for (let i = 0; i < sortedIndices.length; i++) {
     const idx = sortedIndices[i];
-    if (i > 0 && idx > sortedIndices[i - 1] + 1) {
+    const prevIdx = sortedIndices[i - 1];
+    if (i > 0 && prevIdx !== void 0 && idx > prevIdx + 1) {
       dotsToShow.push("gap");
     }
     dotsToShow.push(idx);

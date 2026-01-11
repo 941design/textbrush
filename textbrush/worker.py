@@ -318,12 +318,13 @@ class GenerationWorker:
           Algorithm:
             1. Log worker start
             2. Loop while not stopped:
-               a. Generate image using engine.generate(prompt, options)
-               b. Create BufferedImage with result.image and result.seed
-               c. Put image in buffer with timeout (blocks if full)
-               d. If put fails and stopped: break loop
-               e. Log debug message with seed
-               f. Increment seed in options for next generation
+               a. Capture current prompt and options (may change during generate())
+               b. Generate image using engine.generate(prompt, options)
+               c. Create BufferedImage with result.image, result.seed, and captured prompt/options
+               d. Put image in buffer with timeout (blocks if full)
+               e. If put fails and stopped: break loop
+               f. Log debug message with seed
+               g. Increment seed in options for next generation
             3. Catch exceptions: log error, continue if not stopped
             4. Log worker stop
         """
@@ -341,20 +342,26 @@ class GenerationWorker:
                     break
 
                 try:
+                    # Capture prompt and options before generation starts.
+                    # These may be changed by update_config() during generate(),
+                    # so we need to use the values that were active at generation start.
+                    generation_prompt = self.prompt
+                    generation_options = self.options
+
                     # Notify callback before starting generation
                     if self._on_generation_start:
-                        current_seed = self.options.seed or 0
+                        current_seed = generation_options.seed or 0
                         queue_position = len(self.buffer)
                         self._on_generation_start(current_seed, queue_position)
 
-                    result = self.engine.generate(self.prompt, self.options)
+                    result = self.engine.generate(generation_prompt, generation_options)
 
                     buffered_image = BufferedImage(
                         image=result.image,
                         seed=result.seed,
-                        prompt=self.prompt,
+                        prompt=generation_prompt,
                         model_name=result.model_name,
-                        aspect_ratio=self.options.aspect_ratio,
+                        aspect_ratio=generation_options.aspect_ratio,
                         generated_width=result.generated_width,
                         generated_height=result.generated_height,
                     )
@@ -366,7 +373,7 @@ class GenerationWorker:
 
                     logger.debug(f"Generated image with seed {result.seed}")
 
-                    next_seed = (self.options.seed or result.seed) + 1
+                    next_seed = (generation_options.seed or result.seed) + 1
                     self.options = replace(self.options, seed=next_seed)
 
                 except Exception as e:

@@ -226,7 +226,14 @@ class MessageHandler:
         from textbrush.ipc.protocol import AcceptedEvent, ErrorEvent
 
         with self._state_lock:
-            if not self._delivered_images or not self.backend:
+            # Build list of non-deleted images from index map
+            images_to_accept = [
+                self._image_index_map[idx]
+                for idx in sorted(self._image_index_map.keys())
+                if idx not in self._deleted_indices
+            ]
+
+            if not images_to_accept or not self.backend:
                 server.send(
                     Message(
                         MessageType.ERROR,
@@ -235,9 +242,10 @@ class MessageHandler:
                 )
                 return
 
-            # Copy list and clear (backend no longer owns these after accept)
-            images_to_accept = list(self._delivered_images)
-            self._delivered_images.clear()
+            # Clear state after successful collection (backend no longer owns these)
+            self._image_index_map.clear()
+            self._deleted_indices.clear()
+            self._delivered_images.clear()  # Keep for compatibility
 
         try:
             # Batch save all delivered images
@@ -305,8 +313,11 @@ class MessageHandler:
             8. Trigger server shutdown (server.shutdown())
         """
         with self._state_lock:
-            images_to_cleanup = list(self._delivered_images)
-            self._delivered_images.clear()
+            # Get all images for cleanup (including deleted ones that still have temp files)
+            images_to_cleanup = list(self._image_index_map.values())
+            self._image_index_map.clear()
+            self._deleted_indices.clear()
+            self._delivered_images.clear()  # Keep for compatibility
 
         # Delete all delivered images temp files
         for buffered_image in images_to_cleanup:
@@ -383,7 +394,8 @@ class MessageHandler:
                - count: 0 (buffer was just cleared)
                - max: backend.buffer.max_size
                - generating: True only if not paused
-            8. Return (image delivery thread will deliver new images automatically)
+            8. Clear current_image (now stale) and signal delivery thread to continue
+            9. Return (image delivery thread will deliver new images automatically)
 
         Thread Safety:
           - backend.update_config() is thread-safe: updates worker config
@@ -474,6 +486,12 @@ class MessageHandler:
                 ),
             )
         )
+
+        # Signal delivery thread to continue - it may be waiting for action after
+        # delivering the previous image. Clear current image since it's now stale.
+        with self._state_lock:
+            self._current_image = None
+        self._signal_action()
 
     def handle_pause(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle PAUSE command: toggle pause/resume generation.

@@ -40,10 +40,15 @@ class MockFluxPipeline:
 
     def __init__(self, *args, **kwargs):
         self.device = "cpu"
+        self.last_requested_width = None
+        self.last_requested_height = None
 
     def __call__(self, prompt, width, height, num_inference_steps, generator):
-        """Generate mock image with controlled dimensions."""
-        image = Image.new("RGB", (width, height), color="blue")
+        """Generate small mock image, recording requested dimensions for contract verification."""
+        self.last_requested_width = width
+        self.last_requested_height = height
+        # Use small 64x64 image regardless of requested size (resource efficient)
+        image = Image.new("RGB", (64, 64), color="blue")
         return Mock(images=[image])
 
     def to(self, device):
@@ -58,9 +63,14 @@ class MockFluxPipeline:
 
 @pytest.fixture
 def mock_flux_pipeline():
-    """Fixture to mock FluxPipeline.from_pretrained."""
+    """Fixture to mock FluxPipeline.from_pretrained.
+
+    The mock instance is accessible via mock_pipeline_class.from_pretrained.return_value
+    to verify requested dimensions in contract tests.
+    """
     with patch("textbrush.inference.flux.FluxPipeline") as mock_pipeline_class:
-        mock_pipeline_class.from_pretrained.return_value = MockFluxPipeline()
+        mock_instance = MockFluxPipeline()
+        mock_pipeline_class.from_pretrained.return_value = mock_instance
         yield mock_pipeline_class
 
 
@@ -81,7 +91,10 @@ class TestEndToEndImageGeneration:
         image = backend.get_next_image()
         assert image is not None
         assert isinstance(image, BufferedImage)
-        assert image.image.size == (1024, 1024)
+        # Verify contract: engine requested correct dimensions for 1:1 aspect ratio
+        mock_instance = mock_flux_pipeline.from_pretrained.return_value
+        requested = (mock_instance.last_requested_width, mock_instance.last_requested_height)
+        assert requested == (1024, 1024)
 
         backend.shutdown()
 
@@ -162,14 +175,14 @@ class TestAspectRatioMapping:
         "aspect_ratio,expected_size",
         [
             ("1:1", (1024, 1024)),
-            ("16:9", (1344, 768)),
-            ("9:16", (768, 1344)),
+            ("16:9", (1280, 720)),
+            ("9:16", (720, 1280)),
         ],
     )
     def test_aspect_ratio_produces_correct_dimensions(
         self, mock_flux_pipeline, tmp_path, aspect_ratio, expected_size
     ):
-        """Images generated with aspect_ratio have correct dimensions."""
+        """Engine requests correct dimensions for each aspect ratio."""
         config = create_test_config(tmp_path)
         backend = TextbrushBackend(config)
 
@@ -179,7 +192,10 @@ class TestAspectRatioMapping:
         image = backend.get_next_image()
 
         assert image is not None
-        assert image.image.size == expected_size
+        # Verify contract: engine requested correct dimensions
+        mock_instance = mock_flux_pipeline.from_pretrained.return_value
+        requested = (mock_instance.last_requested_width, mock_instance.last_requested_height)
+        assert requested == expected_size
 
         backend.shutdown()
 
@@ -259,7 +275,9 @@ class TestImageAcceptance:
         backend.shutdown()
 
     def test_accept_auto_generates_path(self, mock_flux_pipeline, tmp_path):
-        """accept_current() without path generates filename with seed."""
+        """accept_current() without path generates UUID-based filename."""
+        import re
+
         config = create_test_config(tmp_path)
         backend = TextbrushBackend(config)
 
@@ -271,7 +289,10 @@ class TestImageAcceptance:
         saved_path = backend.accept_current()
 
         assert saved_path.parent == config.output.directory
-        assert "seed800" in saved_path.name
+        # UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        stem = saved_path.stem
+        assert re.match(uuid_pattern, stem), f"Expected UUID filename, got: {stem}"
         assert saved_path.suffix == ".png"
         assert saved_path.exists()
 
