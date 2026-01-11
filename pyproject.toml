@@ -2,7 +2,8 @@
 name = "textbrush"
 version = "0.1.0"
 description = "Text-to-image generation tool with customizable workflows"
-authors = [{name = "Textbrush Team"}]
+authors = [{name = "Markus Rother", email = "mail@markusrother.de"}]
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

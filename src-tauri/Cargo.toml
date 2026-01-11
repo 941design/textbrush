@@ -2,7 +2,8 @@
 name = "textbrush"
 version = "0.1.0"
 description = "Text-to-image generation tool"
-authors = ["Textbrush Team"]
+authors = ["Markus Rother <mail@markusrother.de>"]
+license = "MIT"
 edition = "2021"
 
 [build-dependencies]

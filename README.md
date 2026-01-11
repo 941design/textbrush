@@ -216,6 +216,18 @@ make dev           # Run CLI with --help
 make clean         # Remove build artifacts
 ```
 
-For detailed development guidelines and coding standards, see `CLAUDE.md`.
-
 For detailed technical guides and troubleshooting, see [docs/](docs/).
+
+## TODO / Future Ideas
+
+- [ ] **JPEG output with EXIF metadata** - Support JPEG as well as PNG. Add a radio button group next to control buttons to toggle output format. Add corresponding CLI parameters. Default to PNG. For JPEG, use EXIF for metadata storage.
+
+- [ ] **Daemon mode for local models** - Since startup time is relatively high due to model loading, consider optionally running the service as a daemon for local models. This pairs well with pluggable model support.
+
+- [ ] **Post-processing tools** - Add image post-processing capabilities (cropping, filters, adjustments, etc.)
+
+- [ ] **Pluggable model support** - Allow plugging in other models beyond FLUX.1 schnell, including remote/API-based models (e.g., OpenAI DALL-E, Stability AI, etc.)
+
+- [ ] **Tauri MCP integration** - Explore [tauri-mcp](https://github.com/dirvine/tauri-mcp) for enhanced Tauri capabilities
+
+- [ ] **Architecture diagram** - Create a visual representation of the Tauri-Python-IPC architecture for documentation
