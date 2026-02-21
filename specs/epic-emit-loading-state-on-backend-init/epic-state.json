@@ -1,0 +1,28 @@
+{
+  "epic_name": "emit-loading-state-on-backend-init",
+  "created_at": "2026-02-21T19:14:30Z",
+  "updated_at": "2026-02-21T22:45:00Z",
+  "status": "in_progress",
+  "phase": "STORY_01_COMPLETE",
+  "current_story": "02",
+  "completed_stories": ["01"],
+  "blocked_stories": [],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-02-21T19:14:30Z",
+      "trigger": "validation_passed"
+    },
+    {
+      "phase": "STORIES_DEFINED",
+      "timestamp": "2026-02-21T19:22:50Z",
+      "trigger": "stories_created"
+    },
+    {
+      "phase": "STORY_01_COMPLETE",
+      "timestamp": "2026-02-21T22:45:00Z",
+      "trigger": "story_01_verified_and_committed"
+    }
+  ]
+}

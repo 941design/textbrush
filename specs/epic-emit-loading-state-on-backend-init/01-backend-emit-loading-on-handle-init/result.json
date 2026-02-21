@@ -1,0 +1,65 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "created_at": "2026-02-21T22:30:00Z",
+  "updated_at": "2026-02-21T22:45:00Z",
+  "completed_at": "2026-02-21T22:45:00Z",
+
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-02-21T22:30:00Z",
+    "completed_at": "2026-02-21T22:35:00Z",
+    "architect_session_id": null,
+    "files_created": [],
+    "files_modified": [
+      "textbrush/ipc/handler.py",
+      "tests/test_ipc_handler.py",
+      "tests/e2e/test_full_workflow.py"
+    ],
+    "mocks_introduced": []
+  },
+
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-02-21T22:40:00Z",
+      "results": [
+        {"question_id": "VQ-01-001", "result": "pass", "evidence": {"files_examined": ["textbrush/ipc/handler.py:123"], "findings": "_emit_state_changed(server, 'loading') at line 123, threading.Thread.start() at line 174 — correct ordering"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-002", "result": "pass", "evidence": {"files_examined": ["textbrush/ipc/handler.py:117-174"], "findings": "Loading call is unconditional, at top level of handle_init before any branching"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-003", "result": "pass", "evidence": {"files_examined": ["textbrush/ipc/handler.py:826-870"], "findings": "_init_backend contains no _emit_state_changed('loading') call"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-004", "result": "pass", "evidence": {"files_examined": ["tests/test_ipc_handler.py:123-143"], "findings": "test_init_emits_loading_state_first PASSED"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-005", "result": "pass", "evidence": {"files_examined": ["tests/test_ipc_handler.py:145-169"], "findings": "test_init_emits_loading_unconditionally PASSED"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-006", "result": "pass", "evidence": {"files_examined": ["tests/test_ipc_handler.py:62-169"], "findings": "5/5 TestInitCommand tests PASSED"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-007", "result": "pass", "evidence": {"files_examined": ["tests/e2e/test_full_workflow.py:103-145"], "findings": "TestBackendLoadingStateEmission::test_handle_init_emits_loading_before_idle PASSED"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "VQ-01-008", "result": "pass", "evidence": {"files_examined": ["textbrush/ipc/handler.py", "tests/test_ipc_handler.py", "tests/e2e/test_full_workflow.py"], "findings": "ruff: All checks passed!"}, "severity": 1, "confidence": 1.0},
+        {"question_id": "MQ-01-001", "result": "pass", "evidence": {"files_examined": ["tests/"], "findings": "188 unit tests passed, 0 failed"}, "severity": 1, "confidence": 1.0}
+      ],
+      "summary": {"total": 9, "passed": 9, "failed": 0, "partial": 0},
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-02-21T22:40:00Z",
+        "command": "source venv/bin/activate && python -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py tests/test_ipc_handler.py tests/e2e/test_full_workflow.py -q --tb=short",
+        "passed": true,
+        "total_tests": 202,
+        "passed_tests": 194,
+        "failed_tests": 0,
+        "failures": [],
+        "evidence": "194 passed, 8 skipped in 8.08s",
+        "e2e_tests": {
+          "ran_at": "2026-02-21T22:40:00Z",
+          "command": "source venv/bin/activate && python -m pytest tests/e2e/test_full_workflow.py -m e2e_smoke -v",
+          "passed": true,
+          "total_tests": 6,
+          "passed_tests": 6,
+          "failed_tests": 0,
+          "test_files": ["tests/e2e/test_full_workflow.py"],
+          "evidence": "6 e2e_smoke tests passed (TestCLIHelp, TestDownloadModelCLI x3, TestModelNotFoundMessage, TestBackendLoadingStateEmission)"
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}

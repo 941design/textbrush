@@ -9,6 +9,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -98,6 +99,51 @@ class TestModelNotFoundMessage:
                 assert "scripts/download_model.py" not in msg, (
                     f"Error message should not reference scripts/, got: {msg}"
                 )
+
+
+class TestBackendLoadingStateEmission:
+    """Property: handle_init emits state_changed(loading) as first IPC event."""
+
+    @pytest.mark.e2e_smoke
+    def test_handle_init_emits_loading_before_idle(self):
+        """Backend emits state_changed(loading) as first STATE_CHANGED via IPC before idle.
+
+        This is a subprocess-style in-process E2E test that creates a real IPCServer and
+        MessageHandler, patches only TextbrushBackend to avoid the torch dependency, then
+        drives the full handle_init → _init_backend path and verifies that the first
+        STATE_CHANGED event carries state='loading'.
+        """
+        from textbrush.backend import TextbrushBackend
+        from textbrush.config import get_default_config
+        from textbrush.ipc.handler import MessageHandler
+        from textbrush.ipc.protocol import MessageType
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_server.send = Mock()
+
+        payload = {
+            "prompt": "e2e loading state test",
+            "seed": None,
+            "aspect_ratio": "1:1",
+        }
+
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend"):
+                handler.handle_init(payload, mock_server)
+
+        state_changed_calls = [
+            call for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert len(state_changed_calls) >= 1, (
+            "handle_init must emit at least one STATE_CHANGED event"
+        )
+        first_state = state_changed_calls[0][0][0].payload["state"]
+        assert first_state == "loading", (
+            f"First STATE_CHANGED from handle_init must be 'loading', got '{first_state}'"
+        )
 
 
 @pytest.mark.integration

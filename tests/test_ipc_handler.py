@@ -82,8 +82,9 @@ class TestInitCommand:
             "format": "png",
         }
 
-        with patch.object(handler, "_init_backend"):
-            handler.handle_init(payload, mock_server)
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend"):
+                handler.handle_init(payload, mock_server)
 
         assert handler.backend is not None
         assert isinstance(handler.backend, TextbrushBackend)
@@ -96,8 +97,9 @@ class TestInitCommand:
             "aspect_ratio": "1:1",
         }
 
-        with patch.object(handler, "_init_backend"):
-            handler.handle_init(payload, mock_server)
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend"):
+                handler.handle_init(payload, mock_server)
 
         assert handler.backend is not None
 
@@ -114,9 +116,58 @@ class TestInitCommand:
         def mock_init_backend(on_ready, server):
             init_called.set()
 
-        with patch.object(handler, "_init_backend", side_effect=mock_init_backend):
-            handler.handle_init(payload, mock_server)
-            assert init_called.wait(timeout=1.0)
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend", side_effect=mock_init_backend):
+                handler.handle_init(payload, mock_server)
+                assert init_called.wait(timeout=1.0)
+
+    def test_init_emits_loading_state_first(self, handler, mock_server):
+        """handle_init emits state_changed(loading) as first STATE_CHANGED event."""
+        payload = {
+            "prompt": "test prompt",
+            "seed": None,
+            "aspect_ratio": "1:1",
+        }
+
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend"):
+                handler.handle_init(payload, mock_server)
+
+        state_changed_calls = [
+            call for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert len(state_changed_calls) >= 1, "At least one STATE_CHANGED message must be sent"
+        first_state = state_changed_calls[0][0][0].payload["state"]
+        assert first_state == "loading", (
+            f"First STATE_CHANGED must be 'loading', got '{first_state}'"
+        )
+
+    def test_init_emits_loading_unconditionally(self, handler, mock_server):
+        """handle_init emits state_changed(loading) unconditionally for all payload variations."""
+        # Test with a non-default aspect ratio to confirm no conditional branching skips loading
+        payload = {
+            "prompt": "another test prompt",
+            "seed": 42,
+            "aspect_ratio": "16:9",
+            "output_path": "/tmp/out.png",
+            "format": "png",
+        }
+
+        with patch.object(TextbrushBackend, "__init__", return_value=None):
+            with patch.object(handler, "_init_backend"):
+                handler.handle_init(payload, mock_server)
+
+        state_changed_calls = [
+            call for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert len(state_changed_calls) >= 1, "At least one STATE_CHANGED message must be sent"
+        first_state = state_changed_calls[0][0][0].payload["state"]
+        assert first_state == "loading", (
+            f"First STATE_CHANGED must be 'loading' for all payload variations, "
+            f"got '{first_state}'"
+        )
 
 
 class TestSkipCommand:
@@ -752,7 +803,9 @@ class TestUpdateConfigCommand:
         handler.backend = mock_backend
         handler._generation_started = False
 
-        payload = {"prompt": "futuristic neon lobster", "aspect_ratio": "1:1", "width": 512, "height": 512}
+        payload = {
+            "prompt": "futuristic neon lobster", "aspect_ratio": "1:1", "width": 512, "height": 512
+        }
         handler.handle_update_config(payload, mock_server)
 
         mock_backend.update_config.assert_called_once()
@@ -760,7 +813,9 @@ class TestUpdateConfigCommand:
         assert handler._pending_startup_config["prompt"] == "futuristic neon lobster"
         mock_server.send.assert_not_called()
 
-    def test_init_applies_latest_queued_update_config_before_start_generation(self, handler, mock_server):
+    def test_init_applies_latest_queued_update_config_before_start_generation(
+        self, handler, mock_server
+    ):
         """Queued UPDATE_CONFIG during init load overrides INIT config for first generation."""
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()

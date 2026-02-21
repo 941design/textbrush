@@ -120,6 +120,7 @@ class MessageHandler:
             f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
         )
         self._current_prompt = cmd.prompt  # Store prompt for state_changed events
+        self._emit_state_changed(server, "loading")
         self.backend = TextbrushBackend(self.config)
         self._generation_started = False
         self._pending_startup_config = None

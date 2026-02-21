@@ -1,0 +1,146 @@
+{
+  "created_at": "2026-02-21T21:15:00Z",
+  "key_files": [
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "65-172",
+      "relevance": "handle_init method — where new _emit_state_changed(server, 'loading') must be inserted; currently no state emission before thread launch",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "936-999",
+      "relevance": "_emit_state_changed implementation; 'loading' is a simple state requiring no extra params; acquires _state_lock then calls server.send",
+      "source": "similar-features"
+    },
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "825-868",
+      "relevance": "_init_backend background thread target; calls on_ready after initialize() completes; on_ready emits 'idle' at line 132",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/ipc/protocol.py",
+      "lines": "243-314",
+      "relevance": "BackendState enum (LOADING='loading', IDLE, GENERATING, PAUSED, ERROR); StateChangedEvent dataclass (no extra fields for loading)",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "29-46",
+      "relevance": "AppState initialization — backendState hardcoded to { state: 'loading' } at line 31-33; this is the value to remove/set to null",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "258-283",
+      "relevance": "handleStateChanged: replaces state.backendState wholesale with payload; no merge; entry point for all state_changed events",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "457-503",
+      "relevance": "updateLoadingOverlayForState: handles 'loading' as case; NOT called at startup, only from handleStateChanged — loading overlay relies on HTML/CSS defaults",
+      "source": "similar-features"
+    },
+    {
+      "path": "tests/test_ipc_handler.py",
+      "lines": "62-118",
+      "relevance": "TestInitCommand: existing handle_init tests; use patch.object(handler, '_init_backend') to suppress thread; none assert state emissions",
+      "source": "testing-and-conventions"
+    },
+    {
+      "path": "tests/test_ipc_handler.py",
+      "lines": "502-693",
+      "relevance": "TestEmitStateChanged: property-based tests for _emit_state_changed; line 570 tests simple states including 'loading'",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/state-sync-integration.test.js",
+      "lines": "27-47",
+      "relevance": "createMockState() mirrors main.ts AppState init; hardcodes backendState.state='loading' at line 32; must be updated when main.ts changes",
+      "source": "testing-and-conventions"
+    },
+    {
+      "path": "textbrush/ipc/server.py",
+      "lines": "46-76",
+      "relevance": "IPCServer.send: thread-safe stdout writer; used by _emit_state_changed; protected by _write_lock",
+      "source": "architecture"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "Simple state emission",
+      "description": "_emit_state_changed(server, 'loading') requires no prompt/message/fatal args; 'loading', 'idle', 'paused' are simple states that pass validation without extra fields",
+      "reference": "textbrush/ipc/handler.py:973-985"
+    },
+    {
+      "name": "Mock server for unit tests",
+      "description": "Tests use `server = Mock(); server.send = Mock()` then `call_args = mock_server.send.call_args[0][0]` to inspect sent messages",
+      "reference": "tests/test_ipc_handler.py:34-38"
+    },
+    {
+      "name": "Patch _init_backend to isolate handle_init",
+      "description": "All TestInitCommand tests use `patch.object(handler, '_init_backend')` to prevent background thread from running; assertions on synchronous part of handle_init only",
+      "reference": "tests/test_ipc_handler.py:83-87"
+    },
+    {
+      "name": "Filter call_args_list by MessageType",
+      "description": "state_changed_calls = [c for c in mock_server.send.call_args_list if c[0][0].type == MessageType.STATE_CHANGED]",
+      "reference": "tests/test_ipc_handler.py:1064-1068"
+    },
+    {
+      "name": "Frontend full state replacement",
+      "description": "handleStateChanged does state.backendState = payload — wholesale replacement. Frontend can safely start with null if updateLoadingOverlayForState is guarded against null.",
+      "reference": "src-tauri/ui/main.ts:260"
+    }
+  ],
+  "similar_features": [
+    {
+      "description": "state_changed(idle) emission in on_ready callback after model loads — pattern for how loading -> idle transition currently works",
+      "reference": "textbrush/ipc/handler.py:130-132"
+    },
+    {
+      "description": "TestEmitStateChanged/test_state_transitions_update_current_state already calls _emit_state_changed(server, BackendState.LOADING.value) and asserts _current_state updates — loading emission already tested in isolation",
+      "reference": "tests/test_ipc_handler.py:587-617"
+    }
+  ],
+  "architecture": {
+    "ipc_flow": "handle_init (main thread) -> spawn _init_backend thread -> on_ready callback -> _emit_state_changed('idle') -> IPCServer.send -> stdout -> Tauri sidecar reader -> window.emit -> handleStateChanged -> state.backendState = payload",
+    "loading_gap": "Currently no state is emitted between INIT receipt and 'idle' — the model loading window has no state event. Frontend hardcodes 'loading' to cover this gap.",
+    "thread_safety": "_emit_state_changed called from main thread in handle_init before background thread starts — no concurrency concern. server.send uses _write_lock for thread-safe writes."
+  },
+  "extension_points": [
+    {
+      "location": "textbrush/ipc/handler.py:123-125",
+      "description": "Insert self._emit_state_changed(server, 'loading') after TextbrushBackend creation and before threading.Thread(...).start() — line 172 is the thread start"
+    },
+    {
+      "location": "src-tauri/ui/main.ts:31-33",
+      "description": "Change backendState: { state: 'loading' } to backendState: null — requires updating all guards that access state.backendState.state (isAlreadyGenerating at line 1008 is one such guard)"
+    },
+    {
+      "location": "src-tauri/ui/state-sync-integration.test.js:32",
+      "description": "Update createMockState() to match main.ts change: backendState: null (or equivalent initial state)"
+    }
+  ],
+  "testing": {
+    "unit_test_file": "tests/test_ipc_handler.py",
+    "unit_test_class": "TestInitCommand",
+    "new_test_pattern": "patch.object(handler, '_init_backend') then call handle_init, then filter mock_server.send.call_args_list for STATE_CHANGED with state='loading' as first call",
+    "frontend_test_file": "src-tauri/ui/state-sync-integration.test.js",
+    "frontend_test_runner": "node --test (Node.js built-in test runner)",
+    "e2e_test_file": "tests/e2e/test_full_workflow.py",
+    "integration_test_file": "tests/test_ipc_integration.py (requires --run-slow)"
+  },
+  "conventions": [
+    "Test classes named Test{Feature}Command or Test{BehaviorName}",
+    "Function-scoped fixtures; session-scoped only for real model loading",
+    "@hypothesis.given + @settings(deadline=None) for threading tests",
+    "ruff linting required after each increment (CLAUDE.md)",
+    "uv for package management",
+    "BackendState enum values used as strings: BackendState.LOADING.value == 'loading'",
+    "All state emissions via _emit_state_changed, never direct server.send for state events",
+    "Frontend tests in src-tauri/ui/ co-located with source, use jsdom + node:test"
+  ]
+}

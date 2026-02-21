@@ -1,0 +1,80 @@
+{
+  "created_at": "2026-02-21T22:35:00Z",
+  "story_id": "01",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "implementation",
+      "question": "Does handle_init call _emit_state_changed(server, 'loading') BEFORE spawning the background thread?",
+      "actionable_check": "Read textbrush/ipc/handler.py handle_init method; verify _emit_state_changed(server, 'loading') appears before threading.Thread(...).start()",
+      "evidence_required": ["Line number in handler.py where _emit_state_changed(server, 'loading') is called", "Line number where threading.Thread(...).start() is called", "Confirmation that loading call precedes thread start"],
+      "pass_criteria": "_emit_state_changed(server, 'loading') is called synchronously in handle_init before threading.Thread(...).start()"
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "implementation",
+      "question": "Is the loading emission unconditional — not inside any if/else branch?",
+      "actionable_check": "Read the handle_init method in handler.py; confirm _emit_state_changed(server, 'loading') is at the top level of handle_init, not inside a conditional",
+      "evidence_required": ["Code excerpt showing the placement of _emit_state_changed(server, 'loading') call", "Confirmation that no if/else wraps the call"],
+      "pass_criteria": "_emit_state_changed(server, 'loading') is called unconditionally at the top level of handle_init before any branching logic"
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "implementation",
+      "question": "Does _init_backend contain any call to _emit_state_changed with state='loading'?",
+      "actionable_check": "Read the _init_backend method in handler.py; confirm no _emit_state_changed(server, 'loading') call is present there",
+      "evidence_required": ["Confirmation that _init_backend does NOT contain _emit_state_changed(server, 'loading')", "Code excerpt of _init_backend to show its state emissions"],
+      "pass_criteria": "_init_backend does not call _emit_state_changed with state='loading'"
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "test_coverage",
+      "question": "Does test_init_emits_loading_state_first exist in TestInitCommand and verify the first STATE_CHANGED has state='loading'?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/test_ipc_handler.py::TestInitCommand::test_init_emits_loading_state_first -v; verify it exists and passes",
+      "evidence_required": ["Test output showing test_init_emits_loading_state_first PASSED", "Exit code 0"],
+      "pass_criteria": "test_init_emits_loading_state_first exists in TestInitCommand and passes"
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "test_coverage",
+      "question": "Does a second test (test_init_emits_loading_unconditionally) verify that loading is emitted regardless of payload variation?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/test_ipc_handler.py::TestInitCommand::test_init_emits_loading_unconditionally -v",
+      "evidence_required": ["Test output showing test_init_emits_loading_unconditionally PASSED", "Exit code 0"],
+      "pass_criteria": "test_init_emits_loading_unconditionally exists and passes"
+    },
+    {
+      "id": "VQ-01-006",
+      "category": "test_coverage",
+      "question": "Do all pre-existing TestInitCommand tests still pass?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/test_ipc_handler.py::TestInitCommand -v; all 5 tests pass",
+      "evidence_required": ["Full test output showing all TestInitCommand tests PASSED", "Exit code 0", "Count of tests: 5 passed"],
+      "pass_criteria": "All 5 TestInitCommand tests pass (3 pre-existing + 2 new)"
+    },
+    {
+      "id": "VQ-01-007",
+      "category": "e2e",
+      "question": "Does the e2e_smoke test TestBackendLoadingStateEmission::test_handle_init_emits_loading_before_idle pass?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/e2e/test_full_workflow.py::TestBackendLoadingStateEmission -v",
+      "evidence_required": ["Test output showing test_handle_init_emits_loading_before_idle PASSED", "Exit code 0"],
+      "pass_criteria": "The e2e_smoke test exists and passes"
+    },
+    {
+      "id": "VQ-01-008",
+      "category": "linting",
+      "question": "Does ruff linting pass on all modified files?",
+      "actionable_check": "Run: source venv/bin/activate && python -m ruff check textbrush/ipc/handler.py tests/test_ipc_handler.py tests/e2e/test_full_workflow.py",
+      "evidence_required": ["Ruff output showing 'All checks passed!'", "Exit code 0"],
+      "pass_criteria": "All modified files pass ruff linting with no errors"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "MQ-01-001",
+      "category": "regression",
+      "question": "Does the full unit test suite pass with no regressions?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py tests/test_ipc_handler.py -q --tb=short",
+      "evidence_required": ["Full test output", "Count: X passed, 0 failed", "Exit code 0"],
+      "pass_criteria": "All unit tests pass with no failures (188+ passing)"
+    }
+  ]
+}

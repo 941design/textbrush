@@ -1,0 +1,125 @@
+{
+  "epic_name": "emit-loading-state-on-backend-init",
+  "created_at": "2026-02-21T22:00:00Z",
+  "updated_at": "2026-02-21T22:00:00Z",
+  "total_stories": 2,
+
+  "stories": [
+    {
+      "id": "01",
+      "name": "backend-emit-loading-on-handle-init",
+      "title": "Backend emits state_changed(loading) at the start of handle_init",
+      "description": "Add a single call to `self._emit_state_changed(server, \"loading\")` inside `handle_init` (textbrush/ipc/handler.py) before the background `_init_backend` thread is spawned. The call must be unconditional — it executes regardless of the `start_paused` field or any other payload parameter. No changes to `_init_backend` are needed; it must NOT emit loading. Add a new unit test `test_init_emits_loading_state_first` in `TestInitCommand` that patches `_init_backend`, calls `handle_init`, filters `mock_server.send.call_args_list` for `MessageType.STATE_CHANGED`, and asserts the first such message has `data[\"state\"] == \"loading\"`. Also add a test for the `start_paused=True` path. Verify all pre-existing `TestInitCommand` tests still pass. Run `ruff` linting after the change.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-009", "AC-010"],
+      "scope": {
+        "includes": [
+          "_emit_state_changed(server, 'loading') call added to handle_init before threading.Thread.start()",
+          "New unit test test_init_emits_loading_state_first in TestInitCommand",
+          "New unit test for start_paused=True path confirming loading is still first STATE_CHANGED emission",
+          "Confirmation that _init_backend contains no _emit_state_changed(server, 'loading') call"
+        ],
+        "excludes": [
+          "Any frontend changes (main.ts, state-sync-integration.test.js)",
+          "Changes to _init_backend beyond confirming absence of loading emission",
+          "Integration or slow tests (test_ipc_integration.py --run-slow)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "backend-emits-loading-before-idle",
+            "description": "Start the backend via the CLI with a valid model config. Collect all state_changed events from stdout. Assert that the first state_changed event has state=loading and that idle (or error) follows it.",
+            "user_steps": [
+              "Launch textbrush backend subprocess with a valid INIT payload",
+              "Collect all state_changed JSON lines from stdout until idle or error is received",
+              "Assert first state_changed line has state=loading",
+              "Assert a subsequent state_changed line has state=idle or state=error"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "First STATE_CHANGED message from backend has state == 'loading'",
+              "A second STATE_CHANGED message with state == 'idle' or state == 'error' follows"
+            ]
+          }
+        ],
+        "playwright_file": "tests/e2e/test_full_workflow.py"
+      },
+      "status": "done",
+      "notes": "Self-contained backend change. No cross-story dependencies. The E2E test is a subprocess CLI test marked @pytest.mark.e2e_smoke in tests/e2e/test_full_workflow.py — no Playwright or Docker needed. AC-004 (ordering guarantee) is exercised by this E2E scenario but verification of the full IPC ordering across the Tauri bridge is deferred to Story 02. Run `uv run pytest tests/test_ipc_handler.py::TestInitCommand -v` for unit tests."
+    },
+    {
+      "id": "02",
+      "name": "frontend-remove-hardcoded-loading-state",
+      "title": "Frontend removes hardcoded backendState initial value and guards null access sites",
+      "description": "Remove the hardcoded `backendState: { state: \"loading\" }` initial value from the `AppState` initializer in `src-tauri/ui/main.ts` (lines 31-33), replacing it with `backendState: null`. This makes the frontend purely event-driven: the first `state_changed(loading)` event from the backend (now guaranteed by Story 01) establishes the initial state. Guard all access sites that dereference `state.backendState.state` against null: (1) `updateLoadingOverlayForState` must not throw TypeError when `state.backendState` is null; (2) the `isAlreadyGenerating` check in `next()` at main.ts:1008 must evaluate to `false` when `backendState` is null, not throw. Update `createMockState()` in `src-tauri/ui/state-sync-integration.test.js` to set `backendState: null`. Verify the full frontend test suite passes. Run `ruff` linting is not applicable here; ensure no TypeScript compilation errors if a type-check step exists.",
+      "acceptance_criteria": ["AC-005", "AC-006", "AC-007", "AC-008", "AC-011", "AC-012", "AC-004"],
+      "scope": {
+        "includes": [
+          "main.ts AppState initializer: backendState changed from { state: 'loading' } to null",
+          "updateLoadingOverlayForState null guard for state.backendState",
+          "isAlreadyGenerating guard in next() handling null backendState as false",
+          "createMockState() in state-sync-integration.test.js updated to backendState: null",
+          "Frontend integration test asserting handleStateChanged({ state: 'loading' }) transitions null -> { state: 'loading' } and loading overlay becomes visible"
+        ],
+        "excludes": [
+          "Any changes to textbrush/ipc/handler.py (owned by Story 01)",
+          "New backend unit tests (owned by Story 01)",
+          "Integration tests requiring --run-slow flag"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [
+        {
+          "mock_id": "MOCK-02-001",
+          "description": "Story 02 is developed assuming Story 01 has already been merged and the backend emits state_changed(loading). During development of Story 02 in isolation, the frontend integration tests use createMockState() with backendState: null and simulate the incoming state_changed(loading) event by calling handleStateChanged directly — no real backend connection required.",
+          "interface": "Backend state_changed(loading) IPC event",
+          "provided_by_story": "01",
+          "resolved_when": "Story 01 is merged before Story 02 is deployed; after merge no mock is in production code"
+        }
+      ],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "frontend-state-driven-by-backend-event",
+            "description": "Start the full application (backend + frontend via tauri dev or built binary). Confirm via CLI subprocess test that the first state_changed event emitted by the backend is loading. This verifies the end-to-end flow: backend emits loading, frontend receives it and replaces null backendState, loading overlay appears. The CLI test captures stdout events and confirms ordering without requiring Playwright or a WebView.",
+            "user_steps": [
+              "Launch textbrush backend subprocess with a valid INIT payload (same as Story 01 e2e scenario)",
+              "Confirm first state_changed event has state=loading (proving backend side of AC-004)",
+              "Confirm second state_changed event has state=idle or state=error (full sequence verified)"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "First STATE_CHANGED message has state == 'loading' (ordering guarantee for AC-004)",
+              "No Python or JS TypeError surfaces during the event sequence",
+              "node --test src-tauri/ui/state-sync-integration.test.js exits with code 0"
+            ]
+          }
+        ],
+        "playwright_file": "tests/e2e/test_full_workflow.py"
+      },
+      "status": "pending",
+      "notes": "MUST be implemented after Story 01 is committed so the backend always emits loading before the frontend stops hardcoding it — this preserves correct UI behavior throughout the migration. The mock dependency (MOCK-02-001) is a development-time test seam only; no mock code enters production. Run `node --test src-tauri/ui/state-sync-integration.test.js` for frontend unit tests. AC-004 is listed here because the full ordering guarantee (loading arrives before idle/error at the frontend) can only be stated definitively once both stories are complete."
+    }
+  ],
+
+  "story_order": ["01", "02"],
+
+  "seams": [
+    {
+      "data": "state_changed(loading) IPC event",
+      "source": { "story": "01", "artifact": "handler.py handle_init _emit_state_changed('loading')" },
+      "intermediaries": [],
+      "destination": { "story": "02", "artifact": "main.ts handleStateChanged sets state.backendState = { state: 'loading' }" }
+    }
+  ],
+
+  "dependency_notes": "Story 02 has a sequencing dependency on Story 01: Story 01 must be committed first so that when the frontend drops its hardcoded initial state the backend is already emitting state_changed(loading). From an implementation standpoint Story 02 can be developed in isolation using direct handleStateChanged calls in tests (no real backend needed). There are no shared mutable code artifacts between the two stories.",
+
+  "mock_resolution_plan": "MOCK-02-001 is a test-seam description, not a code artifact. No temporary mock code is introduced into production files. The mock is resolved automatically once Story 01 is merged: the real backend then emits state_changed(loading) and Story 02's null-initialised frontend receives it correctly. No cleanup step is required after Story 02 is deployed."
+}
