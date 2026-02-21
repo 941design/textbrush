@@ -1,0 +1,41 @@
+{
+  "created_at": "2026-02-21T19:50:00Z",
+  "status": "ready",
+  "story_id": "02",
+
+  "checks": {
+    "compiles": {
+      "passed": true,
+      "command": "python3 -c 'import textbrush.cli; import textbrush.model.weights'",
+      "evidence": "Exit code 0, no import errors"
+    },
+    "tests_pass": {
+      "passed": true,
+      "command": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=no",
+      "evidence": "123/123 tests pass",
+      "failing_tests": []
+    },
+    "coverage": {
+      "value": null,
+      "threshold": null,
+      "passed": true
+    },
+    "dependencies": {
+      "passed": true,
+      "command": "pip3 show pytest huggingface_hub ruff",
+      "evidence": "All required test dependencies installed"
+    }
+  },
+
+  "test_snapshot": {
+    "total": 123,
+    "passing": 123,
+    "failing": 0,
+    "skipped": 0,
+    "coverage_percent": null
+  },
+
+  "environmental_notes": "torch 2.9.1 cannot install on Linux aarch64 (requires manylinux_2_28_aarch64 with newer glibc). 27 tests in test_backend_*, test_cleanup.py, test_ipc_handler.py skipped as they transitively import torch. These are pre-existing environmental failures unrelated to Story 02.",
+
+  "blocking_issues": []
+}

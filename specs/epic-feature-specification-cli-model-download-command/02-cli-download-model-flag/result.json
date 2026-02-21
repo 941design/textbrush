@@ -1,0 +1,205 @@
+{
+  "story_id": "02",
+  "status": "done",
+  "created_at": "2026-02-21T19:50:00Z",
+  "updated_at": "2026-02-21T20:50:00Z",
+  "completed_at": "2026-02-21T20:50:00Z",
+
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-02-21T19:50:00Z",
+    "completed_at": "2026-02-21T20:20:00Z",
+    "architect_session_id": null,
+    "files_created": [],
+    "files_modified": [
+      "textbrush/cli.py",
+      "tests/test_cli.py",
+      "tests/e2e/test_full_workflow.py"
+    ],
+    "mocks_introduced": []
+  },
+
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-02-21T20:40:00Z",
+      "results": [
+        {
+          "question_id": "VQ-02-001",
+          "question": "Does build_parser() include --download-model as action='store_true' with default=False?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:96-101"],
+            "findings": "--download-model registered with action='store_true', default=False at lines 96-101",
+            "specific_locations": ["textbrush/cli.py:96-101"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-002",
+          "question": "Is --prompt now required=False in build_parser()?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:87-94"],
+            "findings": "--prompt set to required=False, default=None at lines 87-94; parser.parse_args([]) returns prompt=None",
+            "specific_locations": ["textbrush/cli.py:87-94"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-003",
+          "question": "Does main([]) exit with code 2 and stderr contain 'one of --prompt or --download-model'?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:386-387", "tests/test_cli.py:687-694"],
+            "findings": "parser.error() at line 387; test_no_args_exits_2 PASSED: exit code 2, stderr contains message",
+            "specific_locations": ["textbrush/cli.py:386-387"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-004",
+          "question": "Does main(['--download-model', '--prompt', 'test']) exit with code 2?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:382-383", "tests/test_cli.py:697-704"],
+            "findings": "parser.error() at line 383; test PASSED: exit code 2, stderr contains conflict message",
+            "specific_locations": ["textbrush/cli.py:382-383"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-005",
+          "question": "Does main(['--download-model', '--headless']) exit with code 2?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:384-385", "tests/test_cli.py:707-714"],
+            "findings": "parser.error() at line 385; test PASSED: exit code 2, stderr contains conflict message",
+            "specific_locations": ["textbrush/cli.py:384-385"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-006",
+          "question": "Does --download-model dispatch print license URL and progress message to stderr?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:402-407", "tests/test_cli.py:722-736"],
+            "findings": "License URL and 'Downloading FLUX.1 schnell model (~23 GB)...' printed to stderr; test PASSED",
+            "specific_locations": ["textbrush/cli.py:402-407"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-007",
+          "question": "Does success path print model path to stderr and exit 0?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:410-412", "tests/test_cli.py:740-754"],
+            "findings": "'Model downloaded successfully to: /tmp/hf_cache/flux' in stderr; exit code 0; stdout empty; test PASSED",
+            "specific_locations": ["textbrush/cli.py:410-412"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-008",
+          "question": "Does TokenRequiredError produce multi-line instructions with HF_TOKEN and token URL?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:413-423", "tests/test_cli.py:758-773"],
+            "findings": "stderr contains 'HuggingFace token required', 'HF_TOKEN', token URL; exit code 1; test PASSED",
+            "specific_locations": ["textbrush/cli.py:413-423"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-009",
+          "question": "Does generic Exception produce 'Download failed:' on stderr and exit 1?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py:424-426", "tests/test_cli.py:777-788"],
+            "findings": "'Download failed' in stderr; exit code 1; test PASSED",
+            "specific_locations": ["textbrush/cli.py:424-426"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-M1",
+          "question": "Does ruff report zero linting issues for modified files?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["textbrush/cli.py", "tests/test_cli.py", "tests/e2e/test_full_workflow.py"],
+            "findings": "ruff check: 'All checks passed!'",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-M2",
+          "question": "Do all 132 tests pass with zero failures?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["tests/test_cli.py", "tests/test_weights.py", "tests/test_config.py"],
+            "findings": "132/132 tests pass in 6.75s",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-02-M3",
+          "question": "Do all e2e_smoke tests pass including download-model conflict tests?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["tests/e2e/test_full_workflow.py"],
+            "findings": "5/5 e2e_smoke tests pass, 2 skipped (model-dependent)",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        }
+      ],
+      "summary": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "partial": 0
+      },
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-02-21T20:45:00Z",
+        "command": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=no",
+        "passed": true,
+        "total_tests": 132,
+        "passed_tests": 132,
+        "failed_tests": 0,
+        "failures": [],
+        "evidence": "132/132 tests pass",
+        "e2e_tests": {
+          "ran_at": "2026-02-21T20:45:00Z",
+          "command": "python3 -m pytest tests -m 'e2e_smoke' --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_reproducibility.py --ignore=tests/test_inference_integration.py -v",
+          "passed": true,
+          "total_tests": 5,
+          "passed_tests": 5,
+          "failed_tests": 0,
+          "test_files": ["tests/e2e/test_full_workflow.py"],
+          "evidence": "5/5 e2e_smoke tests pass: TestCLIHelp, TestDownloadModelCLI (3 tests), TestModelNotFoundMessage. 2 skipped (require live model). Project uses CLI subprocess e2e tests (not Playwright/Docker as it is a Python CLI)."
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}

@@ -1,7 +1,7 @@
 {
   "epic_name": "feature-specification-cli-model-download-command",
   "created_at": "2026-02-21T18:10:00Z",
-  "updated_at": "2026-02-21T18:08:45Z",
+  "updated_at": "2026-02-21T18:38:30Z",
   "total_stories": 3,
   "stories": [
     {
@@ -78,7 +78,7 @@
         ],
         "playwright_file": "tests/e2e/story-01-weights-token-error.spec.ts"
       },
-      "status": "in_progress",
+      "status": "done",
       "notes": "No dependency on Stories 02 or 03. The token flow for config.huggingface.token is resolved in Story 02 where the CLI passes the token to download_flux_weights(). This story only changes the weights module exception hierarchy and return type."
     },
     {
@@ -198,7 +198,7 @@
         ],
         "playwright_file": "tests/e2e/story-02-cli-download-flag.spec.ts"
       },
-      "status": "pending",
+      "status": "in_progress",
       "notes": "validate_args() currently raises ValueError for semantic errors. The spec mandates parser.error() for the three new mutual-exclusivity checks (which produces exit code 2 and is argparse-standard). The implementer must reconcile this: either pass the parser object into validate_args(), or add a separate early-check step in main() before validate_args(). Choose the approach that minimally disturbs existing ValueError behaviour for other validations."
     },
     {

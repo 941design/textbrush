@@ -1,0 +1,104 @@
+{
+  "created_at": "2026-02-21T20:15:00Z",
+  "story_id": "02",
+  "questions": [
+    {
+      "id": "VQ-02-001",
+      "category": "correctness",
+      "question": "Does build_parser() include --download-model as action='store_true' with default=False?",
+      "actionable_check": "python3 -c \"from textbrush.cli import build_parser; p = build_parser(); a = p.parse_args([]); print(a.download_model)\"",
+      "evidence_required": ["Output is 'False'", "--download-model present in parser help"],
+      "pass_criteria": "parser.parse_args([]).download_model == False; parser.parse_args(['--download-model']).download_model == True"
+    },
+    {
+      "id": "VQ-02-002",
+      "category": "correctness",
+      "question": "Is --prompt now required=False in build_parser() (parser accepts args with neither --prompt nor --download-model)?",
+      "actionable_check": "python3 -c \"from textbrush.cli import build_parser; p = build_parser(); a = p.parse_args([]); print(a.prompt)\"",
+      "evidence_required": ["Output is 'None' (no SystemExit raised)"],
+      "pass_criteria": "parser.parse_args([]).prompt is None without raising SystemExit"
+    },
+    {
+      "id": "VQ-02-003",
+      "category": "correctness",
+      "question": "Does main([]) exit with code 2 and stderr contain 'one of --prompt or --download-model'?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelFlag::test_no_args_exits_2 -v",
+      "evidence_required": ["Test passes", "exit code 2", "stderr contains 'one of --prompt or --download-model'"],
+      "pass_criteria": "Test test_no_args_exits_2 passes"
+    },
+    {
+      "id": "VQ-02-004",
+      "category": "correctness",
+      "question": "Does main(['--download-model', '--prompt', 'test']) exit with code 2 and stderr contain conflict message?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelFlag::test_download_model_with_prompt_exits_2 -v",
+      "evidence_required": ["Test passes", "exit code 2", "stderr contains 'Cannot use --download-model with --prompt'"],
+      "pass_criteria": "Test test_download_model_with_prompt_exits_2 passes"
+    },
+    {
+      "id": "VQ-02-005",
+      "category": "correctness",
+      "question": "Does main(['--download-model', '--headless']) exit with code 2 and stderr contain conflict message?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelFlag::test_download_model_with_headless_exits_2 -v",
+      "evidence_required": ["Test passes", "exit code 2", "stderr contains 'Cannot use --download-model with --headless'"],
+      "pass_criteria": "Test test_download_model_with_headless_exits_2 passes"
+    },
+    {
+      "id": "VQ-02-006",
+      "category": "correctness",
+      "question": "Does --download-model dispatch print license URL and 'Downloading FLUX.1 schnell model (~23 GB)...' to stderr?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelDispatch::test_download_model_prints_license_and_progress -v",
+      "evidence_required": ["Test passes", "license URL in stderr", "progress message in stderr"],
+      "pass_criteria": "Test test_download_model_prints_license_and_progress passes"
+    },
+    {
+      "id": "VQ-02-007",
+      "category": "correctness",
+      "question": "Does success path print 'Model downloaded successfully to: <path>' to stderr and exit 0?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelDispatch::test_download_model_success_prints_path_and_exits_0 -v",
+      "evidence_required": ["Test passes", "success message in stderr", "exit code 0", "stdout empty"],
+      "pass_criteria": "Test test_download_model_success_prints_path_and_exits_0 passes"
+    },
+    {
+      "id": "VQ-02-008",
+      "category": "correctness",
+      "question": "Does TokenRequiredError produce multi-line instructions with HF_TOKEN and token URL, exiting 1?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelDispatch::test_download_model_token_required_error -v",
+      "evidence_required": ["Test passes", "stderr contains 'HuggingFace token required'", "stderr contains 'HF_TOKEN'", "stderr contains 'https://huggingface.co/settings/tokens'", "exit code 1"],
+      "pass_criteria": "Test test_download_model_token_required_error passes"
+    },
+    {
+      "id": "VQ-02-009",
+      "category": "correctness",
+      "question": "Does generic Exception produce 'Download failed: <msg>' on stderr and exit 1?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py::TestDownloadModelDispatch::test_download_model_generic_error_exits_1 -v",
+      "evidence_required": ["Test passes", "stderr contains 'Download failed'", "exit code 1"],
+      "pass_criteria": "Test test_download_model_generic_error_exits_1 passes"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-02-M1",
+      "category": "lint",
+      "question": "Does ruff report zero linting issues for textbrush/cli.py and tests/test_cli.py?",
+      "actionable_check": "python3 -m ruff check textbrush/cli.py tests/test_cli.py tests/e2e/test_full_workflow.py",
+      "evidence_required": ["'All checks passed!' output from ruff"],
+      "pass_criteria": "Zero ruff lint errors"
+    },
+    {
+      "id": "VQ-02-M2",
+      "category": "regression",
+      "question": "Do all 132 tests pass with zero failures?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=short",
+      "evidence_required": ["132/132 tests pass"],
+      "pass_criteria": "132/132 tests pass in test_cli.py, test_weights.py, test_config.py"
+    },
+    {
+      "id": "VQ-02-M3",
+      "category": "e2e",
+      "question": "Do all e2e_smoke tests pass including the new --download-model conflict tests?",
+      "actionable_check": "python3 -m pytest tests -m 'e2e_smoke' --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_reproducibility.py --ignore=tests/test_inference_integration.py -v",
+      "evidence_required": ["5/5 e2e_smoke tests pass (2 skipped require live model)"],
+      "pass_criteria": "5 e2e_smoke tests pass, 2 skipped (model-dependent)"
+    }
+  ]
+}

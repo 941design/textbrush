@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -40,8 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
         - argparse.ArgumentParser configured with all textbrush CLI options
 
       Invariants:
-        - Required argument: --prompt (type: str)
         - Optional arguments:
+          · --prompt (type: str, default: None) — mutually exclusive with --download-model
+          · --download-model (flag, default: False) — mutually exclusive with --prompt/--headless
           · --out (type: Path)
           · --config (type: Path, default: None)
           · --seed (type: int)
@@ -53,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
           · --auto-abort (flag, default: False)
         - Description includes program purpose
         - Help text is user-friendly
+        - Mutual exclusivity enforced in main() via parser.error()
 
       Properties:
         - Completeness: parser accepts all arguments from spec FR2
@@ -62,8 +65,9 @@ def build_parser() -> argparse.ArgumentParser:
 
       Algorithm:
         1. Create ArgumentParser with program description
-        2. Add required argument: --prompt (required=True)
-        3. Add optional arguments with types and defaults:
+        2. Add optional argument: --prompt (required=False, default=None)
+        3. Add --download-model flag (action=store_true)
+        4. Add optional arguments with types and defaults:
            - --out as Path
            - --config as Path
            - --seed as int
@@ -73,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
            - --headless as store_true flag
            - --auto-accept as store_true flag
            - --auto-abort as store_true flag
-        4. Return configured parser
+        5. Return configured parser
     """
     parser = argparse.ArgumentParser(
         prog="textbrush",
@@ -83,9 +87,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prompt",
         type=str,
-        required=True,
+        required=False,
+        default=None,
         metavar="TEXT",
         help="Text prompt for image generation",
+    )
+
+    parser.add_argument(
+        "--download-model",
+        action="store_true",
+        default=False,
+        help="Download FLUX.1 schnell model weights (~23 GB) and exit",
     )
 
     parser.add_argument(
@@ -242,7 +254,7 @@ def validate_args(args: argparse.Namespace) -> None:
            c. If not, verify parent directory is writable for creation
         5. Raise ValueError with descriptive message on first failure
     """
-    if not args.prompt or args.prompt.strip() == "":
+    if args.prompt is not None and args.prompt.strip() == "":
         raise ValueError("--prompt cannot be empty")
 
     if args.seed is not None and args.seed < 0:
@@ -303,35 +315,45 @@ def main(argv: List[str] | None = None) -> None:
         - None (side effects: print to stdout, sys.exit with code)
 
       Invariants:
-        - Exit code 0 + stdout path on success
+        - Exit code 0 + stdout path on success (generation)
+        - Exit code 0 + stderr path on success (--download-model)
         - Exit code 1 + empty stdout on failure
-        - Prompt is required (validation failure if missing)
+        - Exit code 2 on argument conflict (parser.error())
+        - Either --prompt or --download-model must be given (not both, not neither)
         - Progress messages go to stderr
-        - Final output path goes to stdout
-        - backend.shutdown() always called (even on error)
+        - Final output path goes to stdout (generation) or stderr (download)
+        - backend.shutdown() always called (even on error, generation path only)
         - If --headless flag set, delegates to run_headless()
 
       Properties:
         - Configuration priority: CLI args > env vars > config file > defaults
         - Error handling: user-facing error messages on stderr
-        - Output: success prints path to stdout, nothing else
+        - Output: success prints path to stdout (gen) or stderr (download)
         - Cleanup: backend shutdown guaranteed via finally block
-        - Mode selection: headless vs GUI based on --headless flag
+        - Mode selection: download vs headless vs GUI based on flags
 
       Algorithm:
         1. Build argument parser via build_parser()
         2. Parse arguments from argv (or sys.argv if None)
-        3. Determine config file path:
-           - If --config provided, use that path
-           - Otherwise, use default from textbrush.paths.CONFIG_PATH
-        4. Load configuration:
-           a. Load config from file + env via config.load_config()
-           b. Merge CLI args via merge_cli_args_with_config()
-        5. Validate arguments via validate_args()
-        6. If --headless flag is set:
+        3. Mutual exclusivity checks (parser.error() → exit 2):
+           a. --download-model + --prompt → error
+           b. --download-model + --headless → error
+           c. neither --download-model nor --prompt → error
+        4. If --download-model:
+           a. Print license notice URL to stderr
+           b. Print "Downloading FLUX.1 schnell model (~23 GB)..." to stderr
+           c. Load config, resolve token (HF_TOKEN env var, then config.huggingface.token)
+           d. Set HF_TOKEN in env if resolved from config
+           e. Call download_flux_weights()
+           f. On TokenRequiredError: print instructions (HF_TOKEN, token URL) → exit 1
+           g. On other Exception: print "Download failed: ..." → exit 1
+           h. On success: print "Model downloaded successfully to: <path>" → exit 0
+        5. Determine config file path and load configuration
+        6. Validate arguments via validate_args()
+        7. If --headless flag is set:
            a. Delegate to run_headless() with all parameters
            b. run_headless() handles everything including exit
-        7. Otherwise (GUI mode):
+        8. Otherwise (GUI mode):
            a. Create TextbrushBackend with config
            b. Initialize backend (load model, print "Loading model..." to stderr)
            c. Start generation with prompt, seed, aspect_ratio
@@ -342,7 +364,7 @@ def main(argv: List[str] | None = None) -> None:
            h. Print output path to stdout
            i. Shutdown backend in finally block
            j. Exit with code 0 on success
-        8. Error handling:
+        9. Error handling:
            - Catch exceptions and print to stderr
            - Call backend.shutdown() in finally
            - Exit with code 1 on any error
@@ -355,6 +377,54 @@ def main(argv: List[str] | None = None) -> None:
 
     try:
         args = parser.parse_args(argv)
+
+        # Mutual exclusivity checks — these use parser.error() to produce exit code 2
+        if args.download_model and args.prompt:
+            parser.error("Cannot use --download-model with --prompt")
+        if args.download_model and args.headless:
+            parser.error("Cannot use --download-model with --headless")
+        if not args.download_model and args.prompt is None:
+            parser.error("one of --prompt or --download-model is required")
+
+        # Download model dispatch — early exit before normal generation flow
+        if args.download_model:
+            from .model.weights import TokenRequiredError, download_flux_weights
+
+            config_path = args.config if args.config is not None else CONFIG_PATH
+            config = load_config(config_path)
+
+            # Resolve token: HF_TOKEN env var takes precedence, then config
+            token = os.environ.get("HF_TOKEN") or config.huggingface.token
+            if token and not os.environ.get("HF_TOKEN"):
+                os.environ["HF_TOKEN"] = token
+
+            print(
+                "FLUX.1 schnell is available under the FLUX.1 [schnell] Non-Commercial License.\n"
+                "Review the license before use: "
+                "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+                file=sys.stderr,
+            )
+            print("Downloading FLUX.1 schnell model (~23 GB)...", file=sys.stderr)
+
+            try:
+                model_path = download_flux_weights()
+                print(f"Model downloaded successfully to: {model_path}", file=sys.stderr)
+                sys.exit(0)
+            except TokenRequiredError:
+                print(
+                    "HuggingFace token required to download FLUX.1 schnell.\n"
+                    "Set your token with:\n"
+                    "  export HF_TOKEN=<your_token>\n"
+                    "Get a token at: https://huggingface.co/settings/tokens\n"
+                    "Then accept the model license at: "
+                    "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            except Exception as e:
+                print(f"Download failed: {e}", file=sys.stderr)
+                sys.exit(1)
+
         validate_args(args)
 
         config_path = args.config if args.config is not None else CONFIG_PATH

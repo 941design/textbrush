@@ -18,7 +18,7 @@ class TestCLIHelp:
 
     @pytest.mark.e2e_smoke
     def test_help_shows_all_required_options(self):
-        """--help output includes all required CLI options."""
+        """--help output includes all required CLI options including --download-model."""
         result = subprocess.run(
             ["textbrush", "--help"],
             capture_output=True,
@@ -32,6 +32,44 @@ class TestCLIHelp:
         assert "--headless" in result.stdout
         assert "--auto-accept" in result.stdout
         assert "--auto-abort" in result.stdout
+        assert "--download-model" in result.stdout
+
+
+class TestDownloadModelCLI:
+    """Property: --download-model flag enforces mutual exclusivity and appears in help."""
+
+    @pytest.mark.e2e_smoke
+    def test_download_model_conflicts_with_prompt(self):
+        """--download-model and --prompt cannot be combined (exits 2)."""
+        result = subprocess.run(
+            ["textbrush", "--download-model", "--prompt", "test"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2
+        assert "Cannot use --download-model with --prompt" in result.stderr
+
+    @pytest.mark.e2e_smoke
+    def test_download_model_conflicts_with_headless(self):
+        """--download-model and --headless cannot be combined (exits 2)."""
+        result = subprocess.run(
+            ["textbrush", "--download-model", "--headless"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2
+        assert "Cannot use --download-model with --headless" in result.stderr
+
+    @pytest.mark.e2e_smoke
+    def test_no_args_requires_prompt_or_download(self):
+        """Invoking textbrush with no arguments exits 2 with descriptive error."""
+        result = subprocess.run(
+            ["textbrush"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2
+        assert "one of --prompt or --download-model" in result.stderr
 
 
 class TestModelNotFoundMessage:

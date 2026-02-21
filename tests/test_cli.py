@@ -34,11 +34,12 @@ class TestBuildParser:
         args = parser.parse_args(["--prompt", "a cat"])
         assert args.prompt == "a cat"
 
-    def test_prompt_is_required(self):
-        """Parser rejects calls without --prompt argument."""
+    def test_prompt_is_optional_in_parser(self):
+        """Parser accepts calls without --prompt (mutual exclusivity enforced in main())."""
         parser = build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args([])
+        args = parser.parse_args([])
+        assert args.prompt is None
+        assert args.download_model is False
 
     @given(st.text(min_size=1).filter(lambda s: not s.startswith("-")))
     @settings(suppress_health_check=[HealthCheck.filter_too_much])
@@ -665,3 +666,123 @@ class TestParserIntegration:
         except SystemExit:
             pass
         assert mock_load_config.called
+
+
+class TestDownloadModelFlag:
+    """Tests for --download-model flag: parser registration and mutual exclusivity."""
+
+    def test_download_model_flag_in_parser(self):
+        """Parser includes --download-model flag (AC-001)."""
+        parser = build_parser()
+        args = parser.parse_args(["--download-model"])
+        assert args.download_model is True
+
+    def test_download_model_defaults_to_false(self):
+        """--download-model defaults to False when not provided (AC-002)."""
+        parser = build_parser()
+        args = parser.parse_args(["--prompt", "test"])
+        assert args.download_model is False
+
+    @patch("textbrush.cli.load_config")
+    def test_no_args_exits_2(self, mock_load_config, sample_config, capsys):
+        """Invoking with no arguments exits with code 2 (AC-004)."""
+        mock_load_config.return_value = sample_config
+        with pytest.raises(SystemExit) as exc_info:
+            main([])
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "one of --prompt or --download-model" in captured.err
+
+    @patch("textbrush.cli.load_config")
+    def test_download_model_with_prompt_exits_2(self, mock_load_config, sample_config, capsys):
+        """Combining --download-model and --prompt exits with code 2 (AC-005)."""
+        mock_load_config.return_value = sample_config
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model", "--prompt", "test"])
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "Cannot use --download-model with --prompt" in captured.err
+
+    @patch("textbrush.cli.load_config")
+    def test_download_model_with_headless_exits_2(self, mock_load_config, sample_config, capsys):
+        """Combining --download-model and --headless exits with code 2 (AC-006)."""
+        mock_load_config.return_value = sample_config
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model", "--headless"])
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "Cannot use --download-model with --headless" in captured.err
+
+
+class TestDownloadModelDispatch:
+    """Tests for --download-model dispatch in main(): license, progress, success, errors."""
+
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.model.weights.download_flux_weights")
+    def test_download_model_prints_license_and_progress(
+        self, mock_download, mock_load_config, sample_config, capsys
+    ):
+        """--download-model prints license URL and progress message to stderr (AC-010, AC-011)."""
+        from pathlib import Path
+
+        mock_load_config.return_value = sample_config
+        mock_download.return_value = Path("/tmp/hf_cache/flux")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model"])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "https://huggingface.co/black-forest-labs/FLUX.1-schnell" in captured.err
+        assert "Downloading FLUX.1 schnell model (~23 GB)..." in captured.err
+
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.model.weights.download_flux_weights")
+    def test_download_model_success_prints_path_and_exits_0(
+        self, mock_download, mock_load_config, sample_config, capsys
+    ):
+        """--download-model success prints path to stderr and exits 0 (AC-012)."""
+        from pathlib import Path
+
+        mock_load_config.return_value = sample_config
+        mock_download.return_value = Path("/tmp/hf_cache/flux")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model"])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "Model downloaded successfully to: /tmp/hf_cache/flux" in captured.err
+        assert captured.out.strip() == ""
+
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.model.weights.download_flux_weights")
+    def test_download_model_token_required_error(
+        self, mock_download, mock_load_config, sample_config, capsys
+    ):
+        """--download-model TokenRequiredError prints instructions and exits 1 (AC-013)."""
+        from textbrush.model.weights import TokenRequiredError
+
+        mock_load_config.return_value = sample_config
+        mock_download.side_effect = TokenRequiredError("token missing")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model"])
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "HuggingFace token required" in captured.err
+        assert "HF_TOKEN" in captured.err
+        assert "https://huggingface.co/settings/tokens" in captured.err
+
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.model.weights.download_flux_weights")
+    def test_download_model_generic_error_exits_1(
+        self, mock_download, mock_load_config, sample_config, capsys
+    ):
+        """--download-model generic exception prints 'Download failed' and exits 1 (AC-014)."""
+        mock_load_config.return_value = sample_config
+        mock_download.side_effect = RuntimeError("connection timeout")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model"])
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Download failed" in captured.err

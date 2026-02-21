@@ -1,11 +1,13 @@
 {
   "epic_name": "feature-specification-cli-model-download-command",
   "created_at": "2026-02-21T18:00:36Z",
-  "updated_at": "2026-02-21T18:08:40Z",
+  "updated_at": "2026-02-21T18:38:25Z",
   "status": "in_progress",
   "phase": "STORIES_DEFINED",
-  "current_story": null,
-  "completed_stories": [],
+  "current_story": "02",
+  "completed_stories": [
+    "01"
+  ],
   "blocked_stories": [],
   "escalated_stories": [],
   "phase_history": [
@@ -23,6 +25,11 @@
       "phase": "IN_PROGRESS",
       "timestamp": "2026-02-21T18:08:40Z",
       "trigger": "execution_started"
+    },
+    {
+      "phase": "STORY_01_DONE",
+      "timestamp": "2026-02-21T18:38:25Z",
+      "trigger": "story_committed"
     }
   ]
 }
