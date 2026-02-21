@@ -1,0 +1,94 @@
+{
+  "created_at": "2026-02-21T23:30:00Z",
+  "gap_analysis_summary": "Most of the spec is already implemented. The single genuine gap is missing TestDeleteCommand behavioral tests in test_ipc_handler.py.",
+  "key_files": [
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "~1036",
+      "relevance": "handle_delete implementation (lines 594-671): fully implemented, thread-safe, idempotent, soft-delete via _deleted_indices set",
+      "source": "architecture"
+    },
+    {
+      "path": "tests/test_ipc_handler.py",
+      "lines": "~1100",
+      "relevance": "Has TestAcceptCommand (4 tests) and TestAbortCommand (4 tests) but NO TestDeleteCommand. Gap to fill.",
+      "source": "testing-and-conventions"
+    },
+    {
+      "path": "tests/test_ipc_handler_index_management.py",
+      "lines": "558",
+      "relevance": "Has index management tests and TestHandleGetImageList but no handle_delete behavioral tests",
+      "source": "testing-and-conventions"
+    },
+    {
+      "path": "textbrush/ipc/protocol.py",
+      "lines": "~449",
+      "relevance": "DeleteCommand (index: int), DeleteAckEvent (index: int), AcceptedEvent (paths, display_paths) all defined",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/backend.py",
+      "lines": "~670",
+      "relevance": "accept_all(), accept_from_preview(), delete_preview(), save_to_preview() all implemented",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "~1319",
+      "relevance": "handleDeleteAck splices imageList, deleteCurrentImage sends by index. Frontend DOES handle delete_ack (line 247). No image_list case in handleMessage.",
+      "source": "architecture"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "Soft-delete via _deleted_indices",
+      "description": "Images are never removed from _image_index_map; only added to _deleted_indices. ACCEPT filters on idx not in _deleted_indices.",
+      "reference": "handler.py:642-656"
+    },
+    {
+      "name": "Cleanup outside lock",
+      "description": "Lock is acquired for index bookkeeping, released, then cleanup() called outside lock.",
+      "reference": "handler.py:658-660"
+    },
+    {
+      "name": "Idempotent DELETE_ACK",
+      "description": "DELETE always responds with DELETE_ACK regardless of whether index was found or already deleted.",
+      "reference": "handler.py:665-671"
+    },
+    {
+      "name": "TestCommand pattern",
+      "description": "Each command has a Test{CommandName} class in test_ipc_handler.py with 3-5 behavioral tests.",
+      "reference": "test_ipc_handler.py:216 (TestAcceptCommand), 299 (TestAbortCommand)"
+    }
+  ],
+  "already_implemented": [
+    "_delivered_images, _image_index_map, _deleted_indices in handler.py",
+    "DeleteCommand/DeleteAckEvent/AcceptedEvent in protocol.py",
+    "handle_delete in handler.py (594-671)",
+    "handle_accept with multi-image support in handler.py",
+    "handle_abort in handler.py",
+    "accept_all in backend.py",
+    "delete_image Rust command in commands.rs",
+    "handleDeleteAck, handleAccepted, handleAborted in main.ts",
+    "GET_IMAGE_LIST/IMAGE_LIST protocol and handler",
+    "TestAcceptCommand (4 tests) in test_ipc_handler.py",
+    "TestAbortCommand (4 tests) in test_ipc_handler.py",
+    "Index management tests in test_ipc_handler_index_management.py",
+    "spec.md sections 3.2, 5.3 updated to backend-index delete semantics"
+  ],
+  "genuine_gaps": [
+    "TestDeleteCommand class is missing from test_ipc_handler.py. handle_delete has no behavioral tests. Spec testing considerations explicitly require: delete removes temp file, idempotent delete, delete then accept excludes deleted image."
+  ],
+  "testing": {
+    "python_test_runner": "pytest with uv (source venv/bin/activate && python -m pytest)",
+    "test_conventions": "Test classes named Test{CommandName}, methods named test_{what}_{outcome}",
+    "mock_pattern": "Mock(spec=TextbrushBackend) for backend, Mock() for server with .send Mock",
+    "real_files": "tmp_path fixture for real filesystem paths in cleanup tests",
+    "hypothesis": "@settings(deadline=None) for any IO or threading tests"
+  },
+  "conventions": [
+    "CLAUDE.md: ALWAYS check linting with ruff after finishing an increment",
+    "CLAUDE.md: NEVER run integration tests without user confirmation",
+    "index: int (not image_id: string) is the canonical DELETE identifier throughout"
+  ]
+}

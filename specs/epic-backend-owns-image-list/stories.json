@@ -1,0 +1,97 @@
+{
+  "epic_name": "backend-owns-image-list",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 1,
+
+  "stories": [
+    {
+      "id": "01",
+      "name": "add-delete-command-tests",
+      "title": "Add TestDeleteCommand behavioral tests for handle_delete",
+      "description": "Add a TestDeleteCommand class to tests/test_ipc_handler.py following the exact pattern of TestAcceptCommand and TestAbortCommand. The class must contain six behavioral tests covering: (1) DELETE adds the index to _deleted_indices, (2) DELETE sends DELETE_ACK with the correct index, (3) DELETE deletes the real temp file from disk using tmp_path, (4) DELETE of an already-deleted index is idempotent (no cleanup, still sends DELETE_ACK), (5) DELETE of a non-existent index is idempotent (no state change, still sends DELETE_ACK), and (6) DELETE then ACCEPT excludes the deleted image from the accept_all call. After adding the tests, run ruff linting to confirm no formatting issues.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"],
+      "scope": {
+        "includes": [
+          "TestDeleteCommand class in tests/test_ipc_handler.py",
+          "test_delete_removes_image_from_tracking (AC-001): asserts index added to _deleted_indices",
+          "test_delete_sends_delete_ack_event (AC-002): asserts DELETE_ACK sent with correct index",
+          "test_delete_deletes_temp_file (AC-003): uses tmp_path, asserts real file deleted",
+          "test_delete_already_deleted_is_idempotent (AC-004): asserts no-op on double-delete, DELETE_ACK still sent",
+          "test_delete_nonexistent_index_is_idempotent (AC-005): asserts no-op for missing index, DELETE_ACK still sent",
+          "test_delete_then_accept_excludes_deleted_image (AC-006): asserts accept_all called without deleted image",
+          "ruff linting pass after implementation"
+        ],
+        "excludes": [
+          "Changes to handler.py (handle_delete is already fully implemented)",
+          "Changes to protocol.py (DeleteCommand/DeleteAckEvent already defined)",
+          "Changes to backend.py",
+          "Frontend changes",
+          "Rust/Tauri changes",
+          "Index management tests (already covered in test_ipc_handler_index_management.py)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-01-001",
+          "description": "Real temp file created via pytest tmp_path fixture for filesystem deletion assertions",
+          "interface": "pathlib.Path (tmp_path)",
+          "reason": "AC-003 requires asserting an actual file is deleted from disk — a Mock cannot verify filesystem side effects",
+          "permanent": true
+        }
+      ],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "delete-removes-file-and-acks",
+            "description": "Construct a MessageHandler with a real BufferedImage whose temp_path points to a real file created by tmp_path. Call handle_delete and verify the file is removed and DELETE_ACK is sent with the correct index.",
+            "user_steps": [
+              "Create a real file at tmp_path / 'img0.png'",
+              "Construct BufferedImage with temp_path set to that file",
+              "Set handler._image_index_map = {0: buffered_image} and handler._deleted_indices = set()",
+              "Call handler.handle_delete({'index': 0}, mock_server)",
+              "Assert file no longer exists",
+              "Assert mock_server.send called once with MessageType.DELETE_ACK and payload['index'] == 0"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "not (tmp_path / 'img0.png').exists()",
+              "mock_server.send.call_count == 1",
+              "mock_server.send.call_args[0][0].type == MessageType.DELETE_ACK",
+              "mock_server.send.call_args[0][0].payload['index'] == 0"
+            ]
+          },
+          {
+            "name": "delete-then-accept-excludes-deleted",
+            "description": "Set up a handler with two images, delete index 0 via handle_delete, then call handle_accept. Verify that backend.accept_all receives only the image at index 1.",
+            "user_steps": [
+              "Set handler._image_index_map = {0: image1, 1: image2} and handler._deleted_indices = set()",
+              "Set handler.backend to a Mock(spec=TextbrushBackend) with accept_all returning [tmp_path / 'out.png']",
+              "Call handler.handle_delete({'index': 0}, mock_server)",
+              "Call handler.handle_accept(mock_server)",
+              "Assert accept_all was called with [image2] only"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "mock_backend.accept_all.call_args[0][0] == [image2]"
+            ]
+          }
+        ],
+        "playwright_file": "tests/test_ipc_handler.py::TestDeleteCommand"
+      },
+      "status": "done",
+      "notes": "All six tests follow the Mock(spec=TextbrushBackend) + mock_server pattern established by TestAcceptCommand and TestAbortCommand. Method names follow the test_{what}_{outcome} convention. The tmp_path fixture is pytest-native and requires no additional dependencies. Run 'python -m pytest tests/test_ipc_handler.py::TestDeleteCommand -v' to verify. Run 'ruff check tests/test_ipc_handler.py' after implementation."
+    }
+  ],
+
+  "story_order": ["01"],
+
+  "seams": [],
+
+  "dependency_notes": "Single story. No cross-story data flows. The implementation under test (handle_delete in handler.py) is already complete; this story only adds tests.",
+
+  "mock_resolution_plan": "No temporary mocks are introduced. The tmp_path test fixture is permanent CI infrastructure, not a temporary mock."
+}

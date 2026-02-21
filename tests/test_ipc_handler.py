@@ -336,6 +336,107 @@ class TestAbortCommand:
         mock_server.shutdown.assert_called_once()
 
 
+class TestDeleteCommand:
+    """Behavioral tests for DELETE command handling."""
+
+    def test_delete_removes_image_from_tracking(self, handler, mock_server, tmp_path):
+        """DELETE adds the index to _deleted_indices."""
+        image = Mock(spec=BufferedImage)
+        image.temp_path = tmp_path / "img0.png"
+        image.temp_path.write_bytes(b"fake")
+
+        handler._image_index_map = {0: image}
+        handler._deleted_indices = set()
+
+        handler.handle_delete({"index": 0}, mock_server)
+
+        assert 0 in handler._deleted_indices
+
+    def test_delete_sends_delete_ack_event(self, handler, mock_server, tmp_path):
+        """DELETE sends DELETE_ACK with the correct index."""
+        image = Mock(spec=BufferedImage)
+        image.temp_path = tmp_path / "img1.png"
+        image.temp_path.write_bytes(b"fake")
+
+        handler._image_index_map = {0: image}
+        handler._deleted_indices = set()
+
+        handler.handle_delete({"index": 0}, mock_server)
+
+        mock_server.send.assert_called_once()
+        sent = mock_server.send.call_args[0][0]
+        assert sent.type == MessageType.DELETE_ACK
+        assert sent.payload["index"] == 0
+
+    def test_delete_deletes_temp_file(self, handler, mock_server, tmp_path):
+        """DELETE deletes the real temp file from disk."""
+        real_file = tmp_path / "img0.png"
+        real_file.write_bytes(b"fake image data")
+
+        image = BufferedImage(image=Mock(), seed=42, temp_path=real_file)
+        handler._image_index_map = {0: image}
+        handler._deleted_indices = set()
+
+        handler.handle_delete({"index": 0}, mock_server)
+
+        assert not real_file.exists()
+
+    def test_delete_already_deleted_is_idempotent(self, handler, mock_server, tmp_path):
+        """DELETE of an already-deleted index is a no-op but still sends DELETE_ACK."""
+        image = Mock(spec=BufferedImage)
+        image.temp_path = tmp_path / "img0.png"
+
+        handler._image_index_map = {0: image}
+        handler._deleted_indices = {0}  # already deleted
+
+        handler.handle_delete({"index": 0}, mock_server)
+
+        # cleanup() must NOT be called again on already-deleted image
+        image.cleanup.assert_not_called()
+        # DELETE_ACK still sent
+        mock_server.send.assert_called_once()
+        sent = mock_server.send.call_args[0][0]
+        assert sent.type == MessageType.DELETE_ACK
+        assert sent.payload["index"] == 0
+
+    def test_delete_nonexistent_index_is_idempotent(self, handler, mock_server):
+        """DELETE of a non-existent index is a no-op but still sends DELETE_ACK."""
+        handler._image_index_map = {}
+        handler._deleted_indices = set()
+
+        handler.handle_delete({"index": 99}, mock_server)
+
+        assert handler._deleted_indices == set()
+        mock_server.send.assert_called_once()
+        sent = mock_server.send.call_args[0][0]
+        assert sent.type == MessageType.DELETE_ACK
+        assert sent.payload["index"] == 99
+
+    def test_delete_then_accept_excludes_deleted_image(self, handler, mock_server, tmp_path):
+        """DELETE then ACCEPT excludes the deleted image from accept_all."""
+        image1 = Mock(spec=BufferedImage)
+        image1.temp_path = tmp_path / "img0.png"
+        image1.temp_path.write_bytes(b"fake")
+
+        image2 = Mock(spec=BufferedImage)
+        image2.temp_path = tmp_path / "img1.png"
+
+        handler._image_index_map = {0: image1, 1: image2}
+        handler._deleted_indices = set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.accept_all = Mock(return_value=[tmp_path / "out.png"])
+        handler.backend = mock_backend
+
+        handler.handle_delete({"index": 0}, mock_server)
+        mock_server.reset_mock()
+        handler.handle_accept(mock_server)
+
+        mock_backend.accept_all.assert_called_once()
+        call_images = mock_backend.accept_all.call_args[0][0]
+        assert call_images == [image2]
+
+
 class TestStatusCommand:
     """Property-based tests for STATUS command handling (deprecated per FR7)."""
 

@@ -1,0 +1,117 @@
+{
+  "created_at": "2026-02-21T23:45:00Z",
+  "story_id": "01",
+
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "correctness",
+      "question": "Does test_delete_removes_image_from_tracking correctly assert that handle_delete adds the index to handler._deleted_indices?",
+      "actionable_check": "Read the test method and verify it sets up _image_index_map = {0: image}, calls handle_delete({'index': 0}, mock_server), then asserts 0 in handler._deleted_indices.",
+      "evidence_required": [
+        "The test body showing the assertion `assert 0 in handler._deleted_indices`",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test sets up state, calls handle_delete, and directly asserts index is in _deleted_indices"
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "correctness",
+      "question": "Does test_delete_sends_delete_ack_event verify the correct MessageType and index in the sent message?",
+      "actionable_check": "Read the test and verify it asserts sent.type == MessageType.DELETE_ACK and sent.payload['index'] == 0.",
+      "evidence_required": [
+        "Test assertions for MessageType.DELETE_ACK and payload index",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test asserts both the message type is DELETE_ACK and the payload index matches the deleted index"
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "correctness",
+      "question": "Does test_delete_deletes_temp_file use a real file (not a Mock) via tmp_path and assert the file no longer exists after handle_delete?",
+      "actionable_check": "Verify the test creates a real file with write_bytes, uses BufferedImage with that path, and asserts not real_file.exists() after calling handle_delete.",
+      "evidence_required": [
+        "The test body showing real file creation and the `not real_file.exists()` assertion",
+        "Use of tmp_path fixture, not a Mock",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test uses real filesystem (not Mock) for the file deletion assertion and verifies file is gone after handle_delete"
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "correctness",
+      "question": "Does test_delete_already_deleted_is_idempotent correctly verify that cleanup() is NOT called again on double-delete?",
+      "actionable_check": "Verify the test pre-populates _deleted_indices = {0}, then asserts image.cleanup.assert_not_called() and that DELETE_ACK is still sent.",
+      "evidence_required": [
+        "Test sets _deleted_indices = {0} before calling handle_delete",
+        "image.cleanup.assert_not_called() assertion",
+        "DELETE_ACK still sent assertion",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test confirms no cleanup on already-deleted index AND that DELETE_ACK is still sent (idempotency)"
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "correctness",
+      "question": "Does test_delete_nonexistent_index_is_idempotent verify no state change and correct DELETE_ACK for a missing index?",
+      "actionable_check": "Verify the test uses _image_index_map = {} and asserts both that _deleted_indices remains empty AND that DELETE_ACK is sent with index 99.",
+      "evidence_required": [
+        "Test uses empty _image_index_map",
+        "Assertion `handler._deleted_indices == set()`",
+        "DELETE_ACK sent with index 99",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test verifies no state change when deleting non-existent index and that DELETE_ACK is still sent"
+    },
+    {
+      "id": "VQ-01-006",
+      "category": "integration",
+      "question": "Does test_delete_then_accept_excludes_deleted_image correctly verify that accept_all receives only the non-deleted image?",
+      "actionable_check": "Verify the test sets up two images at indices 0 and 1, deletes index 0, calls handle_accept, then asserts accept_all was called with [image2] only.",
+      "evidence_required": [
+        "Two images set up at indices 0 and 1",
+        "handle_delete called for index 0",
+        "handle_accept called after",
+        "`call_images == [image2]` assertion",
+        "Confirmation the test passes"
+      ],
+      "pass_criteria": "Test verifies the full delete-then-accept flow excludes deleted images from accept_all"
+    },
+    {
+      "id": "VQ-01-007",
+      "category": "conventions",
+      "question": "Do all six tests follow the TestAcceptCommand/TestAbortCommand naming and structural conventions?",
+      "actionable_check": "Verify class is named TestDeleteCommand, all method names follow test_{what}_{outcome} pattern, and the class follows the same fixture usage as TestAcceptCommand.",
+      "evidence_required": [
+        "Class name TestDeleteCommand",
+        "All 6 test method names follow test_{what}_{outcome} pattern",
+        "Same fixtures used: handler, mock_server, tmp_path"
+      ],
+      "pass_criteria": "Class and method naming matches project conventions as established by TestAcceptCommand and TestAbortCommand"
+    },
+    {
+      "id": "VQ-01-008",
+      "category": "quality",
+      "question": "Does ruff linting pass on tests/test_ipc_handler.py without errors?",
+      "actionable_check": "Run `ruff check tests/test_ipc_handler.py` and verify exit code 0.",
+      "evidence_required": [
+        "ruff check exit code 0 or 'All checks passed!' output"
+      ],
+      "pass_criteria": "ruff reports no issues"
+    }
+  ],
+
+  "mandatory_questions": [
+    {
+      "id": "MQ-01-001",
+      "category": "regression",
+      "question": "Does the full test suite for test_ipc_handler.py and test_ipc_handler_index_management.py pass without regressions?",
+      "actionable_check": "Run `python -m pytest tests/test_ipc_handler.py tests/test_ipc_handler_index_management.py -q --tb=short` and verify all tests pass. Baseline was 75 tests; new total should be 81.",
+      "evidence_required": [
+        "Test output showing 81 passed (75 original + 6 new)",
+        "Zero failures in previously passing tests"
+      ],
+      "pass_criteria": "All 81 tests pass, no regressions introduced"
+    }
+  ]
+}
