@@ -948,12 +948,22 @@ class TestStartGenerationProperties:
 
 
 class TestNoAutoAcceptOrAbort:
-    """Test behavior when neither auto_accept nor auto_abort is set."""
+    """Test behavior when neither auto_accept nor auto_abort is set.
 
-    def test_no_flags_exits_with_code_1(self, sample_config):
-        """Without auto_accept or auto_abort, exits with code 1."""
+    Per spec: headless without flags generates one image, saves it, prints path
+    to stdout, and exits 0. Behavior is identical to --auto-accept.
+    """
+
+    def test_no_flags_exits_with_code_0_on_success(self, sample_config, tmp_path):
+        """Without auto_accept or auto_abort, exits with code 0 on success."""
+        from PIL import Image
+
+        from textbrush.buffer import BufferedImage
+
         mock_backend = Mock()
-        mock_backend.buffer = Mock()
+        mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
+        mock_backend.buffer.peek.return_value = mock_image
+        mock_backend.accept_current.return_value = tmp_path / "output.png"
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
             with pytest.raises(SystemExit) as exc_info:
@@ -966,12 +976,19 @@ class TestNoAutoAcceptOrAbort:
                     auto_accept=False,
                     auto_abort=False,
                 )
-            assert exc_info.value.code == 1
+            assert exc_info.value.code == 0
 
-    def test_no_flags_prints_error_to_stderr(self, sample_config, capsys):
-        """Without auto_accept or auto_abort, error printed to stderr."""
+    def test_no_flags_prints_output_path_to_stdout(self, sample_config, capsys, tmp_path):
+        """Without auto_accept or auto_abort, prints absolute path to stdout."""
+        from PIL import Image
+
+        from textbrush.buffer import BufferedImage
+
+        output_path = tmp_path / "output.png"
         mock_backend = Mock()
-        mock_backend.buffer = Mock()
+        mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
+        mock_backend.buffer.peek.return_value = mock_image
+        mock_backend.accept_current.return_value = output_path
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
             with pytest.raises(SystemExit):
@@ -985,13 +1002,18 @@ class TestNoAutoAcceptOrAbort:
                     auto_abort=False,
                 )
             captured = capsys.readouterr()
-            assert "Error:" in captured.err
-            assert "--auto-accept" in captured.err or "--auto-abort" in captured.err
+            assert str(output_path.absolute()) in captured.out
 
-    def test_no_flags_produces_empty_stdout(self, sample_config, capsys):
-        """Without auto_accept or auto_abort, no output to stdout."""
+    def test_no_flags_calls_accept_current(self, sample_config, tmp_path):
+        """Without auto_accept or auto_abort, calls backend.accept_current()."""
+        from PIL import Image
+
+        from textbrush.buffer import BufferedImage
+
         mock_backend = Mock()
-        mock_backend.buffer = Mock()
+        mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
+        mock_backend.buffer.peek.return_value = mock_image
+        mock_backend.accept_current.return_value = tmp_path / "output.png"
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
             with pytest.raises(SystemExit):
@@ -1004,13 +1026,18 @@ class TestNoAutoAcceptOrAbort:
                     auto_accept=False,
                     auto_abort=False,
                 )
-            captured = capsys.readouterr()
-            assert captured.out == ""
+            mock_backend.accept_current.assert_called_once()
 
-    def test_no_flags_calls_shutdown(self, sample_config):
-        """Without auto_accept or auto_abort, shutdown is called."""
+    def test_no_flags_calls_shutdown(self, sample_config, tmp_path):
+        """Without auto_accept or auto_abort, shutdown is called on success."""
+        from PIL import Image
+
+        from textbrush.buffer import BufferedImage
+
         mock_backend = Mock()
-        mock_backend.buffer = Mock()
+        mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
+        mock_backend.buffer.peek.return_value = mock_image
+        mock_backend.accept_current.return_value = tmp_path / "output.png"
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
             with pytest.raises(SystemExit):
@@ -1024,3 +1051,42 @@ class TestNoAutoAcceptOrAbort:
                     auto_abort=False,
                 )
             mock_backend.shutdown.assert_called()
+
+    def test_no_flags_timeout_exits_with_code_1(self, sample_config):
+        """Without auto_accept or auto_abort, timeout exits with code 1."""
+        mock_backend = Mock()
+        mock_backend.buffer.peek.return_value = None
+
+        with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
+            with patch("time.time", side_effect=[0, 121]):
+                with pytest.raises(SystemExit) as exc_info:
+                    run_headless(
+                        prompt="test",
+                        out=None,
+                        config=sample_config,
+                        seed=None,
+                        aspect_ratio="1:1",
+                        auto_accept=False,
+                        auto_abort=False,
+                    )
+                assert exc_info.value.code == 1
+
+    def test_no_flags_timeout_produces_empty_stdout(self, sample_config, capsys):
+        """Without auto_accept or auto_abort, timeout produces no stdout."""
+        mock_backend = Mock()
+        mock_backend.buffer.peek.return_value = None
+
+        with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
+            with patch("time.time", side_effect=[0, 121]):
+                with pytest.raises(SystemExit):
+                    run_headless(
+                        prompt="test",
+                        out=None,
+                        config=sample_config,
+                        seed=None,
+                        aspect_ratio="1:1",
+                        auto_accept=False,
+                        auto_abort=False,
+                    )
+            captured = capsys.readouterr()
+            assert captured.out == ""

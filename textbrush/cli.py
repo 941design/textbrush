@@ -146,7 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--headless",
         action="store_true",
         default=False,
-        help="Run without UI (for testing)",
+        help="Run without UI — generates one image and saves it (use --auto-abort to skip saving)",
     )
 
     parser.add_argument(
@@ -520,7 +520,7 @@ def run_headless(
         - None (side effects: print to stdout/stderr, sys.exit with code)
 
       Invariants:
-        - Exit code 0 + stdout path if auto_accept and image saved successfully
+        - Exit code 0 + stdout path if image saved successfully (auto_accept or neither flag)
         - Exit code 1 + empty stdout if auto_abort or any error
         - auto_abort takes precedence over auto_accept
         - Progress messages go to stderr
@@ -542,7 +542,7 @@ def run_headless(
            a. Call backend.abort()
            b. Shutdown backend
            c. Exit with code 1 (no stdout)
-        6. If auto_accept:
+        6. Otherwise (auto_accept or neither flag): generate-and-save
            a. Print "Generating..." to stderr
            b. Wait for first image (timeout 120s):
               - Poll buffer.peek() with 0.1s sleep intervals
@@ -554,10 +554,7 @@ def run_headless(
               iv. Shutdown backend
               v. Exit with code 0
            d. If no image: exit with code 1
-        7. If neither auto_accept nor auto_abort:
-           a. Print error to stderr (invalid usage)
-           b. Exit with code 1
-        8. Error handling:
+        7. Error handling:
            a. Catch exceptions and print to stderr
            b. Shutdown backend in finally block
            c. Exit with code 1
@@ -591,27 +588,21 @@ def run_headless(
             backend.shutdown()
             sys.exit(1)
 
-        if auto_accept:
-            print("Generating...", file=sys.stderr)
+        print("Generating...", file=sys.stderr)
 
-            timeout_seconds = 120.0
-            start_time = time.time()
-            while time.time() - start_time < timeout_seconds:
-                if backend.buffer.peek() is not None:
-                    break
-                time.sleep(0.1)
-            else:
-                raise RuntimeError("No image generated within 120 second timeout")
+        timeout_seconds = 120.0
+        start_time = time.time()
+        while time.time() - start_time < timeout_seconds:
+            if backend.buffer.peek() is not None:
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError("No image generated within 120 second timeout")
 
-            output_path = backend.accept_current(out)
-            print(str(output_path.absolute()), file=sys.stdout)
-            backend.shutdown()
-            sys.exit(0)
-
-        print("Error: Headless mode requires --auto-accept or --auto-abort", file=sys.stderr)
-        if backend is not None:
-            backend.shutdown()
-        sys.exit(1)
+        output_path = backend.accept_current(out)
+        print(str(output_path.absolute()), file=sys.stdout)
+        backend.shutdown()
+        sys.exit(0)
 
     except (ValueError, RuntimeError) as e:
         print(f"Error: {e}", file=sys.stderr)
