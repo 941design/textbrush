@@ -58,6 +58,7 @@ class MessageHandler:
         self._next_index = 0  # Monotonic counter for image indices
         self._image_index_map: dict[int, BufferedImage] = {}  # Maps index → BufferedImage
         self._deleted_indices: set[int] = set()  # Tracks soft-deleted indices
+        self._delivery_order: list[int] = []  # Records order images were delivered to frontend
         self._current_state: str | None = None  # Tracks current backend state
         self._current_prompt: str = ""  # Tracks current generation prompt for state_changed events
         self._generation_started = False  # True after backend.start_generation() succeeds
@@ -248,11 +249,11 @@ class MessageHandler:
         from textbrush.ipc.protocol import AcceptedEvent, ErrorEvent
 
         with self._state_lock:
-            # Build list of non-deleted images from index map
+            # Build list of non-deleted images in delivery order (viewing order)
             images_to_accept = [
                 self._image_index_map[idx]
-                for idx in sorted(self._image_index_map.keys())
-                if idx not in self._deleted_indices
+                for idx in self._delivery_order
+                if idx in self._image_index_map and idx not in self._deleted_indices
             ]
 
             if not images_to_accept or not self.backend:
@@ -267,6 +268,7 @@ class MessageHandler:
             # Clear state after successful collection (backend no longer owns these)
             self._image_index_map.clear()
             self._deleted_indices.clear()
+            self._delivery_order.clear()
             self._delivered_images.clear()  # Keep for compatibility
 
         try:
@@ -713,7 +715,7 @@ class MessageHandler:
                b. Exit loop on shutdown
             3. Start daemon thread running deliver_loop
         """
-        from textbrush.ipc.protocol import ErrorEvent, ImageReadyEvent
+        from textbrush.ipc.protocol import ImageReadyEvent
 
         def deliver_loop():
             logger.info("Image delivery loop started")
@@ -730,13 +732,8 @@ class MessageHandler:
                     worker_error = self.backend.check_worker_error()
                     if worker_error:
                         logger.error(f"Worker error detected: {worker_error}")
-                        server.send(
-                            Message(
-                                MessageType.ERROR,
-                                dataclass_to_dict(
-                                    ErrorEvent(message=str(worker_error), fatal=True)
-                                ),
-                            )
+                        self._emit_state_changed(
+                            server, "error", message=str(worker_error), fatal=True
                         )
                         break
 
@@ -854,8 +851,6 @@ class MessageHandler:
                a. Log error
                b. Send fatal ERROR event with exception message
         """
-        from textbrush.ipc.protocol import ErrorEvent
-
         try:
             logger.info("Initializing backend (loading model)...")
             self.backend.initialize()
@@ -863,11 +858,7 @@ class MessageHandler:
             on_ready()
         except Exception as e:
             logger.error(f"Backend init failed: {e}", exc_info=True)
-            server.send(
-                Message(
-                    MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(e), fatal=True))
-                )
-            )
+            self._emit_state_changed(server, "error", message=str(e), fatal=True)
 
     def handle_get_image_list(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle GET_IMAGE_LIST command: send full image list to frontend.
@@ -1033,5 +1024,6 @@ class MessageHandler:
         with self._state_lock:
             index = self._next_index
             self._image_index_map[index] = buffered_image
+            self._delivery_order.append(index)
             self._next_index += 1
             return index

@@ -1,0 +1,60 @@
+{
+  "epic_name": "fix-init-error-event-handling",
+  "created_at": "2026-02-21T23:30:00Z",
+  "updated_at": "2026-02-21T23:30:00Z",
+  "total_stories": 2,
+  "stories": [
+    {
+      "id": "01",
+      "name": "backend-use-state-machine-for-fatal-errors",
+      "title": "Replace MessageType.ERROR with _emit_state_changed for all fatal backend errors",
+      "description": "Replace the legacy MessageType.ERROR emission in _init_backend with _emit_state_changed(server, 'error', message=str(e), fatal=True). Also replace the worker error emission in _start_image_delivery (which is also fatal/state-changing). Update the existing test test_init_backend_failure_sends_fatal_error to assert the new STATE_CHANGED behavior.",
+      "acceptance_criteria": ["AC-001", "AC-003", "AC-004", "AC-005"],
+      "scope": {
+        "includes": [
+          "_init_backend exception handler in handler.py",
+          "_start_image_delivery worker_error check in handler.py",
+          "test_init_backend_failure_sends_fatal_error in test_ipc_handler.py"
+        ],
+        "excludes": [
+          "Non-fatal MessageType.ERROR usages (handle_accept, handle_update_config, handle_pause_resume)",
+          "Frontend changes (Story 02)",
+          "Protocol changes"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "done",
+      "notes": "FR2 (emit loading state) is already implemented from epic-emit-loading-state-on-backend-init. Only FR1 and the FR3 audit fix are needed here."
+    },
+    {
+      "id": "02",
+      "name": "frontend-add-error-message-handler",
+      "title": "Add case 'error': branch to frontend handleMessage switch",
+      "description": "Add an explicit case 'error': handler in the handleMessage switch in src-tauri/ui/main.ts. For fatal=true payloads, delegate to handleFatalError(payload.message). For non-fatal payloads, display a brief error notification in the loading prompt area (3 seconds). This ensures legacy non-fatal MessageType.ERROR events from operational handlers are not silently dropped.",
+      "acceptance_criteria": ["AC-002", "AC-006"],
+      "scope": {
+        "includes": [
+          "handleMessage switch in src-tauri/ui/main.ts",
+          "New ErrorPayload type interface if needed"
+        ],
+        "excludes": [
+          "handleStateChanged changes",
+          "handleFatalError changes",
+          "Backend changes (Story 01)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "The frontend already handles state='error' in handleStateChanged. This only adds the legacy 'error' message type handler for defense-in-depth."
+    }
+  ],
+  "story_order": ["01", "02"],
+  "dependency_notes": "Stories are independent. Story 01 changes backend, Story 02 changes frontend. No mocks required.",
+  "mock_resolution_plan": "No temporary mocks introduced."
+}

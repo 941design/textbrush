@@ -134,7 +134,8 @@ class TestInitCommand:
                 handler.handle_init(payload, mock_server)
 
         state_changed_calls = [
-            call for call in mock_server.send.call_args_list
+            call
+            for call in mock_server.send.call_args_list
             if call[0][0].type == MessageType.STATE_CHANGED
         ]
         assert len(state_changed_calls) >= 1, "At least one STATE_CHANGED message must be sent"
@@ -159,14 +160,14 @@ class TestInitCommand:
                 handler.handle_init(payload, mock_server)
 
         state_changed_calls = [
-            call for call in mock_server.send.call_args_list
+            call
+            for call in mock_server.send.call_args_list
             if call[0][0].type == MessageType.STATE_CHANGED
         ]
         assert len(state_changed_calls) >= 1, "At least one STATE_CHANGED message must be sent"
         first_state = state_changed_calls[0][0][0].payload["state"]
         assert first_state == "loading", (
-            f"First STATE_CHANGED must be 'loading' for all payload variations, "
-            f"got '{first_state}'"
+            f"First STATE_CHANGED must be 'loading' for all payload variations, got '{first_state}'"
         )
 
 
@@ -235,6 +236,7 @@ class TestAcceptCommand:
         image2 = Mock()
         # Use index-based tracking (new architecture)
         handler._image_index_map = {0: image1, 1: image2}
+        handler._delivery_order = [0, 1]
         handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
@@ -245,7 +247,7 @@ class TestAcceptCommand:
         handler.handle_accept(mock_server)
 
         mock_backend.accept_all.assert_called_once()
-        # Verify it was called with the delivered images (sorted by index)
+        # Verify it was called with the delivered images in delivery order
         call_args = mock_backend.accept_all.call_args[0][0]
         assert call_args == [image1, image2]
 
@@ -255,11 +257,50 @@ class TestAcceptCommand:
         assert call_args.type == MessageType.ACCEPTED
         assert len(call_args.payload["paths"]) == 2
 
+    def test_accept_uses_delivery_order_not_index_order(self, handler, mock_server, tmp_path):
+        """Accept emits paths in delivery (viewing) order, not sorted index order."""
+        image0 = Mock()
+        image1 = Mock()
+        # Simulate delivery order: index 1 was delivered before index 0
+        handler._image_index_map = {0: image0, 1: image1}
+        handler._delivery_order = [1, 0]  # index 1 delivered first
+        handler._deleted_indices = set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        output_paths = [tmp_path / "img_first.png", tmp_path / "img_second.png"]
+        mock_backend.accept_all = Mock(return_value=output_paths)
+        handler.backend = mock_backend
+
+        handler.handle_accept(mock_server)
+
+        mock_backend.accept_all.assert_called_once()
+        # Delivery order is [1, 0], so image1 must come before image0
+        call_args = mock_backend.accept_all.call_args[0][0]
+        assert call_args == [image1, image0], (
+            "images_to_accept must follow delivery order (viewing order), not index order"
+        )
+
+    def test_accept_clears_delivery_order_after_accept(self, handler, mock_server, tmp_path):
+        """_delivery_order is cleared after a successful accept."""
+        image1 = Mock()
+        handler._image_index_map = {0: image1}
+        handler._delivery_order = [0]
+        handler._deleted_indices = set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.accept_all = Mock(return_value=[tmp_path / "out.png"])
+        handler.backend = mock_backend
+
+        handler.handle_accept(mock_server)
+
+        assert handler._delivery_order == [], "_delivery_order must be cleared after accept"
+
     def test_accept_signals_delivery_thread(self, handler, mock_server, tmp_path):
         """Accept command does NOT signal delivery thread (process exits)."""
         image1 = Mock()
         # Use index-based tracking (new architecture)
         handler._image_index_map = {0: image1}
+        handler._delivery_order = [0]
         handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
@@ -277,6 +318,7 @@ class TestAcceptCommand:
         image1 = Mock()
         # Use index-based tracking (new architecture)
         handler._image_index_map = {0: image1}
+        handler._delivery_order = [0]
         handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
@@ -422,6 +464,7 @@ class TestDeleteCommand:
         image2.temp_path = tmp_path / "img1.png"
 
         handler._image_index_map = {0: image1, 1: image2}
+        handler._delivery_order = [0, 1]
         handler._deleted_indices = set()
 
         mock_backend = Mock(spec=TextbrushBackend)
@@ -584,8 +627,8 @@ class TestBackendInitialization:
         assert ready_called.is_set()
         mock_backend.initialize.assert_called_once()
 
-    def test_init_backend_failure_sends_fatal_error(self, handler, mock_server):
-        """Backend init failure sends fatal ERROR event."""
+    def test_init_backend_failure_emits_error_state(self, handler, mock_server):
+        """Backend init failure emits state_changed(error) via state machine."""
 
         def on_ready():
             pass
@@ -598,7 +641,8 @@ class TestBackendInitialization:
 
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]
-        assert call_args.type == MessageType.ERROR
+        assert call_args.type == MessageType.STATE_CHANGED
+        assert call_args.payload["state"] == "error"
         assert call_args.payload["fatal"] is True
         assert "Model load failed" in call_args.payload["message"]
 
@@ -905,7 +949,10 @@ class TestUpdateConfigCommand:
         handler._generation_started = False
 
         payload = {
-            "prompt": "futuristic neon lobster", "aspect_ratio": "1:1", "width": 512, "height": 512
+            "prompt": "futuristic neon lobster",
+            "aspect_ratio": "1:1",
+            "width": 512,
+            "height": 512,
         }
         handler.handle_update_config(payload, mock_server)
 

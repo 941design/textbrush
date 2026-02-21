@@ -1,0 +1,82 @@
+{
+  "created_at": "2026-02-21T23:30:00Z",
+  "key_files": [
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "858-872",
+      "relevance": "_init_backend sends MessageType.ERROR for fatal init failures; needs to use _emit_state_changed",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "940-1003",
+      "relevance": "_emit_state_changed: thread-safe state emitter with validation; accepts state, message, fatal params",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/ipc/handler.py",
+      "lines": "67-175",
+      "relevance": "handle_init already emits loading state at line 124; FR2 is already implemented",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "220-254",
+      "relevance": "handleMessage switch: missing case 'error' branch; falls through to console.warn",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "257-281",
+      "relevance": "handleStateChanged: already handles state='error' + fatal path via handleFatalError",
+      "source": "similar-features"
+    },
+    {
+      "path": "tests/test_ipc_handler.py",
+      "lines": "630-646",
+      "relevance": "test_init_backend_failure_sends_fatal_error: asserts MessageType.ERROR - will need updating after FR1",
+      "source": "testing-and-conventions"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "state-machine-error-emission",
+      "description": "_emit_state_changed(server, 'error', message=str(e), fatal=True) is the correct pattern for fatal errors",
+      "reference": "textbrush/ipc/handler.py:940"
+    },
+    {
+      "name": "non-fatal-operational-errors",
+      "description": "Non-fatal errors in handle_accept, handle_update_config, handle_pause_resume use MessageType.ERROR with fatal=False; these are valid",
+      "reference": "textbrush/ipc/handler.py:262,298,441,458,467,575"
+    },
+    {
+      "name": "frontend-case-handler",
+      "description": "Switch case handlers in handleMessage pass typed payloads to named functions",
+      "reference": "src-tauri/ui/main.ts:226-253"
+    }
+  ],
+  "similar_features": [
+    {
+      "description": "emit-loading-state epic already implemented FR2 (loading state emission in handle_init)",
+      "reference": "specs/epic-emit-loading-state-on-backend-init/"
+    }
+  ],
+  "architecture": {
+    "backend_error_paths": "Two paths: (1) _emit_state_changed for state-machine transitions, (2) MessageType.ERROR for non-fatal ops",
+    "frontend_error_handling": "handleStateChanged handles state='error'; handleFatalError handles fatal=True",
+    "thread_safety": "_emit_state_changed acquires _state_lock; _init_backend runs in daemon thread - no deadlock risk since _state_lock is not held when _init_backend is called"
+  },
+  "extension_points": [
+    "handleMessage switch in main.ts - add case 'error': before default"
+  ],
+  "testing": {
+    "framework": "pytest",
+    "handler_tests": "tests/test_ipc_handler.py",
+    "frontend_tests": "tests/test_html_structure.py (static analysis), no JS unit tests"
+  },
+  "conventions": [
+    "All state transitions through _emit_state_changed",
+    "Tests must NOT be tailored to production code behavior - production code changes require test updates",
+    "Worker errors in _start_image_delivery at line 737 also use MessageType.ERROR with fatal=True - this is also a state-changing error and may need FR1 treatment per FR3 audit"
+  ]
+}

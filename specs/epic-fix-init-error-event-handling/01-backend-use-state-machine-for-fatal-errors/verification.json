@@ -1,0 +1,64 @@
+{
+  "created_at": "2026-02-21T23:50:00Z",
+  "story_id": "01",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "correctness",
+      "question": "Does _init_backend use _emit_state_changed(server, 'error', ...) instead of MessageType.ERROR?",
+      "actionable_check": "grep -n 'MessageType.ERROR' textbrush/ipc/handler.py and verify line ~870 is gone; grep -n '_emit_state_changed' textbrush/ipc/handler.py and verify 'error' state is emitted in _init_backend exception handler",
+      "evidence_required": ["grep output showing no MessageType.ERROR in _init_backend", "grep output showing _emit_state_changed call with state='error' in _init_backend area"],
+      "pass_criteria": "MessageType.ERROR removed from _init_backend; _emit_state_changed called with state='error', fatal=True in its place"
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "correctness",
+      "question": "Does the worker error check in _start_image_delivery use _emit_state_changed instead of MessageType.ERROR?",
+      "actionable_check": "Read handler.py lines around _start_image_delivery worker_error check; verify MessageType.ERROR is replaced with _emit_state_changed",
+      "evidence_required": ["code snippet showing the worker_error handler uses _emit_state_changed"],
+      "pass_criteria": "_emit_state_changed(server, 'error', message=str(worker_error), fatal=True) called for worker errors"
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "safety",
+      "question": "Are all remaining MessageType.ERROR usages using fatal=False (non-fatal operational errors only)?",
+      "actionable_check": "grep -A3 'MessageType.ERROR' textbrush/ipc/handler.py | grep 'fatal'",
+      "evidence_required": ["grep output showing all remaining MessageType.ERROR lines have fatal=False"],
+      "pass_criteria": "Every remaining MessageType.ERROR call uses fatal=False"
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "testing",
+      "question": "Is test_init_backend_failure_emits_error_state (renamed from test_init_backend_failure_sends_fatal_error) correct and passing?",
+      "actionable_check": "Run python -m pytest tests/test_ipc_handler.py::TestInitBackend::test_init_backend_failure_emits_error_state -v and read the test body",
+      "evidence_required": ["test output showing test passes", "test body showing it asserts MessageType.STATE_CHANGED with state='error'"],
+      "pass_criteria": "Test asserts call_args.type == MessageType.STATE_CHANGED, payload['state'] == 'error', payload['fatal'] is True, 'Model load failed' in payload['message']"
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "correctness",
+      "question": "Is the unused ErrorEvent import removed from _start_image_delivery?",
+      "actionable_check": "grep -n 'ErrorEvent' textbrush/ipc/handler.py near _start_image_delivery function; run ruff check on handler.py",
+      "evidence_required": ["ruff check output showing no F401 errors"],
+      "pass_criteria": "ruff reports 'All checks passed!' for handler.py"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-01-M1",
+      "category": "regression",
+      "question": "Do all 61 tests in test_ipc_handler.py still pass?",
+      "actionable_check": "python -m pytest tests/test_ipc_handler.py -q",
+      "evidence_required": ["test output showing pass count"],
+      "pass_criteria": "61 tests pass, 0 failures"
+    },
+    {
+      "id": "VQ-01-M2",
+      "category": "regression",
+      "question": "Does the overall test suite have no new failures compared to baseline (still 643 passing, 24 pre-existing torch failures)?",
+      "actionable_check": "python -m pytest tests/ --ignore=tests/e2e --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_inference_integration.py --ignore=tests/test_reproducibility.py -q",
+      "evidence_required": ["test summary showing same or better passing count"],
+      "pass_criteria": "643+ tests pass, no new failures beyond the 24 pre-existing torch failures"
+    }
+  ]
+}

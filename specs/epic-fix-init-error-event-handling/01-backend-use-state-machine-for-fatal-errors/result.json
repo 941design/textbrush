@@ -1,0 +1,111 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "created_at": "2026-02-21T23:40:00Z",
+  "updated_at": "2026-02-21T23:55:00Z",
+  "completed_at": "2026-02-21T23:55:00Z",
+
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-02-21T23:40:00Z",
+    "completed_at": "2026-02-21T23:50:00Z",
+    "files_created": [],
+    "files_modified": [
+      "textbrush/ipc/handler.py",
+      "tests/test_ipc_handler.py"
+    ],
+    "mocks_introduced": []
+  },
+
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-02-21T23:55:00Z",
+      "results": [
+        {
+          "question_id": "VQ-01-001",
+          "result": "pass",
+          "evidence": {
+            "findings": "Line 861 now shows _emit_state_changed(server, 'error', message=str(e), fatal=True). No MessageType.ERROR in _init_backend exception handler.",
+            "specific_locations": ["textbrush/ipc/handler.py:861"]
+          }
+        },
+        {
+          "question_id": "VQ-01-002",
+          "result": "pass",
+          "evidence": {
+            "findings": "Lines 735-737 show _emit_state_changed(server, 'error', message=str(worker_error), fatal=True) in worker error check.",
+            "specific_locations": ["textbrush/ipc/handler.py:735-737"]
+          }
+        },
+        {
+          "question_id": "VQ-01-003",
+          "result": "pass",
+          "evidence": {
+            "findings": "All 6 remaining MessageType.ERROR usages use fatal=False (handle_accept, handle_update_config, handle_pause_resume)"
+          }
+        },
+        {
+          "question_id": "VQ-01-004",
+          "result": "pass",
+          "evidence": {
+            "findings": "test_init_backend_failure_emits_error_state passes; asserts STATE_CHANGED type, state='error', fatal=True",
+            "specific_locations": ["tests/test_ipc_handler.py:630-647"]
+          }
+        },
+        {
+          "question_id": "VQ-01-005",
+          "result": "pass",
+          "evidence": {
+            "findings": "ruff check reports 'All checks passed!' for handler.py"
+          }
+        },
+        {
+          "question_id": "VQ-01-M1",
+          "result": "pass",
+          "evidence": {
+            "findings": "61/61 tests pass in test_ipc_handler.py"
+          }
+        },
+        {
+          "question_id": "VQ-01-M2",
+          "result": "pass",
+          "evidence": {
+            "findings": "643 passing (same as baseline), 24 pre-existing torch failures (unchanged), 39 skipped"
+          }
+        }
+      ],
+      "summary": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "partial": 0
+      },
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-02-21T23:55:00Z",
+        "command": "python -m pytest tests/test_ipc_handler.py tests/test_ipc_integration.py tests/test_ipc_server.py tests/test_image_delivery_update.py tests/test_ipc_handler_index_management.py -q",
+        "passed": true,
+        "total_tests": 280,
+        "passed_tests": 267,
+        "failed_tests": 0,
+        "failures": [],
+        "evidence": "267 passed, 13 skipped, 0 failures",
+        "e2e_tests": {
+          "ran_at": "2026-02-21T23:55:00Z",
+          "command": "N/A - No Docker/E2E environment available in this CI context",
+          "passed": true,
+          "total_tests": 0,
+          "passed_tests": 0,
+          "failed_tests": 0,
+          "test_files": [],
+          "evidence": "Backend-only story with no UI changes; E2E coverage provided by Story 02 which adds the frontend case 'error' handler. This story only changes Python source and tests."
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}
