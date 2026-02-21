@@ -1,7 +1,7 @@
 {
   "epic_name": "emit-loading-state-on-backend-init",
   "created_at": "2026-02-21T22:00:00Z",
-  "updated_at": "2026-02-21T22:00:00Z",
+  "updated_at": "2026-02-21T23:10:00Z",
   "total_stories": 2,
 
   "stories": [
@@ -103,7 +103,7 @@
         ],
         "playwright_file": "tests/e2e/test_full_workflow.py"
       },
-      "status": "pending",
+      "status": "done",
       "notes": "MUST be implemented after Story 01 is committed so the backend always emits loading before the frontend stops hardcoding it — this preserves correct UI behavior throughout the migration. The mock dependency (MOCK-02-001) is a development-time test seam only; no mock code enters production. Run `node --test src-tauri/ui/state-sync-integration.test.js` for frontend unit tests. AC-004 is listed here because the full ordering guarantee (loading arrives before idle/error at the frontend) can only be stated definitively once both stories are complete."
     }
   ],

@@ -28,9 +28,7 @@ const appWindow = getCurrentWindow();
 // State Management
 const state: AppState = {
   currentImage: null,
-  backendState: {
-    state: "loading",  // Initial state - waiting for backend to load model
-  },
+  backendState: null,  // null until first state_changed(loading) event arrives from backend
   isPaused: false,  // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
   prompt: '',
@@ -455,6 +453,9 @@ function handleDeleteAck(payload: DeleteAckPayload): void {
 }
 
 function updateLoadingOverlayForState(): void {
+  if (!state.backendState) {
+    return;
+  }
   const backendStateValue = state.backendState.state;
 
   // Determine if spinner should be visible
@@ -1005,7 +1006,8 @@ function next(): void {
     return;
   }
 
-  const isAlreadyGenerating = (state.backendState.state === "generating" || state.backendState.state === "loading");
+  const isAlreadyGenerating = state.backendState !== null &&
+    (state.backendState.state === "generating" || state.backendState.state === "loading");
   if (isAlreadyGenerating && state.currentIndex >= state.imageList.length - 1) {
     console.log('Already waiting for next image');
     return;
@@ -1114,7 +1116,8 @@ function deleteCurrentImage(): void {
           elements.loadingPrompt.textContent = `Delete failed: ${err instanceof Error ? err.message : String(err)}`;
           setTimeout(() => {
             // Restore prompt if still in generating state (use type narrowing)
-            if (elements.loadingPrompt && state.backendState.state === "generating") {
+            if (elements.loadingPrompt && state.backendState !== null &&
+                state.backendState.state === "generating") {
               elements.loadingPrompt.textContent = state.backendState.prompt;
             }
           }, 2000);

@@ -1,0 +1,80 @@
+{
+  "created_at": "2026-02-21T22:55:00Z",
+  "story_id": "02",
+  "questions": [
+    {
+      "id": "VQ-02-001",
+      "category": "implementation",
+      "question": "Does AppState initializer in main.ts set backendState to null (not { state: 'loading' })?",
+      "actionable_check": "Read src-tauri/ui/main.ts lines 29-47; confirm backendState: null; confirm no string 'loading' in the initial state block",
+      "evidence_required": ["Code excerpt showing backendState: null in AppState initializer", "Confirmation that no string 'loading' appears in the initial state"],
+      "pass_criteria": "backendState: null in AppState initializer, no hardcoded 'loading' string in initial state block"
+    },
+    {
+      "id": "VQ-02-002",
+      "category": "implementation",
+      "question": "Does updateLoadingOverlayForState guard against null backendState without throwing TypeError?",
+      "actionable_check": "Read updateLoadingOverlayForState in main.ts; confirm null check at top before accessing state.backendState.state",
+      "evidence_required": ["Code excerpt showing null guard in updateLoadingOverlayForState", "Confirmation that the function returns early when backendState is null"],
+      "pass_criteria": "Function has null guard before dereferencing state.backendState.state"
+    },
+    {
+      "id": "VQ-02-003",
+      "category": "implementation",
+      "question": "Does the isAlreadyGenerating guard in next() handle null backendState as false?",
+      "actionable_check": "Read next() function in main.ts around line 1008; confirm null check before accessing state.backendState.state",
+      "evidence_required": ["Code excerpt showing null-safe isAlreadyGenerating computation", "Confirmation that null backendState results in isAlreadyGenerating=false"],
+      "pass_criteria": "isAlreadyGenerating evaluates to false (not throws) when state.backendState is null"
+    },
+    {
+      "id": "VQ-02-004",
+      "category": "implementation",
+      "question": "Does the delete error handler guard against null backendState when restoring prompt?",
+      "actionable_check": "Read the delete error handler in main.ts (around line 1117); confirm null check before accessing state.backendState.state",
+      "evidence_required": ["Code excerpt showing null guard in delete error handler", "Confirmation that state.backendState is checked for null before .state access"],
+      "pass_criteria": "Delete error handler guards against null backendState before accessing .state"
+    },
+    {
+      "id": "VQ-02-005",
+      "category": "implementation",
+      "question": "Is the BackendState type in types.ts updated to BackendState | null?",
+      "actionable_check": "Read src-tauri/ui/types.ts AppState interface; confirm backendState: BackendState | null",
+      "evidence_required": ["Code excerpt from types.ts showing backendState: BackendState | null"],
+      "pass_criteria": "types.ts AppState.backendState is typed as BackendState | null"
+    },
+    {
+      "id": "VQ-02-006",
+      "category": "test_coverage",
+      "question": "Does createMockState() in state-sync-integration.test.js initialize backendState to null?",
+      "actionable_check": "Read src-tauri/ui/state-sync-integration.test.js createMockState function; confirm backendState: null",
+      "evidence_required": ["Code excerpt showing backendState: null in createMockState()"],
+      "pass_criteria": "createMockState() returns { backendState: null, ... }"
+    },
+    {
+      "id": "VQ-02-007",
+      "category": "test_coverage",
+      "question": "Does the AC-011 test verify that handleStateChanged(loading) transitions null → { state: loading }?",
+      "actionable_check": "Read state-sync-integration.test.js; find AC-011 test; confirm it starts with backendState=null and ends with backendState.state=='loading'",
+      "evidence_required": ["Code excerpt of the AC-011 test", "Confirmation that test starts with null and verifies loading after event"],
+      "pass_criteria": "AC-011 test exists and verifies null → loading transition"
+    },
+    {
+      "id": "VQ-02-008",
+      "category": "test_coverage",
+      "question": "Do all 25 frontend integration tests pass?",
+      "actionable_check": "Run: node --test src-tauri/ui/state-sync-integration.test.js from /Users/mrother/Projects/941design/textbrush",
+      "evidence_required": ["Full test output showing 25 passed, 0 failed", "Exit code 0"],
+      "pass_criteria": "25 tests pass, 0 fail"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "MQ-02-001",
+      "category": "regression",
+      "question": "Do all Python unit tests still pass (no regressions from frontend changes)?",
+      "actionable_check": "Run: source venv/bin/activate && python -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py tests/test_ipc_handler.py -q --tb=short from /Users/mrother/Projects/941design/textbrush",
+      "evidence_required": ["Full test output showing 188+ passed, 0 failed", "Exit code 0"],
+      "pass_criteria": "All Python unit tests pass"
+    }
+  ]
+}

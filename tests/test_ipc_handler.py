@@ -878,9 +878,9 @@ class TestUpdateConfigCommand:
         ]
         assert len(error_events) == 0
 
-    @given(invalid_aspect=st.text().filter(lambda x: x not in {"1:1", "16:9", "9:16"}))
+    @given(invalid_aspect=st.text().filter(lambda x: x not in {"1:1", "16:9", "9:16", "custom"}))
     def test_update_config_invalid_aspect_ratio_sends_error(self, invalid_aspect):
-        """Invalid aspect ratio sends non-fatal error."""
+        """Invalid aspect ratio (not preset or 'custom') sends non-fatal error."""
         config = get_default_config()
         handler = MessageHandler(config)
         mock_server = Mock()

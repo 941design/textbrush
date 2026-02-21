@@ -162,7 +162,7 @@ export type BackendState =
 // Application state
 export interface AppState {
   currentImage: ImagePayload | null;
-  backendState: BackendState;  // NEW: Unified state from backend (replaces isGenerating, backendReady, waitingForNext)
+  backendState: BackendState | null;  // null until first state_changed event received from backend
   isPaused: boolean;           // DEPRECATED: Will be removed, use backendState.state === "paused"
   isTransitioning: boolean;
   prompt: string;

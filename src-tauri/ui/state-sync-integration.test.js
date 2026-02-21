@@ -28,9 +28,7 @@ import { JSDOM } from 'jsdom';
 function createMockState() {
   return {
     currentImage: null,
-    backendState: {
-      state: "loading",
-    },
+    backendState: null,
     isPaused: false,
     isTransitioning: false,
     prompt: '',
@@ -81,7 +79,11 @@ describe('State Changed Event Integration', () => {
   it('Property: Backend state always reflects most recent state_changed payload', () => {
     const state = createMockState();
 
-    // Initial state
+    // Initial state: null (no event received yet)
+    assert.equal(state.backendState, null);
+
+    // Simulate first state_changed event: loading (from backend init)
+    state.backendState = { state: "loading" };
     assert.equal(state.backendState.state, "loading");
 
     // Simulate state_changed to idle
@@ -163,7 +165,11 @@ describe('State Changed Event Integration', () => {
     const state = createMockState();
     const events = [];
 
-    // Initial: loading
+    // Initial: null (no event yet)
+    assert.equal(state.backendState, null);
+
+    // Backend init → first event: loading
+    state.backendState = { state: "loading" };
     events.push({ ...state.backendState });
     assert.equal(state.backendState.state, "loading");
 
@@ -204,6 +210,23 @@ describe('State Changed Event Integration', () => {
     assert.equal(state.backendState.state, "error");
     assert.equal(state.backendState.fatal, true);
     // In real code, this would trigger setTimeout(() => appWindow.close(), 2000)
+  });
+
+  it('AC-011: handleStateChanged(loading) transitions null backendState to { state: loading }', () => {
+    // Simulates the event-driven initialisation: frontend starts with null backendState
+    // and the first state_changed(loading) event from the backend establishes the initial state.
+    const state = createMockState();
+
+    // Precondition: backendState is null (no event received yet)
+    assert.equal(state.backendState, null);
+
+    // Simulate handleStateChanged receiving { state: "loading" } from backend
+    const loadingPayload = { state: "loading" };
+    state.backendState = loadingPayload;  // handleStateChanged does: state.backendState = payload
+
+    // Postconditions
+    assert.notEqual(state.backendState, null);
+    assert.equal(state.backendState.state, "loading");
   });
 });
 
@@ -460,13 +483,17 @@ describe('System-Level Properties', () => {
   it('Property: State changes are event-driven (no optimistic updates)', () => {
     const state = createMockState();
 
-    // Initial state: loading
-    assert.equal(state.backendState.state, "loading");
+    // Initial state: null (no event received yet)
+    assert.equal(state.backendState, null);
 
     // User action (e.g., clicks "next") does NOT change state directly
     // State only changes when backend sends state_changed event
 
-    // Simulate backend event
+    // Simulate first backend event: loading
+    state.backendState = { state: "loading" };
+    assert.equal(state.backendState.state, "loading");
+
+    // Simulate backend event: generating
     state.backendState = { state: "generating", prompt: "test" };
 
     // Now state reflects event

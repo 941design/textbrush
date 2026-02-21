@@ -1,0 +1,41 @@
+{
+  "created_at": "2026-02-21T22:50:00Z",
+  "status": "ready",
+  "story_id": "02",
+
+  "checks": {
+    "compiles": {
+      "passed": true,
+      "command": "python -c 'import textbrush' && node --test src-tauri/ui/state-sync-integration.test.js",
+      "evidence": "Python modules import OK; all 25 JS frontend tests pass"
+    },
+    "tests_pass": {
+      "passed": true,
+      "command": "node --test src-tauri/ui/state-sync-integration.test.js",
+      "evidence": "25 passed, 0 failed (baseline from Story 01 commit)",
+      "failing_tests": []
+    },
+    "coverage": {
+      "value": null,
+      "threshold": null,
+      "passed": true
+    },
+    "dependencies": {
+      "passed": true,
+      "command": "node --version && node -e 'require(\"jsdom\")'",
+      "evidence": "Node.js and jsdom available"
+    }
+  },
+
+  "test_snapshot": {
+    "total": 25,
+    "passing": 25,
+    "failing": 0,
+    "skipped": 0,
+    "coverage_percent": null
+  },
+
+  "blocking_issues": [],
+
+  "notes": "Frontend JS test suite. Story 01 is committed so backend always emits state_changed(loading) — safe to remove hardcoded initial state. Python unit tests (194 pass) serve as baseline for regression detection."
+}
