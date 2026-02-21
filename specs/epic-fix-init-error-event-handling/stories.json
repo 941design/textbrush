@@ -50,7 +50,7 @@
       "mock_dependencies": [],
       "introduces_mocks": [],
       "test_fixtures": [],
-      "status": "pending",
+      "status": "done",
       "notes": "The frontend already handles state='error' in handleStateChanged. This only adds the legacy 'error' message type handler for defense-in-depth."
     }
   ],

@@ -1,0 +1,64 @@
+{
+  "created_at": "2026-02-22T00:10:00Z",
+  "story_id": "02",
+  "questions": [
+    {
+      "id": "VQ-02-001",
+      "category": "correctness",
+      "question": "Does handleMessage switch have an explicit case 'error': branch before the default case?",
+      "actionable_check": "grep -n \"case 'error'\" src-tauri/ui/main.ts",
+      "evidence_required": ["grep output showing case 'error': exists in handleMessage"],
+      "pass_criteria": "case 'error': exists as a case in the handleMessage switch, before default:"
+    },
+    {
+      "id": "VQ-02-002",
+      "category": "correctness",
+      "question": "Does case 'error' delegate to handleErrorMessage(payload), and does handleErrorMessage delegate fatal=true to handleFatalError?",
+      "actionable_check": "Read src-tauri/ui/main.ts lines around case 'error' and handleErrorMessage function",
+      "evidence_required": ["code snippet showing case 'error' calls handleErrorMessage", "code snippet showing handleErrorMessage checks payload.fatal and calls handleFatalError for fatal=true"],
+      "pass_criteria": "case 'error' calls handleErrorMessage(msg.payload as ErrorPayload); handleErrorMessage calls handleFatalError(payload.message) when payload.fatal is true"
+    },
+    {
+      "id": "VQ-02-003",
+      "category": "correctness",
+      "question": "Is ErrorPayload type defined in types.ts with message and fatal fields?",
+      "actionable_check": "grep -n 'ErrorPayload' src-tauri/ui/types.ts",
+      "evidence_required": ["grep output showing ErrorPayload interface exists"],
+      "pass_criteria": "ErrorPayload interface has message: string and fatal: boolean fields; ErrorMessage type exists in SidecarMessage union"
+    },
+    {
+      "id": "VQ-02-004",
+      "category": "correctness",
+      "question": "Is ErrorPayload imported in main.ts?",
+      "actionable_check": "grep -n 'ErrorPayload' src-tauri/ui/main.ts",
+      "evidence_required": ["grep output showing ErrorPayload in import statement"],
+      "pass_criteria": "ErrorPayload appears in the import from './types' at the top of main.ts"
+    },
+    {
+      "id": "VQ-02-005",
+      "category": "defense-in-depth",
+      "question": "Does handleErrorMessage handle non-fatal errors with a transient notification?",
+      "actionable_check": "Read handleErrorMessage function body in main.ts",
+      "evidence_required": ["code snippet showing non-fatal path uses loadingPrompt and setTimeout for 3s display"],
+      "pass_criteria": "When payload.fatal is false, function displays error in loadingPrompt element with 3s auto-clear via setTimeout"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-02-M1",
+      "category": "regression",
+      "question": "Do all 246 frontend-related tests still pass?",
+      "actionable_check": "python -m pytest tests/test_html_structure.py tests/test_ui_styles.py tests/test_animations_css.py tests/test_config_controls.py tests/test_config_controls_integration.py tests/test_ui_config_integration.py -q",
+      "evidence_required": ["test output showing pass count"],
+      "pass_criteria": "246 tests pass, 0 failures"
+    },
+    {
+      "id": "VQ-02-M2",
+      "category": "regression",
+      "question": "Does the overall test suite have no new failures?",
+      "actionable_check": "python -m pytest tests/ --ignore=tests/e2e --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_inference_integration.py --ignore=tests/test_reproducibility.py -q --tb=line",
+      "evidence_required": ["test summary line"],
+      "pass_criteria": "643+ tests pass, no new failures beyond 24 pre-existing torch failures"
+    }
+  ]
+}

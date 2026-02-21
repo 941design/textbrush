@@ -19,6 +19,7 @@ import type {
   StateChangedPayload,
   AcceptedPayload,
   DeleteAckPayload,
+  ErrorPayload,
   ImageRecord,
 } from './types';
 
@@ -248,6 +249,10 @@ function handleMessage(msg: SidecarMessage): void {
       handleDeleteAck(msg.payload as DeleteAckPayload);
       break;
 
+    case 'error':
+      handleErrorMessage(msg.payload as ErrorPayload);
+      break;
+
     default:
       console.warn('Unknown message type:', msg.type);
   }
@@ -335,6 +340,30 @@ function handleFatalError(message: string): void {
   setTimeout(() => {
     void appWindow.close();
   }, 3000);
+}
+
+/**
+ * Handle legacy error message type from backend.
+ * Fatal errors delegate to handleFatalError for full UI lockdown and auto-close.
+ * Non-fatal errors display a transient notification in the loading prompt area.
+ */
+function handleErrorMessage(payload: ErrorPayload): void {
+  if (payload.fatal) {
+    handleFatalError(payload.message);
+  } else {
+    console.warn('Non-fatal backend error:', payload.message);
+    // Display brief notification in loading prompt area if visible
+    if (elements.loadingPrompt) {
+      const original = elements.loadingPrompt.textContent;
+      elements.loadingPrompt.textContent = `Error: ${payload.message}`;
+      elements.loadingPrompt.classList.remove('hidden');
+      setTimeout(() => {
+        if (elements.loadingPrompt) {
+          elements.loadingPrompt.textContent = original;
+        }
+      }, 3000);
+    }
+  }
 }
 
 async function handleImageReady(payload: ImagePayload): Promise<void> {

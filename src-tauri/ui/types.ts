@@ -90,13 +90,27 @@ export interface DeleteAckMessage {
   payload: DeleteAckPayload;
 }
 
+// Legacy error event payload - used for non-fatal operational errors from backend
+// (e.g. "No images to accept", "Backend not initialized", "Prompt cannot be empty")
+// Fatal errors are delivered via state_changed with state="error" instead.
+export interface ErrorPayload {
+  message: string;
+  fatal: boolean;
+}
+
+export interface ErrorMessage {
+  type: 'error';
+  payload: ErrorPayload;
+}
+
 export type SidecarMessage =
   | StateChangedMessage
   | ImageReadyMessage
   | ImageListMessage
   | AcceptedMessage
   | AbortedMessage
-  | DeleteAckMessage;
+  | DeleteAckMessage
+  | ErrorMessage;
 
 // Launch args from Rust backend
 export interface LaunchArgs {
