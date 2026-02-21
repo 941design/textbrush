@@ -244,7 +244,7 @@
         ],
         "playwright_file": "tests/e2e/story-03-documentation.spec.ts"
       },
-      "status": "in_progress",
+      "status": "done",
       "notes": "This story is independent of Stories 01 and 02 from a code dependency standpoint — README.md changes do not depend on the Python implementation being complete. However, the correct token env var name (HF_TOKEN) and the flag name (--download-model) are specified in the spec and acceptance criteria, so Story 03 can proceed in parallel with Stories 01 and 02."
     }
   ],

@@ -415,7 +415,12 @@ def main(argv: List[str] | None = None) -> None:
                     "HuggingFace token required to download FLUX.1 schnell.\n"
                     "Set your token with:\n"
                     "  export HF_TOKEN=<your_token>\n"
-                    "Get a token at: https://huggingface.co/settings/tokens\n"
+                    "Or add to config file "
+                    "(~/.config/textbrush/config.toml):\n"
+                    "  [huggingface]\n"
+                    '  token = "hf_xxxxxxxxxxxxx"\n'
+                    "Get a token at: "
+                    "https://huggingface.co/settings/tokens\n"
                     "Then accept the model license at: "
                     "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
                     file=sys.stderr,

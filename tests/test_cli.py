@@ -1,6 +1,7 @@
 """Tests for textbrush CLI module."""
 
 import argparse
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -771,6 +772,35 @@ class TestDownloadModelDispatch:
         assert "HuggingFace token required" in captured.err
         assert "HF_TOKEN" in captured.err
         assert "https://huggingface.co/settings/tokens" in captured.err
+        assert "config.toml" in captured.err
+        assert "[huggingface]" in captured.err
+
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.model.weights.download_flux_weights")
+    def test_download_uses_config_token_when_env_absent(
+        self, mock_download, mock_load_config, sample_config, capsys
+    ):
+        """Config token is used when HF_TOKEN env var is absent (FR3)."""
+        from pathlib import Path
+
+        sample_config.huggingface.token = "hf_config_token"
+        mock_load_config.return_value = sample_config
+        mock_download.return_value = Path("/tmp/hf_cache/flux")
+
+        captured_token = {}
+
+        def capture_env_token():
+            captured_token["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            return Path("/tmp/hf_cache/flux")
+
+        mock_download.side_effect = capture_env_token
+
+        env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--download-model"])
+        assert exc_info.value.code == 0
+        assert captured_token["HF_TOKEN"] == "hf_config_token"
 
     @patch("textbrush.cli.load_config")
     @patch("textbrush.model.weights.download_flux_weights")

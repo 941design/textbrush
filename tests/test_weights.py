@@ -203,6 +203,26 @@ class TestTokenRequiredError:
 
                     assert "403" in str(exc_info.value)
 
+    def test_raises_token_required_on_plain_401_exception(self):
+        """Plain Exception with '401' in message raises TokenRequiredError."""
+        with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
+            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+                with patch("textbrush.model.weights.snapshot_download") as mock_download:
+                    mock_download.side_effect = Exception("401 Client Error")
+
+                    with pytest.raises(TokenRequiredError):
+                        download_flux_weights(force=False)
+
+    def test_raises_token_required_on_plain_403_exception(self):
+        """Plain Exception with '403' in message raises TokenRequiredError."""
+        with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
+            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+                with patch("textbrush.model.weights.snapshot_download") as mock_download:
+                    mock_download.side_effect = Exception("403 Forbidden")
+
+                    with pytest.raises(TokenRequiredError):
+                        download_flux_weights(force=False)
+
     def test_hf_http_non_auth_error_raises_runtime_error(self):
         """HfHubHTTPError with non-auth status code raises RuntimeError (not TokenRequiredError)."""
         from huggingface_hub.utils import HfHubHTTPError

@@ -216,6 +216,14 @@ def download_flux_weights(*, force: bool = False) -> Path:
             f"  - Insufficient disk space\n"
         ) from e
     except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "403" in error_msg:
+            raise TokenRequiredError(
+                f"Authentication failed when downloading {FLUX_SCHNELL_ID}. "
+                "Ensure your HF_TOKEN is valid and you have accepted "
+                "the model license at "
+                "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+            ) from e
         cache_info = get_cache_info()
         raise RuntimeError(
             f"Failed to download FLUX.1 Schnell model.\n"
