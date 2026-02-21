@@ -1,0 +1,73 @@
+{
+  "created_at": "2026-02-21T18:10:00Z",
+  "key_files": [
+    { "path": "textbrush/cli.py", "lines": "1-551", "relevance": "Main entry point; build_parser(), validate_args(), main() — all three need modification for --download-model", "source": "similar-features" },
+    { "path": "textbrush/model/weights.py", "lines": "1-161", "relevance": "download_flux_weights(), get_cache_info(), CacheInfo — core of the download workflow; needs TokenRequiredError class and Path return value", "source": "similar-features" },
+    { "path": "scripts/download_model.py", "lines": "1-43", "relevance": "Existing standalone download script; exact call pattern to replicate in CLI (get_cache_info + download_flux_weights + error handling + sys.exit)", "source": "similar-features" },
+    { "path": "tests/test_cli.py", "lines": "1-668", "relevance": "Primary CLI test reference: TestBuildParser, TestValidateArgs, TestMain with patches and SystemExit assertions", "source": "testing-and-conventions" },
+    { "path": "tests/test_weights.py", "lines": "1-218", "relevance": "Mock-based unit tests for download_flux_weights() — patch snapshot_download and is_flux_available; exact pattern for new TokenRequiredError tests", "source": "testing-and-conventions" },
+    { "path": "tests/conftest.py", "lines": "1-150", "relevance": "Shared fixtures: sample_config, mock_engine, config_file; capsys available for stdout/stderr capture", "source": "testing-and-conventions" },
+    { "path": "tests/test_cli_headless.py", "lines": "1-1027", "relevance": "Pattern for early-exit flag dispatch: how run_headless() tests use patch + pytest.raises(SystemExit) + capsys", "source": "testing-and-conventions" },
+    { "path": "textbrush/config.py", "lines": "1-415", "relevance": "Config.huggingface.token field; apply_env_overrides reads TEXTBRUSH_HUGGINGFACE_TOKEN (not HF_TOKEN); token never reaches weights.py today", "source": "architecture" },
+    { "path": "pyproject.toml", "lines": "1-65", "relevance": "Entry point, pytest markers (integration, slow, e2e_smoke), ruff config (line-length=100)", "source": "testing-and-conventions" },
+    { "path": "Makefile", "lines": "1-127", "relevance": "Test/lint commands: uv run pytest, uv run ruff check, uv run ruff format", "source": "testing-and-conventions" }
+  ],
+  "patterns": [
+    { "name": "store_true flag registration", "description": "Boolean flags registered as action='store_true', default=False in build_parser()", "reference": "textbrush/cli.py:130" },
+    { "name": "dispatch-and-exit", "description": "Early-exit flags checked in main() after validate_args; dispatch function calls sys.exit() directly", "reference": "textbrush/cli.py:365-376" },
+    { "name": "stderr-for-progress", "description": "Progress messages and errors go to sys.stderr; only final result path to sys.stdout", "reference": "textbrush/cli.py:378-417" },
+    { "name": "RuntimeError wrapping", "description": "download_flux_weights catches Exception and wraps in RuntimeError with multi-line user-friendly message", "reference": "textbrush/model/weights.py:149-159" },
+    { "name": "patch-at-module-boundary", "description": "Tests patch the symbol at the module where it's used, not where it's defined", "reference": "tests/test_cli.py:468" },
+    { "name": "SystemExit assertion", "description": "All main() tests use pytest.raises(SystemExit) and check exc_info.value.code", "reference": "tests/test_cli.py:473" },
+    { "name": "CONTRACT docstrings", "description": "Every public function has CONTRACT docstring with Inputs/Outputs/Invariants/Properties/Algorithm sections", "reference": "textbrush/cli.py:33" },
+    { "name": "keyword-only args", "description": "Boolean flags after * to prevent positional misuse", "reference": "textbrush/model/weights.py:129" },
+    { "name": "TypedDict for structured data", "description": "CacheInfo uses TypedDict; Config and sub-configs use @dataclass with replace()", "reference": "textbrush/model/weights.py:55-60" },
+    { "name": "deferred imports inside functions", "description": "Heavy imports done inside function bodies not at module top", "reference": "textbrush/cli.py:346" }
+  ],
+  "similar_features": [
+    {
+      "name": "--headless flag",
+      "description": "Another early-exit flag that dispatches to run_headless() and returns without entering normal backend path",
+      "reference": "textbrush/cli.py:362-372"
+    },
+    {
+      "name": "scripts/download_model.py",
+      "description": "Standalone download script using get_cache_info() + download_flux_weights(); the --download-model flag supersedes this for CLI users",
+      "reference": "scripts/download_model.py:16-42"
+    }
+  ],
+  "architecture": {
+    "dispatch_chain": "main() → parse_args() → validate_args() → load_config() → merge_cli_args_with_config() → [--download-model branch] → [--headless branch] → backend",
+    "token_flow": "HF_TOKEN env var is read natively by HF hub library when snapshot_download() is called; config.huggingface.token is separate and never passed to weights.py today",
+    "error_hierarchy": "No custom exceptions exist; TokenRequiredError will be the first; belongs in textbrush/model/weights.py next to download_flux_weights()",
+    "cache_resolution": "HF_HUB_CACHE > HF_HOME/hub > ~/.cache/huggingface/hub — handled by get_cache_info()",
+    "return_type_change": "snapshot_download() already returns a str (local dir path); download_flux_weights() must be updated to return Path(snapshot_download(...))"
+  },
+  "extension_points": [
+    "textbrush/cli.py:75-87 — build_parser(): add --download-model flag; change --prompt to required=False",
+    "textbrush/cli.py:208-290 — validate_args(): add mutual exclusivity checks for --download-model",
+    "textbrush/cli.py:362-372 — main(): add early-exit dispatch for --download-model before headless check",
+    "textbrush/model/weights.py:1-30 — add TokenRequiredError class definition",
+    "textbrush/model/weights.py:129-159 — update download_flux_weights() to return Path and raise TokenRequiredError"
+  ],
+  "testing": {
+    "framework": "pytest 9.x with stdlib unittest.mock (no pytest-mock)",
+    "integration_marker": "@pytest.mark.integration for HF network tests",
+    "slow_marker": "@pytest.mark.slow for model-loading tests",
+    "test_run_command": "uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -v",
+    "lint_command": "uv run ruff check textbrush tests",
+    "format_command": "uv run ruff format textbrush tests",
+    "download_mock_pattern": "patch('textbrush.model.weights.download_flux_weights') at CLI level; patch('textbrush.model.weights.snapshot_download') at weights level",
+    "capsys_usage": "capsys.readouterr() called after pytest.raises(SystemExit) block to capture stderr"
+  },
+  "conventions": [
+    "uv for package management and virtual environment (CLAUDE.md mandate)",
+    "from __future__ import annotations at top of every module",
+    "ruff: line-length=100, select E/F/I/N/W, target py311",
+    "Never tailor production code towards tests (CLAUDE.md mandate)",
+    "Always check linting after each increment (CLAUDE.md mandate)",
+    "Integration tests require user confirmation before running (CLAUDE.md mandate)",
+    "Test class naming: Test<UnitUnderTest>; function naming: test_<behavior_description>",
+    "Stderr for all non-result output; stdout only for final result path"
+  ]
+}

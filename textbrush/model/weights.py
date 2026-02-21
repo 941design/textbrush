@@ -11,6 +11,18 @@ from pathlib import Path
 from typing import TypedDict
 
 from huggingface_hub import snapshot_download, try_to_load_from_cache
+from huggingface_hub.utils import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
+
+
+class TokenRequiredError(Exception):
+    """Raised when a HuggingFace token is required but not available or invalid.
+
+    Triggered when:
+    - No HF_TOKEN environment variable is set before attempting a download.
+    - The download attempt returns a 401 (Unauthorized) or 403 (Forbidden) response,
+      indicating the token is missing, invalid, or the user has not accepted the
+      model license.
+    """
 
 
 def _mask_token(token: str | None) -> str:
@@ -120,32 +132,89 @@ def ensure_flux_available() -> None:
             f"Cache location: {cache_info['cache_dir']}\n"
             f"\n"
             f"To download the model (~23 GB), run:\n"
-            f"  make download-model\n"
-            f"\n"
-            f"Or with uv:\n"
-            f"  uv run python scripts/download_model.py\n"
+            f"  textbrush --download-model\n"
         )
 
 
-def download_flux_weights(*, force: bool = False) -> None:
+def download_flux_weights(*, force: bool = False) -> Path:
     """Download FLUX.1 Schnell weights to HuggingFace cache.
+
+    CONTRACT:
+        Inputs:
+            force: If True, re-download even if already cached.
+        Outputs:
+            Path: Absolute path to the HuggingFace snapshot directory containing
+                  the downloaded model files.
+        Invariants:
+            - HF_TOKEN is only required when actually downloading (not for cached reads).
+        Algorithm:
+            1. If already cached and not force: return cached snapshot path (no token needed).
+            2. Guard against missing token (check HF_TOKEN env var).
+            3. Call snapshot_download(); return Path to snapshot directory.
+            4. On auth/gated-repo errors, raise TokenRequiredError.
+            5. On all other errors, raise RuntimeError with actionable message.
 
     Args:
         force: If True, re-download even if already cached.
 
+    Returns:
+        Path to the HuggingFace snapshot directory for the downloaded model.
+
     Raises:
-        RuntimeError: If download fails due to network, auth, or corruption issues.
+        TokenRequiredError: If HF_TOKEN is not set, or if the download returns
+            a 401/403 auth error (token invalid or license not accepted).
+        RuntimeError: If download fails for other reasons (network, disk space, etc.).
     """
     if not force and is_flux_available():
-        return
+        # Model already cached — no token needed; locate and return its snapshot directory.
+        cache_info = get_cache_info()
+        hub_cache = cache_info["cache_dir"]
+        model_dir = hub_cache / f"models--{FLUX_SCHNELL_ID.replace('/', '--')}"
+        snapshots_dir = model_dir / "snapshots"
+        if snapshots_dir.is_dir():
+            snapshots = sorted(snapshots_dir.iterdir())
+            if snapshots:
+                return snapshots[-1]
+        return hub_cache
+
+    if not os.environ.get("HF_TOKEN"):
+        raise TokenRequiredError(
+            "HF_TOKEN environment variable is not set. "
+            "A valid HuggingFace token is required to download model weights."
+        )
 
     try:
-        snapshot_download(
+        snapshot_path = snapshot_download(
             FLUX_SCHNELL_ID,
             allow_patterns=ALLOW_PATTERNS,
             ignore_patterns=IGNORE_PATTERNS,
             force_download=force,
         )
+        return Path(snapshot_path)
+    except (GatedRepoError, RepositoryNotFoundError) as e:
+        raise TokenRequiredError(
+            f"Access denied when downloading {FLUX_SCHNELL_ID}. "
+            "Ensure your HF_TOKEN is valid and you have accepted the model license at "
+            "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+        ) from e
+    except HfHubHTTPError as e:
+        if e.response is not None and e.response.status_code in (401, 403):
+            raise TokenRequiredError(
+                f"Authentication failed when downloading {FLUX_SCHNELL_ID} "
+                f"(HTTP {e.response.status_code}). "
+                "Ensure your HF_TOKEN is valid and you have accepted the model license at "
+                "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+            ) from e
+        cache_info = get_cache_info()
+        raise RuntimeError(
+            f"Failed to download FLUX.1 Schnell model.\n"
+            f"Error: {e}\n"
+            f"Cache location: {cache_info['cache_dir']}\n"
+            f"\n"
+            f"Common issues:\n"
+            f"  - Network timeout or connection error\n"
+            f"  - Insufficient disk space\n"
+        ) from e
     except Exception as e:
         cache_info = get_cache_info()
         raise RuntimeError(
@@ -155,6 +224,5 @@ def download_flux_weights(*, force: bool = False) -> None:
             f"\n"
             f"Common issues:\n"
             f"  - Network timeout or connection error\n"
-            f"  - Authentication required (set HF_TOKEN environment variable)\n"
             f"  - Insufficient disk space\n"
         ) from e

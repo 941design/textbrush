@@ -1,0 +1,272 @@
+{
+  "epic_name": "feature-specification-cli-model-download-command",
+  "created_at": "2026-02-21T18:10:00Z",
+  "updated_at": "2026-02-21T18:08:45Z",
+  "total_stories": 3,
+  "stories": [
+    {
+      "id": "01",
+      "name": "weights-token-required-error",
+      "title": "Add TokenRequiredError and update download_flux_weights() return type",
+      "description": "Extend textbrush/model/weights.py with two changes. First, define TokenRequiredError as a new Exception subclass at module level. Second, update download_flux_weights() to (a) return Path(snapshot_download(...)) on success instead of None, and (b) raise TokenRequiredError (not RuntimeError) when snapshot_download raises an exception whose message contains '401' or '403'. All other exceptions still produce RuntimeError. Update ensure_flux_available() error message to reference '--download-model' instead of 'make download-model' and 'scripts/download_model.py'. Add unit tests in tests/test_weights.py covering: TokenRequiredError is Exception subclass; download_flux_weights returns Path on success; TokenRequiredError raised on 401 and 403 errors; ensure_flux_available error message contains '--download-model'. Check linting after implementation.",
+      "acceptance_criteria": [
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-015"
+      ],
+      "scope": {
+        "includes": [
+          "TokenRequiredError class definition in textbrush/model/weights.py",
+          "download_flux_weights() return type changed from None to Path",
+          "download_flux_weights() raises TokenRequiredError on 401/403 auth failures",
+          "ensure_flux_available() error message updated to reference --download-model"
+        ],
+        "excludes": [
+          "CLI argument parsing or dispatch logic",
+          "Token resolution from HF_TOKEN env var or config (HF hub library handles HF_TOKEN natively; config token pass-through is handled in Story 02)",
+          "README or other documentation changes"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-01-001",
+          "description": "Patch of textbrush.model.weights.snapshot_download returning a str path for successful download tests",
+          "interface": "snapshot_download (huggingface_hub)",
+          "reason": "Avoids real HuggingFace network call in unit tests — permanent test infrastructure",
+          "permanent": true
+        },
+        {
+          "fixture_id": "FIXTURE-01-002",
+          "description": "Patch of textbrush.model.weights.is_flux_available returning False to force ensure_flux_available() to raise",
+          "interface": "is_flux_available (textbrush.model.weights)",
+          "reason": "Avoids real HF cache check in unit tests — permanent test infrastructure",
+          "permanent": true
+        }
+      ],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "token-required-error-importable",
+            "description": "Verify TokenRequiredError can be imported and is an Exception subclass",
+            "user_steps": [
+              "Run: python -c 'from textbrush.model.weights import TokenRequiredError; raise TokenRequiredError(\"test\")'",
+              "Observe: process exits with unhandled TokenRequiredError (not ImportError)"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Exit code non-zero due to unhandled exception (not ImportError or AttributeError)",
+              "Stderr contains 'TokenRequiredError'"
+            ]
+          },
+          {
+            "name": "ensure-flux-available-references-download-flag",
+            "description": "Verify ensure_flux_available() error message contains --download-model",
+            "user_steps": [
+              "Run: python -c 'from textbrush.model.weights import ensure_flux_available; ensure_flux_available()' with model absent from cache",
+              "Observe stderr"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Stderr contains '--download-model'",
+              "Stderr does not contain 'make download-model'"
+            ]
+          }
+        ],
+        "playwright_file": "tests/e2e/story-01-weights-token-error.spec.ts"
+      },
+      "status": "in_progress",
+      "notes": "No dependency on Stories 02 or 03. The token flow for config.huggingface.token is resolved in Story 02 where the CLI passes the token to download_flux_weights(). This story only changes the weights module exception hierarchy and return type."
+    },
+    {
+      "id": "02",
+      "name": "cli-download-model-flag",
+      "title": "Add --download-model flag to CLI with full dispatch and token resolution",
+      "description": "Extend textbrush/cli.py with the following changes: (1) In build_parser(), add '--download-model' as action='store_true', default=False; change '--prompt' to required=False. (2) In validate_args(), add parser.error() calls for: neither --prompt nor --download-model present; --download-model combined with --prompt; --download-model combined with --headless. Note: validate_args currently raises ValueError, but the spec mandates parser.error() for these mutual-exclusivity checks — use parser.error() (requires passing parser into validate_args or calling parser.error via a stored reference). (3) In main(), before the headless dispatch block, add: if args.download_model — print license notice to stderr; print 'Downloading FLUX.1 schnell model (~23 GB)...' to stderr; import download_flux_weights and TokenRequiredError from textbrush.model.weights; resolve token from HF_TOKEN env var, then config.huggingface.token, and pass token to download_flux_weights if found; catch TokenRequiredError and print multi-line instructions including HF_TOKEN and https://huggingface.co/settings/tokens to stderr, exit 1; catch generic Exception and print 'Download failed: <msg>' to stderr, exit 1; on success print 'Model downloaded successfully to: <path>' to stderr, exit 0. Add unit tests in tests/test_cli.py for all validation paths and dispatch outcomes. Check linting after implementation.",
+      "acceptance_criteria": [
+        "AC-001",
+        "AC-002",
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-010",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014"
+      ],
+      "scope": {
+        "includes": [
+          "build_parser(): --download-model flag registration",
+          "build_parser(): --prompt changed to required=False",
+          "validate_args(): mutual exclusivity checks for --download-model vs --prompt, vs --headless, and neither flag present",
+          "main(): early-exit dispatch block for --download-model",
+          "main(): license notice printed to stderr before download",
+          "main(): 'Downloading FLUX.1 schnell model (~23 GB)...' progress message to stderr",
+          "main(): token resolution from HF_TOKEN env var, then config.huggingface.token",
+          "main(): TokenRequiredError caught with multi-line instructions to stderr including HF_TOKEN and token URL",
+          "main(): generic Exception caught with 'Download failed:' message to stderr",
+          "main(): success path prints path to stderr and exits 0"
+        ],
+        "excludes": [
+          "TokenRequiredError class definition (Story 01 owns this)",
+          "download_flux_weights() return type or exception change (Story 01 owns this)",
+          "README or documentation changes (Story 03 owns this)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [
+        {
+          "mock_id": "MOCK-02-001",
+          "description": "download_flux_weights and TokenRequiredError from textbrush.model.weights",
+          "interface": "textbrush.model.weights.download_flux_weights and textbrush.model.weights.TokenRequiredError",
+          "reason": "Story 01 implements these; unit tests in this story patch them at the CLI import boundary",
+          "resolved_by_story": "01"
+        }
+      ],
+      "introduces_mocks": [],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-02-001",
+          "description": "Patch of textbrush.cli.download_flux_weights returning Path('/tmp/hf_cache/flux') for success-path CLI tests",
+          "interface": "download_flux_weights callable patched at textbrush.cli import site",
+          "reason": "Avoids real network call and model download in unit tests — permanent test infrastructure",
+          "permanent": true
+        },
+        {
+          "fixture_id": "FIXTURE-02-002",
+          "description": "Patch of textbrush.cli.load_config returning a default Config object to isolate CLI dispatch from config file system",
+          "interface": "load_config callable patched at textbrush.cli import site",
+          "reason": "Avoids config file I/O in unit tests — permanent test infrastructure",
+          "permanent": true
+        }
+      ],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "help-flag-discoverability",
+            "description": "Verify --download-model appears in help output",
+            "user_steps": [
+              "Run: uv run textbrush --help"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Exit code 0",
+              "Stdout contains '--download-model'"
+            ]
+          },
+          {
+            "name": "download-conflict-prompt",
+            "description": "Verify --download-model and --prompt cannot be combined",
+            "user_steps": [
+              "Run: uv run textbrush --download-model --prompt \"test\""
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Exit code 2",
+              "Stderr contains 'Cannot use --download-model with --prompt'"
+            ]
+          },
+          {
+            "name": "download-conflict-headless",
+            "description": "Verify --download-model and --headless cannot be combined",
+            "user_steps": [
+              "Run: uv run textbrush --download-model --headless"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Exit code 2",
+              "Stderr contains 'Cannot use --download-model with --headless'"
+            ]
+          },
+          {
+            "name": "no-args-error",
+            "description": "Verify invoking textbrush with no arguments produces actionable error",
+            "user_steps": [
+              "Run: uv run textbrush"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "Exit code 2",
+              "Stderr contains 'one of --prompt or --download-model'"
+            ]
+          }
+        ],
+        "playwright_file": "tests/e2e/story-02-cli-download-flag.spec.ts"
+      },
+      "status": "pending",
+      "notes": "validate_args() currently raises ValueError for semantic errors. The spec mandates parser.error() for the three new mutual-exclusivity checks (which produces exit code 2 and is argparse-standard). The implementer must reconcile this: either pass the parser object into validate_args(), or add a separate early-check step in main() before validate_args(). Choose the approach that minimally disturbs existing ValueError behaviour for other validations."
+    },
+    {
+      "id": "03",
+      "name": "documentation-updates",
+      "title": "Update README with --download-model example and correct token env var",
+      "description": "Update README.md to replace the model download setup instructions: replace 'export HUGGINGFACE_HUB_TOKEN=...' with 'export HF_TOKEN=...' (canonical name used by HF hub library and the new CLI feature); replace 'make download-model' with 'uv run textbrush --download-model'. Verify the README download section no longer references HUGGINGFACE_HUB_TOKEN or make download-model as the primary download path. No code changes; no new test files needed for this story. Verify by grepping README.md after the change.",
+      "acceptance_criteria": [
+        "AC-016"
+      ],
+      "scope": {
+        "includes": [
+          "README.md installation/setup section: --download-model example command",
+          "README.md: HF_TOKEN as the env var (replacing HUGGINGFACE_HUB_TOKEN)"
+        ],
+        "excludes": [
+          "Any changes to textbrush/cli.py or textbrush/model/weights.py",
+          "user-stories.md (mentioned in spec but not an acceptance criterion for this epic)",
+          "docs/troubleshooting.md (mentioned in spec but not a verifiable acceptance criterion here)",
+          "specs/spec.md cross-reference note (internal documentation, not user-facing)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "e2e_test_plan": {
+        "scenarios": [
+          {
+            "name": "readme-download-command-updated",
+            "description": "Verify README.md references uv run textbrush --download-model and HF_TOKEN",
+            "user_steps": [
+              "grep 'uv run textbrush --download-model' README.md",
+              "grep 'HF_TOKEN' README.md"
+            ],
+            "docker_services": [],
+            "assertions": [
+              "'uv run textbrush --download-model' present in README.md",
+              "'HF_TOKEN' present in README.md",
+              "'HUGGINGFACE_HUB_TOKEN' absent or not the primary recommended env var"
+            ]
+          }
+        ],
+        "playwright_file": "tests/e2e/story-03-documentation.spec.ts"
+      },
+      "status": "pending",
+      "notes": "This story is independent of Stories 01 and 02 from a code dependency standpoint — README.md changes do not depend on the Python implementation being complete. However, the correct token env var name (HF_TOKEN) and the flag name (--download-model) are specified in the spec and acceptance criteria, so Story 03 can proceed in parallel with Stories 01 and 02."
+    }
+  ],
+  "story_order": [
+    "01",
+    "02",
+    "03"
+  ],
+  "seams": [
+    {
+      "data": "TokenRequiredError class and download_flux_weights() returning Path",
+      "source": {
+        "story": "01",
+        "artifact": "textbrush.model.weights.TokenRequiredError and download_flux_weights() -> Path"
+      },
+      "intermediaries": [],
+      "destination": {
+        "story": "02",
+        "artifact": "textbrush.cli.main() download dispatch block importing TokenRequiredError and calling download_flux_weights()"
+      }
+    }
+  ],
+  "dependency_notes": "Story 02 imports TokenRequiredError and calls download_flux_weights() defined in Story 01. At unit-test time this dependency is mocked via patch at the CLI import boundary (MOCK-02-001), so Story 02 tests are fully independent. At runtime both stories must be complete. Story 03 has no code dependency on Stories 01 or 02.",
+  "mock_resolution_plan": "MOCK-02-001 (download_flux_weights and TokenRequiredError) is a unit-test patch, not a production stub. Story 01 delivers the real implementation. Story 02 tests use the patch pattern 'patch(\"textbrush.cli.download_flux_weights\")' per project conventions (patch at the module where used, not where defined). No temporary production mocks are introduced; all mocks listed are permanent test fixtures or test-boundary patches."
+}

@@ -34,6 +34,34 @@ class TestCLIHelp:
         assert "--auto-abort" in result.stdout
 
 
+class TestModelNotFoundMessage:
+    """Property: model-not-found error directs users to --download-model."""
+
+    @pytest.mark.e2e_smoke
+    def test_model_not_found_references_download_model_flag(self):
+        """ensure_flux_available error message references --download-model, not make/scripts."""
+        from unittest.mock import patch
+
+        # Import ensure_flux_available to test its error message directly
+        with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            import textbrush.model.weights as w
+
+            try:
+                w.ensure_flux_available()
+                assert False, "Expected RuntimeError not raised"
+            except RuntimeError as e:
+                msg = str(e)
+                assert "textbrush --download-model" in msg, (
+                    f"Error message should reference 'textbrush --download-model', got: {msg}"
+                )
+                assert "make download-model" not in msg, (
+                    f"Error message should not reference 'make download-model', got: {msg}"
+                )
+                assert "scripts/download_model.py" not in msg, (
+                    f"Error message should not reference scripts/, got: {msg}"
+                )
+
+
 @pytest.mark.integration
 class TestCLIValidation:
     """Property: CLI validates inputs before execution."""

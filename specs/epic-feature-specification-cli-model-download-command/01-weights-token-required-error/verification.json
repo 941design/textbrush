@@ -1,0 +1,88 @@
+{
+  "created_at": "2026-02-21T19:00:00Z",
+  "story_id": "01",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "correctness",
+      "question": "Is TokenRequiredError defined in textbrush/model/weights.py as a class inheriting from Exception?",
+      "actionable_check": "grep -n 'class TokenRequiredError' textbrush/model/weights.py",
+      "evidence_required": ["File path and line number of TokenRequiredError class definition", "Confirm it inherits from Exception"],
+      "pass_criteria": "TokenRequiredError class exists in weights.py and inherits from Exception"
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "correctness",
+      "question": "Does download_flux_weights() return Path (not None) on successful download?",
+      "actionable_check": "grep -n '-> Path' textbrush/model/weights.py; python3 -m pytest tests/test_weights.py::TestDownloadFailureHandling::test_download_success_returns_path -v",
+      "evidence_required": ["Return type annotation '-> Path' in function signature", "Test test_download_success_returns_path passes"],
+      "pass_criteria": "Function annotated '-> Path' and test confirms isinstance(result, Path)"
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "correctness",
+      "question": "Does download_flux_weights() raise TokenRequiredError when HF_TOKEN is not set and model is not cached?",
+      "actionable_check": "python3 -m pytest tests/test_weights.py::TestTokenRequiredError::test_raises_token_required_when_no_hf_token -v",
+      "evidence_required": ["Test passes", "Error message mentions HF_TOKEN"],
+      "pass_criteria": "Test passes with TokenRequiredError raised and 'HF_TOKEN' in error message"
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "correctness",
+      "question": "Does download_flux_weights() NOT require HF_TOKEN when model is already cached (force=False)?",
+      "actionable_check": "python3 -m pytest tests/test_weights.py::TestDownloadFailureHandling::test_skip_download_if_cached_no_token_needed -v",
+      "evidence_required": ["Test passes without HF_TOKEN set"],
+      "pass_criteria": "Test passes — no TokenRequiredError raised when is_flux_available() returns True"
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "correctness",
+      "question": "Does GatedRepoError from HuggingFace hub raise TokenRequiredError with license message?",
+      "actionable_check": "python3 -m pytest tests/test_weights.py::TestTokenRequiredError::test_raises_token_required_on_gated_repo_error -v",
+      "evidence_required": ["Test passes", "Error message mentions 'Access denied' and 'license'"],
+      "pass_criteria": "TokenRequiredError raised with license URL reference in message"
+    },
+    {
+      "id": "VQ-01-006",
+      "category": "correctness",
+      "question": "Does HfHubHTTPError with status 401 or 403 raise TokenRequiredError?",
+      "actionable_check": "python3 -m pytest tests/test_weights.py::TestTokenRequiredError::test_raises_token_required_on_hf_http_401 tests/test_weights.py::TestTokenRequiredError::test_raises_token_required_on_hf_http_403 -v",
+      "evidence_required": ["Both tests pass", "Error messages include HTTP status codes"],
+      "pass_criteria": "Both 401 and 403 HTTP errors raise TokenRequiredError"
+    },
+    {
+      "id": "VQ-01-007",
+      "category": "correctness",
+      "question": "Does ensure_flux_available() reference 'textbrush --download-model' instead of 'make download-model'?",
+      "actionable_check": "grep -n 'download-model\\|download_model' textbrush/model/weights.py",
+      "evidence_required": ["--download-model flag referenced in error message", "No reference to 'make download-model' or 'scripts/download_model.py'"],
+      "pass_criteria": "ensure_flux_available() error message references 'textbrush --download-model'"
+    },
+    {
+      "id": "VQ-01-008",
+      "category": "test_coverage",
+      "question": "Do all 20 tests in test_weights.py pass?",
+      "actionable_check": "python3 -m pytest tests/test_weights.py -v",
+      "evidence_required": ["All 20 tests pass, 0 failures"],
+      "pass_criteria": "20/20 tests pass"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-01-M1",
+      "category": "lint",
+      "question": "Does ruff report zero linting issues for the modified files?",
+      "actionable_check": "python3 -m ruff check textbrush/model/weights.py tests/test_weights.py",
+      "evidence_required": ["'All checks passed!' output from ruff"],
+      "pass_criteria": "Zero ruff lint errors"
+    },
+    {
+      "id": "VQ-01-M2",
+      "category": "regression",
+      "question": "Do the pre-existing 611 passing tests still pass (no regressions introduced)?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -v",
+      "evidence_required": ["All 123 tests in story-relevant test files pass"],
+      "pass_criteria": "123/123 tests pass in test_cli.py, test_weights.py, test_config.py"
+    }
+  ]
+}
