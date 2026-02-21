@@ -1,0 +1,39 @@
+{
+  "epic_name": "produce-dmg-release-artifacts-for-macos",
+  "created_at": "2026-02-21T21:18:00Z",
+  "updated_at": "2026-02-21T21:18:00Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "update-release-workflow-for-dmg",
+      "title": "Update release workflow to produce .dmg artifacts",
+      "description": "Modify .github/workflows/release.yml to: (1) install tauri-cli before building, (2) replace cargo build with cargo tauri build, (3) add DMG packaging and checksum step for macOS, (4) add *.dmg and *.dmg.sha256 to the upload files list, (5) update release body with DMG installation instructions. Linux workflow remains unchanged.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"],
+      "scope": {
+        "includes": [
+          "Install Tauri CLI step (before Build release)",
+          "Build release step: cargo tauri build at project root",
+          "Package macOS step: add DMG + checksum handling",
+          "Upload release assets: add *.dmg and *.dmg.sha256",
+          "Release body: update macOS instructions with DMG details"
+        ],
+        "excludes": [
+          "tauri.conf.json (already correct)",
+          "Linux packaging step (unchanged)",
+          "Apple Developer signing or notarization",
+          "Windows packaging"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "in_progress",
+      "notes": "This is a CI/CD YAML-only change. No application code is modified. Verification is static analysis of the workflow YAML. The e2e_test_plan below reflects that this workflow cannot be executed locally; instead, YAML structural correctness is verified."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks required."
+}

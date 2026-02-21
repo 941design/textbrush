@@ -1,0 +1,46 @@
+{
+  "created_at": "2026-02-21T21:24:44Z",
+  "status": "ready",
+  "story_id": "01",
+
+  "checks": {
+    "compiles": {
+      "passed": true,
+      "command": "python3.12 -m py_compile textbrush/*.py",
+      "evidence": "Exit code 0, no errors. Python code compiles successfully."
+    },
+    "tests_pass": {
+      "passed": true,
+      "command": "python3.12 -m pytest tests/ -m 'not slow and not integration' --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_inference_integration.py --ignore=tests/test_reproducibility.py --tb=short -q",
+      "evidence": "649 passed, 24 failed (pre-existing), 47 deselected in 161.86s. Pre-existing failures are torch/numpy-dependent tests that require GPU dependencies not available in this environment (Linux aarch64). Same failures confirmed on master branch before any changes. 649 environment-compatible tests pass.",
+      "failing_tests": [
+        "tests/test_backend_error_propagation.py - 4 tests (torch import)",
+        "tests/test_backend_save_metadata.py - 5 tests (torch import)",
+        "tests/test_backend_start_generation.py - 11 tests (torch import)",
+        "tests/test_cleanup.py - 3 tests (torch import)",
+        "tests/test_backend_save_metadata.py::TestJPEGMetadataHandling (1 test)"
+      ]
+    },
+    "coverage": {
+      "value": null,
+      "threshold": null,
+      "passed": true
+    },
+    "dependencies": {
+      "passed": true,
+      "command": "python3.12 -c 'import textbrush'",
+      "evidence": "Core textbrush module imports successfully. GPU/torch dependencies unavailable in test env but not required for this YAML-only change."
+    }
+  },
+
+  "test_snapshot": {
+    "total": 720,
+    "passing": 649,
+    "failing": 24,
+    "skipped": 47,
+    "coverage_percent": null,
+    "note": "24 pre-existing failures all due to 'torch' not installed (GPU deps). Confirmed pre-existing on master. Ruff reports 1 pre-existing E501 error in tests/test_image_delivery_update.py:236. This is a YAML-only change with no application code modifications."
+  },
+
+  "blocking_issues": []
+}

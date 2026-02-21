@@ -1,0 +1,72 @@
+{
+  "created_at": "2026-02-21T21:25:00Z",
+  "story_id": "01",
+  "questions": [
+    {
+      "id": "VQ-01-001",
+      "category": "correctness",
+      "question": "Does the 'Install Tauri CLI' step exist and use 'cargo install tauri-cli --version \"^2\"' to ensure Tauri v2 compatibility?",
+      "actionable_check": "Read .github/workflows/release.yml and confirm a step named 'Install Tauri CLI' exists before 'Build release' with the correct cargo install command",
+      "evidence_required": ["Exact step content from release.yml showing cargo install tauri-cli"],
+      "pass_criteria": "Step exists before Build release and installs tauri-cli with version constraint ^2"
+    },
+    {
+      "id": "VQ-01-002",
+      "category": "correctness",
+      "question": "Does the 'Build release' step use 'cargo tauri build --target ...' instead of 'cargo build'?",
+      "actionable_check": "Read .github/workflows/release.yml and confirm Build release step uses 'cargo tauri build --target ${{ matrix.target }}' without cd src-tauri or --release flag",
+      "evidence_required": ["Exact Build release step content showing cargo tauri build"],
+      "pass_criteria": "Build release step contains 'cargo tauri build --target' at project root (no 'cd src-tauri')"
+    },
+    {
+      "id": "VQ-01-003",
+      "category": "correctness",
+      "question": "Does the Package macOS step add DMG artifact handling with SHA256 checksum?",
+      "actionable_check": "Read .github/workflows/release.yml and confirm Package macOS step navigates to bundle/dmg/, runs shasum on the .dmg, and moves both the .dmg and .dmg.sha256 six levels up",
+      "evidence_required": ["Exact Package macOS step content showing DMG handling"],
+      "pass_criteria": "Step includes: cd ../dmg, DMG_FILE=$(ls *.dmg), shasum -a 256, mv with 6-level relative path"
+    },
+    {
+      "id": "VQ-01-004",
+      "category": "correctness",
+      "question": "Does the Upload release assets step include *.dmg and *.dmg.sha256 in the files list?",
+      "actionable_check": "Read .github/workflows/release.yml and confirm the files section under Upload release assets has *.dmg and *.dmg.sha256 entries alongside existing tar.gz entries",
+      "evidence_required": ["Exact files section from Upload release assets step"],
+      "pass_criteria": "Files section contains both '*.dmg' and '*.dmg.sha256' entries"
+    },
+    {
+      "id": "VQ-01-005",
+      "category": "correctness",
+      "question": "Does the release body reference .dmg files with correct Textbrush naming pattern and include drag-to-Applications instructions?",
+      "actionable_check": "Read .github/workflows/release.yml body section and verify it references Textbrush_x.y.z_aarch64.dmg pattern and includes 'drag Textbrush to Applications' step",
+      "evidence_required": ["Exact macOS section of release body"],
+      "pass_criteria": "Body references .dmg files with Textbrush naming and includes drag-to-Applications and Gatekeeper bypass instructions"
+    },
+    {
+      "id": "VQ-01-006",
+      "category": "regression",
+      "question": "Is the Linux packaging step unchanged from the original?",
+      "actionable_check": "Compare Package Linux step against original (git diff HEAD -- .github/workflows/release.yml) and confirm no changes to the Linux packaging logic",
+      "evidence_required": ["Git diff output for Linux packaging section"],
+      "pass_criteria": "Package Linux step is identical to the original (tar -czf, sha256sum, mv)"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-01-M1",
+      "category": "completeness",
+      "question": "Does the file contain all expected structural changes: Install Tauri CLI step, updated Build release step, updated Package macOS step, updated Upload files list, and updated release body?",
+      "actionable_check": "Count and confirm all 5 modifications are present in the file",
+      "evidence_required": ["Line numbers or content for each modified section"],
+      "pass_criteria": "All 5 changes are present: new Install step, cargo tauri build, DMG in Package macOS, *.dmg in Upload files, .dmg mentions in body"
+    },
+    {
+      "id": "VQ-01-M2",
+      "category": "correctness",
+      "question": "Are the relative path depths in the mv commands correct? macOS should use 6 levels (../../../../../..) and Linux should remain unchanged (../../../../..)?",
+      "actionable_check": "Read the Package macOS and Package Linux steps and count the number of '../' segments in each mv command",
+      "evidence_required": ["Exact mv commands with path from both Package macOS and Package Linux steps"],
+      "pass_criteria": "macOS tar.gz uses ../../../../../.. (6 levels), DMG uses ../../../../../.. (6 levels), Linux uses ../../../../.. (5 levels, unchanged from original)"
+    }
+  ]
+}

@@ -41,11 +41,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
       - name: Build release
         run: |
           uv sync
-          cd src-tauri
-          cargo build --target ${{ matrix.target }} --release
+          cargo tauri build --target ${{ matrix.target }}
 
       - name: Package macOS
         if: startsWith(matrix.os, 'macos')
@@ -53,7 +55,12 @@ jobs:
           cd src-tauri/target/${{ matrix.target }}/release/bundle/macos
           tar -czf ${{ matrix.asset_name }}.tar.gz *.app
           shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
-          mv ${{ matrix.asset_name }}.tar.gz* ../../../../..
+          mv ${{ matrix.asset_name }}.tar.gz* ../../../../../..
+
+          cd ../dmg
+          DMG_FILE=$(ls *.dmg)
+          shasum -a 256 "$DMG_FILE" > "$DMG_FILE.sha256"
+          mv "$DMG_FILE" "$DMG_FILE.sha256" ../../../../../..
 
       - name: Package Linux
         if: matrix.os == 'ubuntu-latest'
@@ -69,14 +76,18 @@ jobs:
           files: |
             ${{ matrix.asset_name }}.tar.gz
             ${{ matrix.asset_name }}.tar.gz.sha256
+            *.dmg
+            *.dmg.sha256
           body: |
             ## Installation
 
             ### macOS
-            1. Download `textbrush-macos-arm64.tar.gz` (Apple Silicon) or `textbrush-macos-x64.tar.gz` (Intel)
-            2. Extract and move to Applications
+            1. Download `Textbrush_x.y.z_aarch64.dmg` (Apple Silicon) or `Textbrush_x.y.z_x64.dmg` (Intel)
+            2. Open the .dmg and drag Textbrush to Applications
             3. Run `xattr -cr /Applications/Textbrush.app` to bypass Gatekeeper
             4. Launch the app or use CLI: `/Applications/Textbrush.app/Contents/MacOS/textbrush --prompt "Your prompt"`
+
+            Alternative: Download the .tar.gz and extract manually.
 
             ### Linux
             1. Download `textbrush-linux-x64.tar.gz`

@@ -1,0 +1,90 @@
+{
+  "created_at": "2026-02-21T21:17:30Z",
+  "key_files": [
+    {
+      "path": ".github/workflows/release.yml",
+      "lines": "89",
+      "relevance": "Primary target file - contains the release workflow to be updated",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/tauri.conf.json",
+      "lines": "47",
+      "relevance": "Already has bundle.targets = ['app', 'dmg'] - no changes needed here",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "lines": "29",
+      "relevance": "Uses tauri version 2 - need compatible tauri-cli version for cargo tauri build",
+      "source": "architecture"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "lines": "118",
+      "relevance": "Reference for CI patterns - still uses cargo build (not tauri build) for CI",
+      "source": "testing-and-conventions"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "matrix-strategy-os-targeting",
+      "description": "Release workflow uses matrix strategy with macos-latest (arm64), macos-13 (x64), ubuntu-latest targets",
+      "reference": ".github/workflows/release.yml:11-24"
+    },
+    {
+      "name": "shasum-checksum",
+      "description": "macOS uses 'shasum -a 256', Linux uses 'sha256sum' for checksum generation",
+      "reference": ".github/workflows/release.yml:55-63"
+    },
+    {
+      "name": "path-six-levels-up",
+      "description": "Current macOS packaging moves files 5 levels up (../../../../../../..) from bundle/macos - need to update to 6 levels for dmg step from bundle/dmg",
+      "reference": ".github/workflows/release.yml:56"
+    },
+    {
+      "name": "draft-release",
+      "description": "Release is created as draft:true to allow manual review before publishing",
+      "reference": ".github/workflows/release.yml:88"
+    },
+    {
+      "name": "tauri-v2",
+      "description": "Project uses Tauri 2, so needs tauri-cli version 2.x for cargo tauri build",
+      "reference": "src-tauri/Cargo.toml:13"
+    }
+  ],
+  "similar_features": [],
+  "architecture": {
+    "release_flow": "GitHub Actions matrix: checkout -> install uv -> install Rust -> install Tauri deps (Linux) -> build -> package -> upload",
+    "bundle_output": "src-tauri/target/{target}/release/bundle/macos/*.app and bundle/dmg/*.dmg",
+    "signing": "Ad-hoc signing via signingIdentity: '-' in tauri.conf.json"
+  },
+  "extension_points": [
+    {
+      "name": "Build release step",
+      "description": "Replace cargo build with cargo tauri build - requires installing tauri-cli first"
+    },
+    {
+      "name": "Package macOS step",
+      "description": "Add DMG handling after the app tarball creation"
+    },
+    {
+      "name": "Upload release assets step",
+      "description": "Add *.dmg and *.dmg.sha256 to files list"
+    },
+    {
+      "name": "Release body",
+      "description": "Update macOS instructions to reference DMG as primary distribution"
+    }
+  ],
+  "testing": {
+    "note": "This is a CI/CD workflow change. Verification is by code review of YAML correctness - cannot run actual GitHub Actions locally. Test by inspecting the workflow YAML structure."
+  },
+  "conventions": [
+    "Uses astral-sh/setup-uv@v4 for Python package management",
+    "Uses dtolnay/rust-toolchain@stable for Rust",
+    "Uses softprops/action-gh-release@v1 for releases",
+    "Checksums colocated with binary artifacts",
+    "Draft releases by default"
+  ]
+}
