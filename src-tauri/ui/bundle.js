@@ -176,6 +176,7 @@ function getPreviousResolution(ratio, width, height) {
   }
   return null;
 }
+var configUpdateQueue = Promise.resolve();
 function updateResolutionButtons(ratio, width, height) {
   const decreaseBtn = document.getElementById("resolution-decrease");
   const increaseBtn = document.getElementById("resolution-increase");
@@ -283,25 +284,37 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
   state2.aspectRatio = aspectRatioValue;
   state2.width = width;
   state2.height = height;
-  try {
-    await invoke("update_generation_config", {
-      prompt: trimmedPrompt,
-      aspectRatio: aspectRatioValue,
-      width,
-      height
-    });
-    console.log("Configuration updated successfully");
-  } catch (error) {
-    console.error("Configuration update failed:", error);
-    state2.prompt = previousPrompt;
-    state2.aspectRatio = previousAspectRatio;
-    state2.width = previousWidth;
-    state2.height = previousHeight;
-    const promptInput = document.getElementById("prompt-input");
-    if (promptInput) {
-      showValidationError(`Update failed: ${String(error)}`, promptInput);
+  const attemptedPrompt = trimmedPrompt;
+  const attemptedAspectRatio = aspectRatioValue;
+  const attemptedWidth = width;
+  const attemptedHeight = height;
+  configUpdateQueue = configUpdateQueue.then(async () => {
+    try {
+      await invoke("update_generation_config", {
+        prompt: attemptedPrompt,
+        aspectRatio: attemptedAspectRatio,
+        width: attemptedWidth,
+        height: attemptedHeight
+      });
+      console.log("Configuration updated successfully");
+    } catch (error) {
+      console.error("Configuration update failed:", error);
+      const isStillCurrent = state2.prompt === attemptedPrompt && state2.aspectRatio === attemptedAspectRatio && state2.width === attemptedWidth && state2.height === attemptedHeight;
+      if (isStillCurrent) {
+        state2.prompt = previousPrompt;
+        state2.aspectRatio = previousAspectRatio;
+        state2.width = previousWidth;
+        state2.height = previousHeight;
+      }
+      const promptInput = document.getElementById("prompt-input");
+      if (promptInput) {
+        showValidationError(`Update failed: ${String(error)}`, promptInput);
+      }
     }
-  }
+  }).catch((queueError) => {
+    console.error("Configuration update queue error:", queueError);
+  });
+  await configUpdateQueue;
 }
 function showValidationError(message, inputElement) {
   const existingErrors = document.querySelectorAll(".validation-error");
@@ -9001,6 +9014,8 @@ var elements = {
 var magnifierActive = false;
 var MAGNIFIER_SIZE = 200;
 var MAGNIFICATION = 3;
+var imageReadyQueue = Promise.resolve();
+var pendingDisplayRequest = null;
 function cacheElements() {
   elements.app = document.getElementById("app");
   elements.headerBar = document.querySelector(".header-bar");
@@ -9112,7 +9127,9 @@ function handleMessage(msg) {
       handleStateChanged(msg.payload);
       break;
     case "image_ready":
-      handleImageReady(msg.payload);
+      imageReadyQueue = imageReadyQueue.then(() => handleImageReady(msg.payload)).catch((err) => {
+        console.error("Failed to handle image_ready event:", err);
+      });
       break;
     case "accepted":
       void handleAccepted(msg.payload);
@@ -9329,7 +9346,8 @@ function updatePauseButton() {
 async function displayImageRecord(record, listIdx = null) {
   console.log("displayImageRecord called, seed:", record.seed, "path:", record.path);
   if (state.isTransitioning) {
-    console.log("Skipping - already transitioning");
+    pendingDisplayRequest = { record, listIdx };
+    console.log("Queued display request - transition in progress");
     return;
   }
   state.isTransitioning = true;
@@ -9363,6 +9381,11 @@ async function displayImageRecord(record, listIdx = null) {
     console.error("Error displaying image:", error);
   } finally {
     state.isTransitioning = false;
+    if (pendingDisplayRequest) {
+      const nextRequest = pendingDisplayRequest;
+      pendingDisplayRequest = null;
+      void displayImageRecord(nextRequest.record, nextRequest.listIdx);
+    }
   }
 }
 function updateMetadataPanelFromRecord(record, _listIdx = null) {

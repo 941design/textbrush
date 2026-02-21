@@ -89,6 +89,8 @@ const elements: Elements = {
 let magnifierActive = false;
 const MAGNIFIER_SIZE = 200;
 const MAGNIFICATION = 3;
+let imageReadyQueue: Promise<void> = Promise.resolve();
+let pendingDisplayRequest: { record: ImageRecord; listIdx: number | null } | null = null;
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
@@ -229,7 +231,11 @@ function handleMessage(msg: SidecarMessage): void {
       break;
 
     case 'image_ready':
-      handleImageReady(msg.payload as ImagePayload);
+      imageReadyQueue = imageReadyQueue
+        .then(() => handleImageReady(msg.payload as ImagePayload))
+        .catch(err => {
+          console.error('Failed to handle image_ready event:', err);
+        });
       break;
 
     case 'accepted':
@@ -522,7 +528,8 @@ function updatePauseButton(): void {
 async function displayImageRecord(record: ImageRecord, listIdx: number | null = null): Promise<void> {
   console.log('displayImageRecord called, seed:', record.seed, 'path:', record.path);
   if (state.isTransitioning) {
-    console.log('Skipping - already transitioning');
+    pendingDisplayRequest = { record, listIdx };
+    console.log('Queued display request - transition in progress');
     return;
   }
 
@@ -565,6 +572,11 @@ async function displayImageRecord(record: ImageRecord, listIdx: number | null = 
     console.error('Error displaying image:', error);
   } finally {
     state.isTransitioning = false;
+    if (pendingDisplayRequest) {
+      const nextRequest = pendingDisplayRequest;
+      pendingDisplayRequest = null;
+      void displayImageRecord(nextRequest.record, nextRequest.listIdx);
+    }
   }
 }
 

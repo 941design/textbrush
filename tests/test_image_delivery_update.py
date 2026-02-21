@@ -233,6 +233,31 @@ class TestImageReadyEvent:
         assert "display_path" in image_ready_call.payload
         assert image_ready_call.payload["path"] == str(preview_path.absolute())
 
+    def test_delivery_continues_without_waiting_for_user_action(self, handler, mock_server, tmp_path):
+        """Delivery persists multiple previews without requiring skip/accept signals."""
+        image = Image.new("RGB", (64, 64))
+        buffered_1 = BufferedImage(image=image, seed=100)
+        buffered_2 = BufferedImage(image=image, seed=101)
+        preview_paths = [tmp_path / "preview_1.png", tmp_path / "preview_2.png"]
+
+        mock_backend = Mock()
+        mock_backend.get_next_image = Mock(side_effect=[buffered_1, buffered_2, None])
+        mock_backend.check_worker_error = Mock(return_value=None)
+        mock_backend.save_to_preview = Mock(side_effect=preview_paths)
+        handler.backend = mock_backend
+
+        handler._start_image_delivery(mock_server, None)
+        time.sleep(0.2)
+
+        image_ready_calls = [
+            call_obj[0][0]
+            for call_obj in mock_server.send.call_args_list
+            if call_obj[0][0].type == MessageType.IMAGE_READY
+        ]
+        assert len(image_ready_calls) == 2
+        assert image_ready_calls[0].payload["path"] == str(preview_paths[0].absolute())
+        assert image_ready_calls[1].payload["path"] == str(preview_paths[1].absolute())
+
     @given(num_images=st.integers(min_value=1, max_value=5))
     @settings(deadline=None)
     def test_multiple_images_get_sequential_indices(self, num_images):

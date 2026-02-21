@@ -60,6 +60,8 @@ class MessageHandler:
         self._deleted_indices: set[int] = set()  # Tracks soft-deleted indices
         self._current_state: str | None = None  # Tracks current backend state
         self._current_prompt: str = ""  # Tracks current generation prompt for state_changed events
+        self._generation_started = False  # True after backend.start_generation() succeeds
+        self._pending_startup_config: dict | None = None  # Latest UPDATE_CONFIG before start
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle INIT command: load model and start generation.
@@ -119,33 +121,52 @@ class MessageHandler:
         )
         self._current_prompt = cmd.prompt  # Store prompt for state_changed events
         self.backend = TextbrushBackend(self.config)
+        self._generation_started = False
+        self._pending_startup_config = None
         logger.info("Backend created, starting init thread")
-
-        # Capture prompt at registration time to avoid race conditions with UPDATE_CONFIG
-        # The callback may fire after _current_prompt has been changed by UPDATE_CONFIG,
-        # so we need to use the prompt value that was active when generation started.
-        generation_prompt = cmd.prompt
-
-        def on_generation_start(seed: int, queue_position: int) -> None:
-            """Callback invoked when worker starts generating an image."""
-            logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
-            self._emit_state_changed(server, "generating", prompt=generation_prompt)
 
         def on_ready():
             logger.info("Backend ready, emitting state_changed(idle)")
             self._emit_state_changed(server, "idle")
+
+            pending_config = self._pending_startup_config
+            start_prompt = cmd.prompt
+            start_aspect_ratio = cmd.aspect_ratio
+            start_width = cmd.width
+            start_height = cmd.height
+            if pending_config is not None:
+                start_prompt = pending_config["prompt"]
+                start_aspect_ratio = pending_config["aspect_ratio"]
+                start_width = pending_config["width"]
+                start_height = pending_config["height"]
+                logger.info(
+                    "Applying queued UPDATE_CONFIG before initial generation: "
+                    f"prompt='{start_prompt[:50]}...', "
+                    f"aspect_ratio={start_aspect_ratio}, width={start_width}, height={start_height}"
+                )
+                self._pending_startup_config = None
+
+            # Capture prompt at registration time to avoid races with later updates.
+            generation_prompt = start_prompt
+
+            def on_generation_start(seed: int, queue_position: int) -> None:
+                logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
+                self._emit_state_changed(server, "generating", prompt=generation_prompt)
+
             logger.info(
-                f"Starting generation: prompt='{cmd.prompt[:50]}...', "
-                f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
+                f"Starting generation: prompt='{start_prompt[:50]}...', "
+                f"seed={cmd.seed}, width={start_width}, height={start_height}"
             )
             self.backend.start_generation(
-                prompt=cmd.prompt,
+                prompt=start_prompt,
                 seed=cmd.seed,
-                aspect_ratio=cmd.aspect_ratio,
-                width=cmd.width,
-                height=cmd.height,
+                aspect_ratio=start_aspect_ratio,
+                width=start_width,
+                height=start_height,
                 on_generation_start=on_generation_start,
             )
+            self._generation_started = True
+            self._current_prompt = start_prompt
             logger.info("Starting image delivery")
             self._start_image_delivery(server, cmd.output_path)
 
@@ -318,6 +339,8 @@ class MessageHandler:
             self._image_index_map.clear()
             self._deleted_indices.clear()
             self._delivered_images.clear()  # Keep for compatibility
+            self._generation_started = False
+            self._pending_startup_config = None
 
         # Delete all delivered images temp files
         for buffered_image in images_to_cleanup:
@@ -464,13 +487,31 @@ class MessageHandler:
             logger.debug(f"Generation started: seed={seed}, queue_position={queue_position}")
             self._emit_state_changed(server, "generating", prompt=generation_prompt)
 
-        self.backend.update_config(
-            prompt=cmd.prompt,
-            aspect_ratio=cmd.aspect_ratio,
-            width=cmd.width,
-            height=cmd.height,
-            on_generation_start=on_generation_start,
-        )
+        try:
+            self.backend.update_config(
+                prompt=cmd.prompt,
+                aspect_ratio=cmd.aspect_ratio,
+                width=cmd.width,
+                height=cmd.height,
+                on_generation_start=on_generation_start,
+            )
+            self._generation_started = True
+        except RuntimeError as e:
+            # During model loading the backend exists but worker is not started yet.
+            # Queue latest config instead of surfacing an error to the server loop.
+            if "No worker to update" in str(e):
+                self._pending_startup_config = {
+                    "prompt": cmd.prompt,
+                    "aspect_ratio": cmd.aspect_ratio,
+                    "width": cmd.width,
+                    "height": cmd.height,
+                }
+                logger.info(
+                    "Queued UPDATE_CONFIG while backend is loading; "
+                    "will apply before initial generation starts"
+                )
+                return
+            raise
 
         # Send BUFFER_STATUS event showing reset buffer
         is_generating = not self.backend.is_paused()
@@ -723,8 +764,6 @@ class MessageHandler:
                     )
 
                     self._emit_state_changed(server, "idle")
-
-                    self._wait_for_action()
 
                 except Exception as e:
                     logger.error(f"Image delivery error: {e}")

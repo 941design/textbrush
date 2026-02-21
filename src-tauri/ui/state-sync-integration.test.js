@@ -364,6 +364,81 @@ describe('Image Ready Event Integration', () => {
     assert.equal(state.imageList[0].index, 10);
     assert.equal(state.imageList[0].path, '/tmp/test.png');
   });
+
+  it('Regression: latest image is not dropped when it arrives during transition', async () => {
+    const rendered = [];
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const transitionState = {
+      isTransitioning: false,
+      pendingDisplayRequest: null,
+    };
+
+    async function displayImageRecord(record) {
+      if (transitionState.isTransitioning) {
+        transitionState.pendingDisplayRequest = record;
+        return;
+      }
+
+      transitionState.isTransitioning = true;
+      try {
+        // Simulate transition latency from displayImageRecord() in main.ts
+        await sleep(20);
+        rendered.push(record.index);
+      } finally {
+        transitionState.isTransitioning = false;
+        if (transitionState.pendingDisplayRequest) {
+          const nextRecord = transitionState.pendingDisplayRequest;
+          transitionState.pendingDisplayRequest = null;
+          void displayImageRecord(nextRecord);
+        }
+      }
+    }
+
+    void displayImageRecord({ index: 1 });
+    await sleep(2);
+    void displayImageRecord({ index: 2 });
+    void displayImageRecord({ index: 3 });
+
+    await sleep(80);
+
+    assert.deepEqual(
+      rendered,
+      [1, 3],
+      'render should include the newest pending image after transition'
+    );
+  });
+
+  it('Regression: image_ready processing remains ordered when work latency varies', async () => {
+    const handled = [];
+    let imageReadyQueue = Promise.resolve();
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function handleImageReady(payload) {
+      await sleep(payload.delayMs);
+      handled.push(payload.index);
+    }
+
+    const payloads = [
+      { index: 10, delayMs: 25 },
+      { index: 11, delayMs: 1 },
+      { index: 12, delayMs: 1 },
+    ];
+
+    payloads.forEach(payload => {
+      imageReadyQueue = imageReadyQueue
+        .then(() => handleImageReady(payload))
+        .catch(() => {});
+    });
+
+    await imageReadyQueue;
+
+    assert.deepEqual(
+      handled,
+      [10, 11, 12],
+      'serialized queue must preserve event order'
+    );
+  });
 });
 
 describe('System-Level Properties', () => {
@@ -509,5 +584,60 @@ describe('Loading Overlay State Mapping', () => {
     const backendStatePaused = { state: "paused" };
     const shouldShowPromptPaused = (backendStatePaused.state === "generating" && backendStatePaused.prompt);
     assert.ok(!shouldShowPromptPaused);
+  });
+});
+
+describe('Config Update Ordering Regression', () => {
+  it('serializes rapid prompt updates so backend sees them in order', async () => {
+    const sentPrompts = [];
+    let configUpdateQueue = Promise.resolve();
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function sendUpdate(prompt, delayMs) {
+      await sleep(delayMs);
+      sentPrompts.push(prompt);
+    }
+
+    const updates = [
+      { prompt: 'first prompt', delayMs: 25 },
+      { prompt: 'second prompt', delayMs: 1 },
+      { prompt: 'third prompt', delayMs: 1 },
+    ];
+
+    updates.forEach(update => {
+      configUpdateQueue = configUpdateQueue
+        .then(() => sendUpdate(update.prompt, update.delayMs))
+        .catch(() => {});
+    });
+
+    await configUpdateQueue;
+
+    assert.deepEqual(
+      sentPrompts,
+      ['first prompt', 'second prompt', 'third prompt'],
+      'queued updates should preserve user change order'
+    );
+  });
+
+  it('does not roll back newer prompt when an older update fails late', async () => {
+    const state = createMockState();
+    state.prompt = 'original';
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const previousPromptA = state.prompt;
+    state.prompt = 'prompt A';
+    const attemptedPromptA = 'prompt A';
+
+    // Newer change supersedes A before A's failure is handled.
+    await sleep(1);
+    state.prompt = 'prompt B';
+
+    // Simulate late failure handling for update A with stale-safe rollback guard.
+    const isStillCurrent = state.prompt === attemptedPromptA;
+    if (isStillCurrent) {
+      state.prompt = previousPromptA;
+    }
+
+    assert.equal(state.prompt, 'prompt B', 'late failure from older update must not overwrite newer prompt');
   });
 });

@@ -743,6 +743,86 @@ class TestUpdateConfigCommand:
         assert call_args.payload["fatal"] is False
         assert "Backend not initialized" in call_args.payload["message"]
 
+    def test_update_config_while_loading_is_queued_not_applied(self, handler, mock_server):
+        """UPDATE_CONFIG during model loading is queued instead of raising worker error."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.update_config.side_effect = RuntimeError(
+            "No worker to update. Call start_generation() first."
+        )
+        handler.backend = mock_backend
+        handler._generation_started = False
+
+        payload = {"prompt": "futuristic neon lobster", "aspect_ratio": "1:1", "width": 512, "height": 512}
+        handler.handle_update_config(payload, mock_server)
+
+        mock_backend.update_config.assert_called_once()
+        assert handler._pending_startup_config is not None
+        assert handler._pending_startup_config["prompt"] == "futuristic neon lobster"
+        mock_server.send.assert_not_called()
+
+    def test_init_applies_latest_queued_update_config_before_start_generation(self, handler, mock_server):
+        """Queued UPDATE_CONFIG during init load overrides INIT config for first generation."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.update_config.side_effect = RuntimeError(
+            "No worker to update. Call start_generation() first."
+        )
+
+        first_update = {
+            "prompt": "futuristic neon lobster",
+            "aspect_ratio": "1:1",
+            "width": 256,
+            "height": 256,
+        }
+        second_update = {
+            "prompt": "futuristic neon lobster",
+            "aspect_ratio": "1:1",
+            "width": 512,
+            "height": 512,
+        }
+
+        def initialize_side_effect():
+            # Simulate user edits while model is still loading.
+            handler.handle_update_config(first_update, mock_server)
+            handler.handle_update_config(second_update, mock_server)
+
+        mock_backend.initialize.side_effect = initialize_side_effect
+
+        class ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                if self._target:
+                    self._target(*self._args)
+
+        with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
+            with patch("textbrush.ipc.handler.threading.Thread", side_effect=ImmediateThread):
+                with patch.object(handler, "_start_image_delivery") as mock_start_delivery:
+                    init_payload = {
+                        "prompt": "A watercolor painting of a cat",
+                        "aspect_ratio": "1:1",
+                        "width": 256,
+                        "height": 256,
+                    }
+                    handler.handle_init(init_payload, mock_server)
+
+                    mock_backend.start_generation.assert_called_once()
+                    start_call = mock_backend.start_generation.call_args.kwargs
+                    assert start_call["prompt"] == "futuristic neon lobster"
+                    assert start_call["width"] == 512
+                    assert start_call["height"] == 512
+                    mock_start_delivery.assert_called_once()
+
+        error_events = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.ERROR
+        ]
+        assert len(error_events) == 0
+
     @given(invalid_aspect=st.text().filter(lambda x: x not in {"1:1", "16:9", "9:16"}))
     def test_update_config_invalid_aspect_ratio_sends_error(self, invalid_aspect):
         """Invalid aspect ratio sends non-fatal error."""

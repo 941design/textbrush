@@ -115,6 +115,9 @@ interface ConfigValues {
   height: number;
 }
 
+// Serialize backend config updates to preserve call order under rapid UI interactions.
+let configUpdateQueue: Promise<void> = Promise.resolve();
+
 // Update resolution button states based on current dimensions
 function updateResolutionButtons(ratio: string, width: number, height: number): void {
   const decreaseBtn = document.getElementById('resolution-decrease') as HTMLButtonElement | null;
@@ -296,29 +299,52 @@ export async function handleConfigUpdate(
   state.aspectRatio = aspectRatioValue;
   state.width = width;
   state.height = height;
+  const attemptedPrompt = trimmedPrompt;
+  const attemptedAspectRatio = aspectRatioValue;
+  const attemptedWidth = width;
+  const attemptedHeight = height;
 
-  try {
-    await invoke('update_generation_config', {
-      prompt: trimmedPrompt,
-      aspectRatio: aspectRatioValue,
-      width: width,
-      height: height,
+  configUpdateQueue = configUpdateQueue
+    .then(async () => {
+      try {
+        await invoke('update_generation_config', {
+          prompt: attemptedPrompt,
+          aspectRatio: attemptedAspectRatio,
+          width: attemptedWidth,
+          height: attemptedHeight,
+        });
+        console.log('Configuration updated successfully');
+        // generationPrompt will be updated by state_changed event from backend (FR9: No optimistic updates)
+      } catch (error) {
+        console.error('Configuration update failed:', error);
+
+        // Only roll back if this failed update still matches current UI state.
+        // If user has already made a newer change, keep that newer state.
+        const isStillCurrent =
+          state.prompt === attemptedPrompt &&
+          state.aspectRatio === attemptedAspectRatio &&
+          state.width === attemptedWidth &&
+          state.height === attemptedHeight;
+
+        if (isStillCurrent) {
+          state.prompt = previousPrompt;
+          state.aspectRatio = previousAspectRatio;
+          state.width = previousWidth;
+          state.height = previousHeight;
+        }
+
+        const promptInput = document.getElementById('prompt-input');
+        if (promptInput) {
+          showValidationError(`Update failed: ${String(error)}`, promptInput);
+        }
+      }
+    })
+    .catch((queueError: unknown) => {
+      // Prevent queue poisoning from unexpected errors.
+      console.error('Configuration update queue error:', queueError);
     });
-    console.log('Configuration updated successfully');
-    // generationPrompt will be updated by state_changed event from backend (FR9: No optimistic updates)
-  } catch (error) {
-    console.error('Configuration update failed:', error);
 
-    state.prompt = previousPrompt;
-    state.aspectRatio = previousAspectRatio;
-    state.width = previousWidth;
-    state.height = previousHeight;
-
-    const promptInput = document.getElementById('prompt-input');
-    if (promptInput) {
-      showValidationError(`Update failed: ${String(error)}`, promptInput);
-    }
-  }
+  await configUpdateQueue;
 }
 
 /**
