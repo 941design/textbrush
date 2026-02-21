@@ -1,16 +1,18 @@
 {
   "epic_name": "produce-dmg-release-artifacts-for-macos",
   "created_at": "2026-02-21T21:16:59Z",
-  "updated_at": "2026-02-21T21:18:19Z",
-  "status": "in_progress",
-  "phase": "STORIES_DEFINED",
-  "current_story": "01",
-  "completed_stories": [],
+  "updated_at": "2026-02-21T21:31:31Z",
+  "status": "done",
+  "phase": "COMPLETE",
+  "completed_at": "2026-02-21T21:31:31Z",
+  "current_story": null,
+  "completed_stories": ["01"],
   "blocked_stories": [],
   "escalated_stories": [],
   "phase_history": [
     {"phase": "SPEC_VALIDATED", "timestamp": "2026-02-21T21:16:59Z", "trigger": "validation_passed"},
     {"phase": "STORIES_DEFINED", "timestamp": "2026-02-21T21:18:05Z", "trigger": "stories_created"},
-    {"phase": "IN_PROGRESS", "timestamp": "2026-02-21T21:18:19Z", "trigger": "execution_started"}
+    {"phase": "IN_PROGRESS", "timestamp": "2026-02-21T21:20:00Z", "trigger": "execution_started"},
+    {"phase": "COMPLETE", "timestamp": "2026-02-21T21:31:31Z", "trigger": "all_stories_done_and_integrated"}
   ]
 }

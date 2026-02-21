@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Release workflow: automated binary packaging for macOS (ARM64/x64) and Linux
   - Matrix builds for macos-latest, macos-13, ubuntu-latest
   - Artifact uploads with SHA256 checksums
+  - macOS releases now produce .dmg disk images via Tauri bundler (`cargo tauri build`)
+  - .dmg and .tar.gz both uploaded as release assets for macOS
 - **Tauri Bundling**: macOS app bundle configuration with ad-hoc signing
   - Bundle targets: .app and .dmg for macOS distribution
   - Ad-hoc code signing (signingIdentity: "-") for local builds
