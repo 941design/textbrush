@@ -1,11 +1,12 @@
 {
   "epic_name": "backend-owns-image-list",
   "created_at": "2026-02-21T23:30:00Z",
-  "updated_at": "2026-02-21T23:40:00Z",
-  "status": "in_progress",
-  "phase": "STORY_01_IN_PROGRESS",
-  "current_story": "01",
-  "completed_stories": [],
+  "updated_at": "2026-02-21T23:58:00Z",
+  "status": "done",
+  "phase": "COMPLETE",
+  "current_story": null,
+  "completed_stories": ["01"],
+  "completed_at": "2026-02-21T23:58:00Z",
   "blocked_stories": [],
   "escalated_stories": [],
   "phase_history": [
@@ -23,6 +24,16 @@
       "phase": "STORY_01_IN_PROGRESS",
       "timestamp": "2026-02-21T23:40:00Z",
       "trigger": "story_01_started"
+    },
+    {
+      "phase": "EPIC_INTEGRATION_CHECK",
+      "timestamp": "2026-02-21T23:55:00Z",
+      "trigger": "all_stories_done"
+    },
+    {
+      "phase": "COMPLETE",
+      "timestamp": "2026-02-21T23:58:00Z",
+      "trigger": "all_stories_done_and_integrated"
     }
   ]
 }
