@@ -79,20 +79,34 @@ jobs:
             *.dmg
             *.dmg.sha256
           body: |
+            ## Prerequisites
+
+            The Textbrush backend requires **Python 3.11+** with the `textbrush` package installed:
+
+            ```bash
+            pip install textbrush
+            ```
+
+            `uv` is **not** required on the target system — only the `python3` executable and the `textbrush` package.
+
             ## Installation
 
             ### macOS
-            1. Download `Textbrush_x.y.z_aarch64.dmg` (Apple Silicon) or `Textbrush_x.y.z_x64.dmg` (Intel)
-            2. Open the .dmg and drag Textbrush to Applications
-            3. Run `xattr -cr /Applications/Textbrush.app` to bypass Gatekeeper
-            4. Launch the app or use CLI: `/Applications/Textbrush.app/Contents/MacOS/textbrush --prompt "Your prompt"`
+            1. Install Python 3.11+ if not already available (e.g. via [python.org](https://python.org) or `brew install python`)
+            2. Install the backend: `pip install textbrush`
+            3. Download `Textbrush_x.y.z_aarch64.dmg` (Apple Silicon) or `Textbrush_x.y.z_x64.dmg` (Intel)
+            4. Open the .dmg and drag Textbrush to Applications
+            5. Run `xattr -cr /Applications/Textbrush.app` to bypass Gatekeeper
+            6. Launch the app or use CLI: `/Applications/Textbrush.app/Contents/MacOS/textbrush --prompt "Your prompt"`
 
             Alternative: Download the .tar.gz and extract manually.
 
             ### Linux
-            1. Download `textbrush-linux-x64.tar.gz`
-            2. Extract: `tar -xzf textbrush-linux-x64.tar.gz`
-            3. Run: `./textbrush --prompt "Your prompt"`
+            1. Install Python 3.11+ if not already available
+            2. Install the backend: `pip install textbrush`
+            3. Download `textbrush-linux-x64.tar.gz`
+            4. Extract: `tar -xzf textbrush-linux-x64.tar.gz`
+            5. Run: `./textbrush --prompt "Your prompt"`
 
             ## Verification
             Verify downloads with the provided .sha256 checksums.

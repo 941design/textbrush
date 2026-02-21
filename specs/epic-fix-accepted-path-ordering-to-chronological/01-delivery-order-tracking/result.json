@@ -1,0 +1,10 @@
+{
+  "story_id": "01",
+  "completed_at": "2026-02-21T20:38:11Z",
+  "status": "done",
+  "files_modified": [
+    "textbrush/ipc/handler.py",
+    "tests/test_ipc_handler.py"
+  ],
+  "summary": "Added _delivery_order: list[int] field to MessageHandler. _assign_image_index now appends each assigned index to _delivery_order under the state lock. handle_accept uses _delivery_order for iteration instead of sorted(image_index_map.keys()). _delivery_order is cleared alongside _image_index_map and _deleted_indices after accept. Updated existing tests to set _delivery_order alongside _image_index_map, and added 2 new tests covering the ordering contract and clear-on-accept."
+}

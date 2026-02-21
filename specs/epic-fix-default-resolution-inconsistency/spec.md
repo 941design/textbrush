@@ -1,3 +1,9 @@
+---
+epic: fix-default-resolution-inconsistency
+created: 2026-02-21T20:39:19Z
+status: initializing
+---
+
 # Feature Specification: Unify Default Resolutions Across Components
 
 **Status:** Planned (Not Implemented)

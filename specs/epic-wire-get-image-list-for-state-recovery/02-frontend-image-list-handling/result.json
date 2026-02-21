@@ -1,0 +1,6 @@
+{
+  "story_id": "02",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "status": "done",
+  "summary": "Frontend image_list event handler implemented. handleImageList() filters deleted entries, fetches metadata from PNG, rebuilds imageList, sets currentIndex to last entry, updates UI. Recovery invocation added to handleStateChanged: after first non-loading state_changed, if imageList empty, invokes get_image_list once (guarded by recoveryAttempted flag)."
+}

@@ -1,0 +1,7 @@
+{
+  "story_id": "01",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "tests_passing": true,
+  "test_command": "python -m pytest tests/test_ipc_server.py -q",
+  "summary": "12 tests passing before changes. Server dispatch missing GET_IMAGE_LIST branch."
+}

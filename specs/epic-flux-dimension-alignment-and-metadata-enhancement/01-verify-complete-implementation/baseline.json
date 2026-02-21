@@ -1,0 +1,52 @@
+{
+  "captured_at": "2026-02-21T00:00:00Z",
+  "story_id": "01",
+  "story_name": "verify-complete-implementation",
+  "implementation_status": {
+    "FR1_dimension_rounding": {
+      "status": "complete",
+      "location": "textbrush/inference/flux.py:207-208",
+      "evidence": "generated_width = ((final_width + 15) // 16) * 16; generated_height = ((final_height + 15) // 16) * 16"
+    },
+    "FR2_center_cropping": {
+      "status": "complete",
+      "location": "textbrush/inference/flux.py:239-245",
+      "evidence": "left = (generated_width - final_width) // 2; top = (generated_height - final_height) // 2; image.crop((left, top, right, bottom))"
+    },
+    "FR3_png_metadata": {
+      "status": "complete",
+      "location": "textbrush/backend.py:277-280",
+      "evidence": "if buffered_image.generated_width is not None: pnginfo.add_text('GeneratedWidth', str(buffered_image.generated_width))"
+    },
+    "FR4_ui_display": {
+      "status": "complete",
+      "location": "src-tauri/ui/index.html:119-125, src-tauri/ui/main.ts:613-668",
+      "evidence": "metadata-generated-size and metadata-final-size elements present; updateMetadataPanelFromRecord() populates both"
+    },
+    "FR5_buffered_image_fields": {
+      "status": "complete",
+      "location": "textbrush/buffer.py:51-52, textbrush/inference/base.py:38-42",
+      "evidence": "generated_width: int | None = None; generated_height: int | None = None in both dataclasses"
+    },
+    "IP6_typescript_types": {
+      "status": "complete",
+      "location": "src-tauri/ui/types.ts:140-141",
+      "evidence": "generatedWidth?: number; generatedHeight?: number in ImageRecord interface"
+    },
+    "IP3_png_parsing": {
+      "status": "complete",
+      "location": "src-tauri/ui/png-metadata.ts:86-90",
+      "evidence": "getInt('GeneratedWidth') and getInt('GeneratedHeight') extract values from PNG tEXt chunks"
+    },
+    "worker_propagation": {
+      "status": "complete",
+      "location": "textbrush/worker.py:363-367",
+      "evidence": "BufferedImage created with generated_width=result.generated_width, generated_height=result.generated_height"
+    }
+  },
+  "test_coverage": {
+    "test_flux_inference_TestDimensionRoundingAndCropping": "Present - 5 tests covering rounding property, crop restoration, no-crop when aligned, crop distribution, odd pixel crop",
+    "test_backend_save_metadata_TestPNGMetadataGeneration": "Present - 4 property-based tests covering metadata inclusion, omission for None, roundtrip, divisibility by 16",
+    "test_worker_creates_buffered_image_correctly": "Present - tests worker propagates generated dimensions"
+  }
+}

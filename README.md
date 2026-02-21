@@ -25,7 +25,7 @@ Text-to-image generation tool with customizable workflows and local model infere
 
 - **Python 3.11+** - For running the inference backend
 - **Rust 1.70+ and Cargo** - For building the Tauri desktop application
-- **uv** - Package and virtual environment manager
+- **uv** - Package and virtual environment manager (development only)
 - **System dependencies** - For GPU acceleration and UI rendering (see [GPU Setup Guide](docs/gpu-setup.md))
 
 **Supported Platforms:**
@@ -33,6 +33,20 @@ Text-to-image generation tool with customizable workflows and local model infere
 - Linux (x64)
 
 ## Installation
+
+### From a Release Build
+
+Packaged release builds spawn the Python backend using `python3` on the system `PATH`. The `textbrush` Python package must be installed and accessible to the `python3` executable:
+
+```bash
+# Install the textbrush Python package system-wide or in the active environment
+pip install textbrush
+
+# Or with uv
+uv pip install textbrush
+```
+
+Then download the release binary for your platform and run it directly. `uv` is **not** required on the target system.
 
 ### From Source
 
@@ -64,7 +78,7 @@ Launch the interactive slideshow UI to review generated images:
 
 ```bash
 # Launch UI with prompt
-uv run textbrush "a serene mountain landscape" --output output.png
+uv run textbrush --prompt "a serene mountain landscape" --out output.png
 
 # UI opens showing:
 # - First generated image displayed automatically
@@ -103,10 +117,10 @@ Run textbrush without GUI for automated workflows:
 
 ```bash
 # Accept first generated image (for CI pipelines)
-uv run textbrush "test image" --headless --auto-accept --out output.png
+uv run textbrush --prompt "test image" --headless --auto-accept --out output.png
 
 # Abort immediately (for testing error paths)
-uv run textbrush "test" --headless --auto-abort
+uv run textbrush --prompt "test" --headless --auto-abort
 
 # Exit codes:
 # 0: Image accepted successfully (path printed to stdout)
@@ -122,7 +136,7 @@ Headless mode is designed for:
 
 ```bash
 # Specify output location
-uv run textbrush --prompt "sunset over mountains" --output ~/Desktop/sunset.png
+uv run textbrush --prompt "sunset over mountains" --out ~/Desktop/sunset.png
 
 # Set format and seed for reproducibility
 uv run textbrush --prompt "abstract art" --format jpg --seed 42

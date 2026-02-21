@@ -1,0 +1,32 @@
+{
+  "verified_at": "2026-02-21T21:15:45Z",
+  "story_id": "01",
+  "story_name": "fix-readme-cli-examples",
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "description": "No positional prompt arguments remain",
+      "status": "PASS",
+      "evidence": "grep 'uv run textbrush \"[^-]' README.md returns no results"
+    },
+    {
+      "id": "AC-002",
+      "description": "No --output flag references remain",
+      "status": "PASS",
+      "evidence": "grep --output README.md returns no results"
+    },
+    {
+      "id": "AC-003",
+      "description": "Headless examples use --prompt flag",
+      "status": "PASS",
+      "evidence": "Line 106: uv run textbrush --prompt \"test image\" --headless --auto-accept --out output.png; Line 109: uv run textbrush --prompt \"test\" --headless --auto-abort"
+    },
+    {
+      "id": "AC-004",
+      "description": "All examples are syntactically valid invocations",
+      "status": "PASS",
+      "evidence": "All 12 CLI examples use only flags defined in build_parser(): --download-model, --prompt, --out, --headless, --auto-accept, --auto-abort, --format, --seed, --aspect-ratio, --config, --verbose"
+    }
+  ],
+  "all_criteria_passed": true
+}

@@ -1,0 +1,70 @@
+{
+  "created_at": "2026-02-21T00:00:00Z",
+  "key_files": [
+    {
+      "path": "src-tauri/tauri.conf.json",
+      "lines": "47",
+      "relevance": "Contains the window configuration that needs updating (width: 1024, height: 768, resizable: true)",
+      "source": "architecture"
+    },
+    {
+      "path": "specs/spec.md",
+      "lines": "363-366",
+      "relevance": "Lines 363-366 contain the Window Configuration spec that currently says 800x700, non-resizable, centered",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/styles/main.css",
+      "lines": "1275",
+      "relevance": "CSS layout uses 100vw/100vh so it fills the window. Has responsive breakpoint at 820px for metadata panel stacking. Metadata panel is 350px wide - works fine at 1024px but would be too wide at 800px.",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/styles/variables.css",
+      "lines": "unknown",
+      "relevance": "Design tokens - no hardcoded pixel window dimensions",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/index.html",
+      "lines": "239",
+      "relevance": "HTML structure - no hardcoded window dimensions. Uses viewport units via CSS.",
+      "source": "architecture"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "CSS Viewport Fill",
+      "description": "CSS uses 100vw/100vh for the #app element, so the layout adapts to whatever window size Tauri configures.",
+      "reference": "src-tauri/ui/styles/main.css:192"
+    },
+    {
+      "name": "Responsive Breakpoint",
+      "description": "CSS has a media query at max-width: 820px that stacks the metadata panel below the image on narrow screens.",
+      "reference": "src-tauri/ui/styles/main.css:1224"
+    },
+    {
+      "name": "Metadata Panel Width",
+      "description": "The metadata panel has a fixed width of 350px when displayed side-by-side. With an 800px window this is problematic (only ~450px for image), but at 1024px it is comfortable.",
+      "reference": "src-tauri/ui/styles/main.css:224"
+    }
+  ],
+  "similar_features": [],
+  "architecture": {
+    "window_configuration": "Defined entirely in src-tauri/tauri.conf.json under app.windows[0]. CSS/HTML adapts to window size via viewport units.",
+    "spec_documentation": "specs/spec.md lines 363-366 describe the Window Configuration section.",
+    "no_runtime_resize": "No JavaScript code sets or modifies window dimensions at runtime. Tauri configuration is the sole source of truth.",
+    "decision_rationale": "Option B (keep 1024x768) is correct because: (1) metadata panel at 350px requires at least 800px total, and (2) CSS responsive breakpoint at 820px would trigger at 800px width, forcing a degraded vertical layout. 1024x768 provides comfortable layout. Option A (non-resizable) is correct per spec recommendation for predictable layout."
+  },
+  "extension_points": [],
+  "testing": {
+    "unit_tests": "No unit tests for window dimensions - this is a configuration-only change",
+    "verification": "Can verify tauri.conf.json values with jq/JSON parsing. Visual verification requires running the app.",
+    "css_audit": "CSS uses viewport-relative units (100vw, 100vh), so it works at any window size. The 820px breakpoint means 1024px keeps the side-by-side layout."
+  },
+  "conventions": [
+    "Configuration lives in src-tauri/tauri.conf.json",
+    "Spec documentation lives in specs/spec.md",
+    "Changes to config must be reflected in spec and vice versa"
+  ]
+}

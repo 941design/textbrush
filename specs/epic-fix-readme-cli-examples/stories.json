@@ -1,0 +1,28 @@
+{
+  "epic_name": "fix-readme-cli-examples",
+  "created_at": "2026-02-21T21:14:26Z",
+  "updated_at": "2026-02-21T21:14:26Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "fix-readme-cli-examples",
+      "title": "Fix all incorrect CLI examples in README.md",
+      "description": "Update README.md to fix: (1) positional prompt args to use --prompt flag (lines 67, 106, 109), (2) --output to --out (lines 67, 125). Verify all other examples are correct.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004"],
+      "scope": {
+        "includes": ["README.md line ~67 Desktop UI section", "README.md line ~106, 109 Headless Mode section", "README.md line ~125 Configuration Options section"],
+        "excludes": ["CLI parser changes", "new examples", "README restructuring"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Pure documentation fix. No code changes needed."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks needed."
+}

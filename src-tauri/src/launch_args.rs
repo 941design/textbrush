@@ -17,15 +17,17 @@ pub struct LaunchArgs {
 }
 
 /// Get default resolution for an aspect ratio.
-/// Returns (width, height) tuple.
+/// Returns the first (smallest) resolution for each ratio, matching
+/// SUPPORTED_RATIOS[ratio][0] in textbrush/cli.py and the first entry in
+/// ASPECT_RATIO_RESOLUTIONS in src-tauri/ui/config_controls.ts.
 fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
     match aspect_ratio {
         "1:1" => (256, 256),
-        "16:9" => (1280, 720),
-        "3:1" => (1500, 500),
-        "4:1" => (1600, 400),
-        "4:5" => (1080, 1350),
-        "9:16" => (1080, 1920),
+        "16:9" => (640, 360),
+        "3:1" => (900, 300),
+        "4:1" => (1200, 300),
+        "4:5" => (540, 675),
+        "9:16" => (360, 640),
         _ => (256, 256), // Fallback to square
     }
 }
@@ -211,11 +213,11 @@ mod tests {
     #[test]
     fn get_default_resolution_returns_correct_values() {
         assert_eq!(get_default_resolution("1:1"), (256, 256));
-        assert_eq!(get_default_resolution("16:9"), (1280, 720));
-        assert_eq!(get_default_resolution("3:1"), (1500, 500));
-        assert_eq!(get_default_resolution("4:1"), (1600, 400));
-        assert_eq!(get_default_resolution("4:5"), (1080, 1350));
-        assert_eq!(get_default_resolution("9:16"), (1080, 1920));
+        assert_eq!(get_default_resolution("16:9"), (640, 360));
+        assert_eq!(get_default_resolution("3:1"), (900, 300));
+        assert_eq!(get_default_resolution("4:1"), (1200, 300));
+        assert_eq!(get_default_resolution("4:5"), (540, 675));
+        assert_eq!(get_default_resolution("9:16"), (360, 640));
         // Unknown aspect ratios fall back to 256x256
         assert_eq!(get_default_resolution("unknown"), (256, 256));
     }

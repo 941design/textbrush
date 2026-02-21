@@ -1,0 +1,18 @@
+{
+  "story_id": "01",
+  "story_name": "update-window-config-and-spec",
+  "status": "completed",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "changes": [
+    {
+      "file": "src-tauri/tauri.conf.json",
+      "change": "Set app.windows[0].resizable from true to false"
+    },
+    {
+      "file": "specs/spec.md",
+      "change": "Updated Window Configuration section: changed '800x700 pixels' to '1024x768 pixels'"
+    }
+  ],
+  "acceptance_criteria_met": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005"],
+  "notes": "All acceptance criteria verified via jq and grep. tauri.conf.json and spec.md are now in agreement: 1024x768, non-resizable, centered."
+}

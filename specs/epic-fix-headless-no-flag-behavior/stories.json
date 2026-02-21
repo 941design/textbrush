@@ -1,0 +1,38 @@
+{
+  "epic_name": "fix-headless-no-flag-behavior",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "fix-headless-no-flag",
+      "title": "Fix headless mode to generate-and-save when no auto flag is provided",
+      "description": "Remove the error-and-exit block for the 'neither flag' case in run_headless(). Restructure so that when neither --auto-accept nor --auto-abort is provided, the function falls through to the generate-and-save path (same as auto_accept). Update --headless help text. Update tests in TestNoAutoAcceptOrAbort to verify the new behavior.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004"],
+      "scope": {
+        "includes": [
+          "Remove error block from run_headless() lines 611-614",
+          "Restructure if/else to make generate-and-save the default",
+          "Update --headless help text in build_parser()",
+          "Update docstring algorithm comments in run_headless()",
+          "Update TestNoAutoAcceptOrAbort test class to reflect new behavior"
+        ],
+        "excludes": [
+          "Multi-image headless mode",
+          "Streaming output",
+          "Interactive headless mode"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "The fix is minimal: remove the elif auto_accept check (make it the default/else path) and remove the error block. Tests for the old behavior need updating."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No temporary mocks introduced."
+}

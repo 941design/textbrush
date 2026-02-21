@@ -1,0 +1,27 @@
+{
+  "story_id": "01",
+  "story_name": "update-rust-defaults",
+  "captured_at": "2026-02-21T20:42:54Z",
+  "test_command": "cargo test --manifest-path src-tauri/Cargo.toml",
+  "test_status": "cannot_run",
+  "test_note": "Full Tauri build requires GUI system libraries (glib-2.0, GTK) not available in this environment. Tests verified by code inspection.",
+  "pre_change_state": {
+    "launch_args_rs_defaults": {
+      "1:1": [256, 256],
+      "16:9": [1280, 720],
+      "3:1": [1500, 500],
+      "4:1": [1600, 400],
+      "4:5": [1080, 1350],
+      "9:16": [1080, 1920]
+    },
+    "cli_py_defaults": {
+      "1:1": [256, 256],
+      "16:9": [640, 360],
+      "3:1": [900, 300],
+      "4:1": [1200, 300],
+      "4:5": [540, 675],
+      "9:16": [360, 640]
+    },
+    "discrepancy": "launch_args.rs uses larger values for 5 of 6 ratios"
+  }
+}

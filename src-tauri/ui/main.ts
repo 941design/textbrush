@@ -16,6 +16,7 @@ import type {
   LaunchArgs,
   SidecarMessage,
   ImagePayload,
+  ImageListPayload,
   StateChangedPayload,
   AcceptedPayload,
   DeleteAckPayload,
@@ -90,6 +91,9 @@ const MAGNIFIER_SIZE = 200;
 const MAGNIFICATION = 3;
 let imageReadyQueue: Promise<void> = Promise.resolve();
 let pendingDisplayRequest: { record: ImageRecord; listIdx: number | null } | null = null;
+
+// Recovery guard: prevent duplicate get_image_list invocations per session
+let recoveryAttempted = false;
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
@@ -237,6 +241,10 @@ function handleMessage(msg: SidecarMessage): void {
         });
       break;
 
+    case 'image_list':
+      void handleImageList(msg.payload as ImageListPayload);
+      break;
+
     case 'accepted':
       void handleAccepted(msg.payload as AcceptedPayload);
       break;
@@ -253,8 +261,12 @@ function handleMessage(msg: SidecarMessage): void {
       handleErrorMessage(msg.payload as ErrorPayload);
       break;
 
-    default:
-      console.warn('Unknown message type:', msg.type);
+    default: {
+      // Exhaustive check: all SidecarMessage union variants are handled above.
+      // If this branch is reached at runtime, the message type is unknown.
+      const unknownMsg = msg as { type?: unknown };
+      console.warn('Unknown message type:', unknownMsg.type);
+    }
   }
 }
 
@@ -281,6 +293,20 @@ function handleStateChanged(payload: StateChangedPayload): void {
 
   // Update pause button if paused state changes
   updatePauseButton();
+
+  // Recovery invocation: after first non-loading state, sync any pre-existing backend state.
+  // Guard prevents duplicate calls. Only trigger when imageList is empty to avoid
+  // interfering with in-progress image_ready events during normal startup.
+  if (
+    !recoveryAttempted &&
+    payload.state !== 'loading' &&
+    state.imageList.length === 0
+  ) {
+    recoveryAttempted = true;
+    invoke('get_image_list').catch(err => {
+      console.warn('get_image_list recovery call failed (non-fatal):', err);
+    });
+  }
 
   console.log('Backend state changed:', payload.state, payload);
 }
@@ -403,6 +429,65 @@ async function handleImageReady(payload: ImagePayload): Promise<void> {
   void displayImageRecord(record);
   showLoading(false);
   enableAcceptButton();
+}
+
+async function handleImageList(payload: ImageListPayload): Promise<void> {
+  const entries = payload.images ?? [];
+  console.log('Received image_list event with', entries.length, 'entries');
+
+  // Filter out deleted entries per spec: frontend only displays non-deleted images
+  const activeEntries = entries.filter(entry => !entry.deleted);
+
+  if (activeEntries.length === 0) {
+    // Empty list is a no-op — normal startup case
+    console.log('image_list: no active images, skipping rebuild');
+    return;
+  }
+
+  // Rebuild image list from active entries, preserving order by index
+  const newImageList: ImageRecord[] = [];
+  for (const entry of activeEntries) {
+    const assetUrl = convertFileSrc(entry.path);
+    // Attempt to parse metadata from PNG; fall back to empty values if unavailable
+    let metadata: Awaited<ReturnType<typeof fetchAndParsePngMetadata>>;
+    try {
+      metadata = await fetchAndParsePngMetadata(assetUrl);
+    } catch (err) {
+      console.warn('image_list: failed to parse metadata for', entry.path, err);
+      metadata = {};
+    }
+
+    const record: ImageRecord = {
+      index: entry.index,
+      path: entry.path,
+      displayPath: entry.display_path,
+      seed: metadata.seed ?? 0,
+      blobUrl: assetUrl,
+      prompt: metadata.prompt ?? '',
+      model: metadata.model ?? '',
+      aspectRatio: metadata.aspectRatio ?? state.aspectRatio,
+      width: metadata.width ?? 0,
+      height: metadata.height ?? 0,
+      generatedWidth: metadata.generatedWidth,
+      generatedHeight: metadata.generatedHeight,
+    };
+    newImageList.push(record);
+  }
+
+  // Replace the frontend image list entirely
+  state.imageList = newImageList;
+  state.currentIndex = newImageList.length - 1;
+
+  // Show the last (most recent) image and update UI
+  const currentRecord = state.imageList[state.currentIndex];
+  if (currentRecord) {
+    void displayImageRecord(currentRecord, state.currentIndex);
+    showLoading(false);
+    enableAcceptButton();
+  }
+  updateNavDots();
+
+  console.log('image_list: rebuilt imageList with', newImageList.length, 'images, currentIndex=', state.currentIndex);
 }
 
 async function handleAccepted(payload: AcceptedPayload): Promise<void> {
@@ -1292,6 +1377,7 @@ declare global {
       elements: Elements;
       init: typeof init;
       handleMessage: typeof handleMessage;
+      handleImageList: typeof handleImageList;
       displayImageRecord: typeof displayImageRecord;
       updateNavDots: typeof updateNavDots;
       navigateToIndex: typeof navigateToIndex;
@@ -1319,6 +1405,7 @@ if (typeof window !== 'undefined') {
     elements,
     init,
     handleMessage,
+    handleImageList,
     displayImageRecord,
     updateNavDots,
     navigateToIndex,

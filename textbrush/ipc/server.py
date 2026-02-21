@@ -123,6 +123,8 @@ class IPCServer:
             - ACCEPT → handler.handle_accept(server)
             - ABORT → handler.handle_abort(server), then stop loop
             - STATUS → handler.handle_status(server)
+            - DELETE → handler.handle_delete(payload, server)
+            - GET_IMAGE_LIST → handler.handle_get_image_list(server)
             - Unknown type → log warning, no error event
         """
         self._running = True
@@ -173,6 +175,8 @@ class IPCServer:
             self.handler.handle_pause(self)
         elif message.type == MessageType.DELETE:
             self.handler.handle_delete(message.payload, self)
+        elif message.type == MessageType.GET_IMAGE_LIST:
+            self.handler.handle_get_image_list(self)
         else:
             logger.warning(f"Unknown message type: {message.type}")
 

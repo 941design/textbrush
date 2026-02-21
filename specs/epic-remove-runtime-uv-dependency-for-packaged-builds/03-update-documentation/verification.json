@@ -1,0 +1,27 @@
+{
+  "story_id": "03",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "verification_method": "file_review",
+  "checks": [
+    {
+      "check": "README.md clarifies uv is development-only requirement",
+      "result": "pass",
+      "evidence": "Requirements section now says 'uv - Package and virtual environment manager (development only)'"
+    },
+    {
+      "check": "README.md documents from-release-build installation with pip install textbrush",
+      "result": "pass",
+      "evidence": "New 'From a Release Build' section added before 'From Source'"
+    },
+    {
+      "check": "release.yml body documents Python/textbrush prerequisite",
+      "result": "pass",
+      "evidence": "Added Prerequisites section: 'pip install textbrush', 'uv is not required on the target system'"
+    },
+    {
+      "check": "specs/spec.md documents spawn strategy distinction between dev and release",
+      "result": "pass",
+      "evidence": "Section 5.2 Process Model now has 'Sidecar Spawn Strategy (dev vs. release)' explaining cfg(debug_assertions)"
+    }
+  ]
+}

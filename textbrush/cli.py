@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
           · --headless (flag, default: False)
           · --auto-accept (flag, default: False)
           · --auto-abort (flag, default: False)
+          · --check-updates (flag, default: False)
         - Description includes program purpose
         - Help text is user-friendly
         - Mutual exclusivity enforced in main() via parser.error()
@@ -161,6 +162,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Abort immediately after starting (requires --headless)",
+    )
+
+    parser.add_argument(
+        "--check-updates",
+        action="store_true",
+        default=False,
+        help="Check for newer textbrush releases",
     )
 
     return parser
@@ -320,6 +328,8 @@ def main(argv: List[str] | None = None) -> None:
         - Exit code 1 + empty stdout on failure
         - Exit code 2 on argument conflict (parser.error())
         - Either --prompt or --download-model must be given (not both, not neither)
+          unless --check-updates is used (which exits early without those flags)
+        - --check-updates cannot be combined with --prompt, --download-model, or --headless
         - Progress messages go to stderr
         - Final output path goes to stdout (generation) or stderr (download)
         - backend.shutdown() always called (even on error, generation path only)
@@ -379,12 +389,26 @@ def main(argv: List[str] | None = None) -> None:
         args = parser.parse_args(argv)
 
         # Mutual exclusivity checks — these use parser.error() to produce exit code 2
+        if args.check_updates and args.prompt:
+            parser.error("Cannot use --check-updates with --prompt")
+        if args.check_updates and args.download_model:
+            parser.error("Cannot use --check-updates with --download-model")
+        if args.check_updates and args.headless:
+            parser.error("Cannot use --check-updates with --headless")
         if args.download_model and args.prompt:
             parser.error("Cannot use --download-model with --prompt")
         if args.download_model and args.headless:
             parser.error("Cannot use --download-model with --headless")
-        if not args.download_model and args.prompt is None:
+        if not args.check_updates and not args.download_model and args.prompt is None:
             parser.error("one of --prompt or --download-model is required")
+
+        # Update check dispatch — early exit before normal generation flow
+        if args.check_updates:
+            from .updates import check_for_updates
+
+            check_for_updates(verbose=args.verbose)
+            # check_for_updates() calls sys.exit(0), so this line is unreachable
+            return
 
         # Download model dispatch — early exit before normal generation flow
         if args.download_model:

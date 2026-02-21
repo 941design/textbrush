@@ -1,0 +1,36 @@
+{
+  "epic_name": "align-window-configuration-with-spec",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "update-window-config-and-spec",
+      "title": "Update tauri.conf.json to non-resizable and sync spec.md",
+      "description": "Set resizable=false in src-tauri/tauri.conf.json and update specs/spec.md Window Configuration section to reflect the actual values (1024x768, non-resizable, centered). Dimensions stay at 1024x768 as already correct. Only the resizable property and the spec documentation need updating.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005"],
+      "scope": {
+        "includes": [
+          "src-tauri/tauri.conf.json: set resizable to false",
+          "specs/spec.md: update Window Configuration section to say 1024x768 non-resizable"
+        ],
+        "excludes": [
+          "CSS changes (layout is viewport-based, works at 1024x768)",
+          "minWidth/minHeight constraints (window will be non-resizable)",
+          "Responsive layout changes",
+          "Multi-monitor awareness"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "This is a pure configuration + documentation update. Width (1024) and height (768) are already correct in tauri.conf.json. Only resizable needs to change from true to false. The spec.md currently says 800x700 which is wrong and must be updated to 1024x768."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks needed or introduced."
+}

@@ -1,0 +1,9 @@
+{
+  "story_id": "01",
+  "captured_at": "2026-02-21T20:31:46Z",
+  "test_command": "python -m pytest tests/test_ipc_handler.py tests/test_ipc_handler_index_management.py -x -q",
+  "passed": 81,
+  "failed": 0,
+  "errors": 0,
+  "status": "green"
+}

@@ -1,0 +1,54 @@
+{
+  "created_at": "2026-02-21T00:00:00Z",
+  "key_files": [
+    {
+      "path": "src-tauri/src/launch_args.rs",
+      "lines": "21-31",
+      "relevance": "Contains get_default_resolution function with incorrect (larger) values that need to be updated to match CLI/TS defaults",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/cli.py",
+      "lines": "16-24",
+      "relevance": "SUPPORTED_RATIOS dict defines canonical smallest resolutions per ratio - source of truth",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/config_controls.ts",
+      "lines": "20-48",
+      "relevance": "ASPECT_RATIO_RESOLUTIONS already uses first entry as default - no changes needed",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/src/launch_args.rs",
+      "lines": "211-221",
+      "relevance": "Test get_default_resolution_returns_correct_values needs updated assertions to match new smaller defaults",
+      "source": "testing-and-conventions"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "First-entry-is-default",
+      "description": "Both cli.py and config_controls.ts treat index 0 of their resolution lists as the default. launch_args.rs deviates by hardcoding larger values.",
+      "reference": "textbrush/cli.py:31"
+    },
+    {
+      "name": "Rust unit tests for resolution defaults",
+      "description": "Tests in launch_args.rs verify exact (width, height) pairs for each ratio",
+      "reference": "src-tauri/src/launch_args.rs:212-221"
+    }
+  ],
+  "similar_features": [],
+  "architecture": {
+    "summary": "Three components define defaults: Python CLI (SUPPORTED_RATIOS), TypeScript UI (ASPECT_RATIO_RESOLUTIONS), Rust launch_args (get_default_resolution). Only Rust is out of sync."
+  },
+  "extension_points": [],
+  "testing": {
+    "rust_tests": "cargo test in src-tauri/",
+    "test_file": "src-tauri/src/launch_args.rs (inline #[cfg(test)] mod)"
+  },
+  "conventions": [
+    "Rust inline test modules with #[cfg(test)]",
+    "uv for Python package management"
+  ]
+}

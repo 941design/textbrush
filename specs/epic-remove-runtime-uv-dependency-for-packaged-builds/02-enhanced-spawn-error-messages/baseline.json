@@ -1,0 +1,5 @@
+{
+  "story_id": "02",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "note": "Error message enhancements were implemented as part of Story 01 since they are tightly coupled to the spawn logic change. Both stories share the same code location (commands.rs init_generation)."
+}

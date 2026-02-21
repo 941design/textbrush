@@ -1,3 +1,9 @@
+---
+epic: align-window-configuration-with-spec
+created: 2026-02-21T00:00:00Z
+status: initializing
+---
+
 # Feature Specification: Align Window Configuration with Spec
 
 **Status:** Planned (Not Implemented)

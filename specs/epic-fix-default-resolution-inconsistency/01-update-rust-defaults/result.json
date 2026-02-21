@@ -1,0 +1,7 @@
+{
+  "story_id": "01",
+  "story_name": "update-rust-defaults",
+  "completed_at": "2026-02-21T20:43:40Z",
+  "status": "completed",
+  "summary": "Updated launch_args.rs get_default_resolution to return smallest (first) resolution per aspect ratio, matching cli.py and config_controls.ts. Updated test assertions. Added note to specs/spec.md."
+}

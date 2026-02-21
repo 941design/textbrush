@@ -241,6 +241,15 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * Backend terminates when UI exits
 * Abort immediately stops inference
 
+**Sidecar Spawn Strategy (dev vs. release):**
+
+The spawn command differs by build type:
+
+* **Development builds** (`cargo run` / `cargo tauri dev`): Spawns via `uv run python -m textbrush.ipc` so that `uv` manages the virtualenv and dependencies automatically.
+* **Release builds** (compiled with `--release`): Spawns via `python3 -m textbrush.ipc`, requiring `python3` on the system `PATH` and the `textbrush` package installed (e.g. `pip install textbrush`). The `uv` tool is not required on the end-user's system.
+
+This distinction is enforced at compile time using Rust's `#[cfg(debug_assertions)]` conditional compilation.
+
 #### 5.3 Python Backend Components
 
 **Package Structure:**
@@ -263,7 +272,7 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
 * `FluxInferenceEngine` implementation for FLUX.1 schnell
 * Hardware auto-detection: CUDA > MPS > CPU
 * Seed-based deterministic generation
-* Aspect ratio presets with predefined resolutions:
+* Aspect ratio presets with predefined resolutions (first entry is the default):
   - 1:1: 256×256, 512×512, 1024×1024
   - 16:9: 640×360, 1280×720, 1920×1080
   - 3:1: 900×300, 1500×500, 1800×600
@@ -352,7 +361,7 @@ Headless mode is designed for CI/CD pipelines and automated testing, providing p
   - ConfigControls: Prompt and aspect ratio editing
 
 **Window Configuration:**
-* Fixed size: 800x700 pixels
+* Fixed size: 1024x768 pixels
 * Centered, non-resizable
 * macOS minimum: 10.15
 

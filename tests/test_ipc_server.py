@@ -21,6 +21,7 @@ class MockHandler:
         self.accept_calls = []
         self.abort_calls = []
         self.status_calls = []
+        self.get_image_list_calls = []
 
     def handle_init(self, payload, server):
         self.init_calls.append((payload, server))
@@ -36,6 +37,9 @@ class MockHandler:
 
     def handle_status(self, server):
         self.status_calls.append(server)
+
+    def handle_get_image_list(self, server):
+        self.get_image_list_calls.append(server)
 
 
 @st.composite
@@ -434,6 +438,55 @@ def test_unknown_message_type_logged_no_error():
         server.run()
 
         assert len(handler.status_calls) == 1
+    finally:
+        sys.stdin = original_stdin
+        sys.stdout = original_stdout
+
+
+def test_get_image_list_dispatched_to_handler():
+    """GET_IMAGE_LIST message is dispatched to handler.handle_get_image_list."""
+    handler = MockHandler()
+    server = IPCServer(handler)
+
+    get_image_list_msg = Message(MessageType.GET_IMAGE_LIST).to_json()
+    stdin_data = f"{get_image_list_msg}\n"
+
+    original_stdin = sys.stdin
+    original_stdout = sys.stdout
+
+    sys.stdin = io.StringIO(stdin_data)
+    sys.stdout = io.StringIO()
+
+    try:
+        server.run()
+
+        assert len(handler.get_image_list_calls) == 1, "handle_get_image_list must be called once"
+    finally:
+        sys.stdin = original_stdin
+        sys.stdout = original_stdout
+
+
+def test_get_image_list_no_error_event_sent():
+    """GET_IMAGE_LIST dispatch does not produce an error event."""
+    handler = MockHandler()
+    server = IPCServer(handler)
+
+    get_image_list_msg = Message(MessageType.GET_IMAGE_LIST).to_json()
+    stdin_data = f"{get_image_list_msg}\n"
+
+    original_stdin = sys.stdin
+    original_stdout = sys.stdout
+
+    sys.stdin = io.StringIO(stdin_data)
+    output = io.StringIO()
+    sys.stdout = output
+
+    try:
+        server.run()
+
+        result = output.getvalue().strip()
+        # No output expected — image list response comes from handler, not server
+        assert result == ""
     finally:
         sys.stdin = original_stdin
         sys.stdout = original_stdout

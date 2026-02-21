@@ -1,0 +1,12 @@
+{
+  "story_id": "01",
+  "status": "completed",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "changes": [
+    {
+      "file": "src-tauri/src/commands.rs",
+      "description": "Replaced single Sidecar::spawn call with conditional compilation: #[cfg(debug_assertions)] uses 'uv run python -m textbrush.ipc', #[cfg(not(debug_assertions))] uses 'python3 -m textbrush.ipc'. Error messages enhanced for both paths."
+    }
+  ],
+  "acceptance_criteria_met": ["AC-001", "AC-002", "AC-003"]
+}

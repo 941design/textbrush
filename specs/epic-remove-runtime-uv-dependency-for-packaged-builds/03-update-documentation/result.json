@@ -1,0 +1,20 @@
+{
+  "story_id": "03",
+  "status": "completed",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "changes": [
+    {
+      "file": "README.md",
+      "description": "Added 'From a Release Build' installation section. Clarified that uv is a development-only requirement."
+    },
+    {
+      "file": ".github/workflows/release.yml",
+      "description": "Added Prerequisites section to release body documenting Python 3.11+ and pip install textbrush requirement."
+    },
+    {
+      "file": "specs/spec.md",
+      "description": "Added 'Sidecar Spawn Strategy (dev vs. release)' section to 5.2 Process Model documenting cfg(debug_assertions) conditional spawn."
+    }
+  ],
+  "acceptance_criteria_met": ["AC-004"]
+}

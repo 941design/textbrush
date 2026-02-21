@@ -1,0 +1,23 @@
+{
+  "completed_at": "2026-02-21T00:00:00Z",
+  "story_id": "01",
+  "story_name": "verify-complete-implementation",
+  "status": "done",
+  "summary": "Feature fully implemented prior to this epic. All 5 functional requirements and all integration points verified present and correct in production code.",
+  "implementation_changes": [],
+  "files_modified": [],
+  "key_findings": [
+    "FluxInferenceEngine.generate() implements rounding (((dim+15)//16)*16) and center cropping",
+    "GenerationResult and BufferedImage both have optional generated_width/generated_height fields",
+    "Worker propagates generated dimensions from GenerationResult to BufferedImage",
+    "Backend._save_with_metadata() stores GeneratedWidth/GeneratedHeight in PNG tEXt chunks",
+    "Frontend parses, stores, and displays both generated and final dimensions",
+    "HTML already has Generated Size and Final Size rows in metadata panel",
+    "TypeScript types already include generatedWidth? and generatedHeight? in ImageRecord"
+  ],
+  "test_coverage": {
+    "unit_tests_present": true,
+    "unit_test_files": ["tests/test_flux_inference.py::TestDimensionRoundingAndCropping", "tests/test_backend_save_metadata.py::TestPNGMetadataGeneration"],
+    "test_execution_note": "Tests require torch which is not installed in CI environment. 68 worker/buffer tests pass. 129 TypeScript tests pass."
+  }
+}

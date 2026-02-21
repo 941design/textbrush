@@ -1,0 +1,20 @@
+{
+  "story_id": "01",
+  "verified_at": "2026-02-21T20:38:11Z",
+  "test_command": "python -m pytest tests/test_ipc_handler.py tests/test_ipc_handler_index_management.py -q",
+  "passed": 83,
+  "failed": 0,
+  "errors": 0,
+  "status": "green",
+  "new_tests_added": [
+    "TestAcceptCommand::test_accept_uses_delivery_order_not_index_order",
+    "TestAcceptCommand::test_accept_clears_delivery_order_after_accept"
+  ],
+  "acceptance_criteria_verified": {
+    "AC-001": "Accepted paths emitted in delivery order - verified by test_accept_uses_delivery_order_not_index_order",
+    "AC-002": "In single-gen flow, output order unchanged - delivery order equals generation order",
+    "AC-003": "Deleted images excluded - verified by test_delete_then_accept_excludes_deleted_image",
+    "AC-004": "_delivery_order cleared after accept - verified by test_accept_clears_delivery_order_after_accept",
+    "AC-005": "All existing accept tests pass - 83 total, 0 failures"
+  }
+}

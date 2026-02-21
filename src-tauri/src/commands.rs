@@ -61,7 +61,27 @@ pub async fn init_generation(
     width: Option<u32>,
     height: Option<u32>,
 ) -> Result<(), String> {
-    let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])?;
+    #[cfg(debug_assertions)]
+    let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])
+        .map_err(|e| {
+            if e.contains("No such file") || e.contains("os error 2") {
+                "Failed to start backend: uv not found. Install uv (https://docs.astral.sh/uv/) or run a release build.".to_string()
+            } else {
+                format!("Failed to start backend: {e}")
+            }
+        })?;
+
+    #[cfg(not(debug_assertions))]
+    let mut sidecar = Sidecar::spawn("python3", &["-m", "textbrush.ipc"])
+        .map_err(|e| {
+            if e.contains("No such file") || e.contains("os error 2") {
+                "Failed to start backend: python3 not found. Ensure Python 3.11+ is installed and 'textbrush' package is available (pip install textbrush).".to_string()
+            } else if e.contains("No module") {
+                "Failed to start backend: No module named 'textbrush'. Run: pip install textbrush".to_string()
+            } else {
+                format!("Failed to start backend: {e}")
+            }
+        })?;
 
     let window_clone = window.clone();
     sidecar.start_reader(move |msg| {
@@ -246,6 +266,48 @@ pub fn delete_image(index: i32, state: State<'_, AppState>) -> Result<(), String
             payload: serde_json::json!({
                 "index": index,
             }),
+        };
+        sidecar.send(&message)?;
+        Ok(())
+    } else {
+        Err("No sidecar running".to_string())
+    }
+}
+
+/// Request full image list from backend for state recovery.
+///
+/// CONTRACT:
+///   Inputs:
+///     - state: AppState containing sidecar
+///
+///   Outputs:
+///     - Result<(), String>: Ok on success, error message on failure
+///
+///   Invariants:
+///     - If sidecar exists: sends GET_IMAGE_LIST command with null payload
+///     - If no sidecar: returns error
+///     - Python handler responds with IMAGE_LIST event containing all images
+///
+///   Properties:
+///     - Synchronous: returns after sending command
+///     - Error handling: returns Result with error if no sidecar
+///     - Used for recovery: frontend calls this after reconnect or reload
+///
+///   Algorithm:
+///     1. Lock AppState.sidecar mutex
+///     2. If sidecar exists:
+///        a. Send GET_IMAGE_LIST message (type: "get_image_list", payload: null)
+///        b. Return Ok
+///     3. If no sidecar:
+///        a. Return Err("No sidecar running")
+#[command]
+pub fn get_image_list(state: State<'_, AppState>) -> Result<(), String> {
+    let sidecar_guard = state.sidecar.lock().unwrap();
+
+    if let Some(sidecar) = sidecar_guard.as_ref() {
+        let message = IpcMessage {
+            msg_type: "get_image_list".to_string(),
+            payload: serde_json::Value::Null,
         };
         sidecar.send(&message)?;
         Ok(())

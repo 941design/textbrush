@@ -1,0 +1,7 @@
+{
+  "story_id": "02",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "tests_passing": true,
+  "test_command": "cd src-tauri/ui && npm test",
+  "summary": "129 frontend tests passing. image_list case missing from handleMessage switch. No recovery invocation in handleStateChanged."
+}

@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-02-21T00:00:00Z",
+  "story_id": "01",
+  "test_command": "uv run --no-sync pytest tests/test_cli_headless.py -v",
+  "test_results": {
+    "total": 47,
+    "passed": 47,
+    "failed": 0,
+    "errors": 0
+  },
+  "acceptance_criteria_verified": {
+    "AC-001": "textbrush --headless --prompt 'test' generates an image, prints path to stdout, exits 0 — verified by test_no_flags_exits_with_code_0_on_success and test_no_flags_prints_output_path_to_stdout",
+    "AC-002": "textbrush --headless --prompt 'test' --auto-abort aborts without saving, exits 1 — verified by existing TestAbortWorkflow tests (all passing)",
+    "AC-003": "textbrush --headless --prompt 'test' --auto-accept continues to work identically — verified by TestAcceptWorkflow tests (all passing)",
+    "AC-004": "textbrush --help shows updated description for --headless — verified by manual inspection of updated help text string"
+  },
+  "linting": "ruff check passed",
+  "formatting": "ruff format --check passed"
+}

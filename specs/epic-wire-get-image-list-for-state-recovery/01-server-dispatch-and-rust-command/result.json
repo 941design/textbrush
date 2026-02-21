@@ -1,0 +1,6 @@
+{
+  "story_id": "01",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "status": "done",
+  "summary": "Server dispatch for GET_IMAGE_LIST wired: Python server.py dispatches to handler.handle_get_image_list(). Rust get_image_list command added to commands.rs following skip_image pattern. Command registered in main.rs invoke_handler."
+}

@@ -622,7 +622,8 @@ class TestBackendInitialization:
         mock_backend.initialize = Mock()
         handler.backend = mock_backend
 
-        handler._init_backend(on_ready, mock_server)
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+            handler._init_backend(on_ready, mock_server)
 
         assert ready_called.is_set()
         mock_backend.initialize.assert_called_once()
@@ -637,7 +638,8 @@ class TestBackendInitialization:
         mock_backend.initialize = Mock(side_effect=RuntimeError("Model load failed"))
         handler.backend = mock_backend
 
-        handler._init_backend(on_ready, mock_server)
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+            handler._init_backend(on_ready, mock_server)
 
         mock_server.send.assert_called()
         call_args = mock_server.send.call_args[0][0]
@@ -645,6 +647,213 @@ class TestBackendInitialization:
         assert call_args.payload["state"] == "error"
         assert call_args.payload["fatal"] is True
         assert "Model load failed" in call_args.payload["message"]
+
+
+class TestModelDiscoveryInInitBackend:
+    """Tests for model discovery and download logic in _init_backend."""
+
+    def test_model_available_proceeds_to_initialize(self, handler, mock_server):
+        """When model is available, backend.initialize() is called without download."""
+        ready_called = threading.Event()
+
+        def on_ready():
+            ready_called.set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+                handler._init_backend(on_ready, mock_server)
+
+        assert ready_called.is_set()
+        mock_backend.initialize.assert_called_once()
+        mock_download.assert_not_called()
+
+    def test_model_missing_no_credentials_emits_fatal_error(self, handler, mock_server):
+        """When model missing and no credentials, fatal error emitted with instructions."""
+
+        def on_ready():
+            pass
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        handler.backend = mock_backend
+        handler.config.huggingface.token = None
+
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
+            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+                with patch.object(handler, "_detect_hf_credentials", return_value=None):
+                    handler._init_backend(on_ready, mock_server)
+
+        # Should emit fatal error
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        error_states = [c for c in state_changed_calls if c.payload["state"] == "error"]
+        assert len(error_states) == 1
+        assert error_states[0].payload["fatal"] is True
+        assert "FLUX.1 schnell" in error_states[0].payload["message"]
+        assert "huggingface.co/settings/tokens" in error_states[0].payload["message"]
+        assert "textbrush --download-model" in error_states[0].payload["message"]
+
+        # backend.initialize() must NOT be called
+        mock_backend.initialize.assert_not_called()
+        mock_download.assert_not_called()
+
+    def test_model_missing_with_credentials_triggers_download(self, handler, mock_server):
+        """When model missing but credentials available, download is triggered."""
+        ready_called = threading.Event()
+
+        def on_ready():
+            ready_called.set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
+            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+                with patch.object(handler, "_detect_hf_credentials", return_value="hf_test_token"):
+                    handler._init_backend(on_ready, mock_server)
+
+        # Loading state must have been emitted before download
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        loading_states = [c for c in state_changed_calls if c.payload["state"] == "loading"]
+        assert len(loading_states) >= 1
+
+        # Download must have been called
+        mock_download.assert_called_once()
+
+        # backend.initialize() must have been called after download
+        mock_backend.initialize.assert_called_once()
+        assert ready_called.is_set()
+
+    def test_download_failure_emits_fatal_error(self, handler, mock_server):
+        """When download fails, fatal error emitted and backend.initialize() not called."""
+
+        def on_ready():
+            pass
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
+            with patch(
+                "textbrush.ipc.handler.download_flux_weights",
+                side_effect=RuntimeError("network error"),
+            ):
+                with patch.object(handler, "_detect_hf_credentials", return_value="hf_test_token"):
+                    handler._init_backend(on_ready, mock_server)
+
+        # Fatal error emitted
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        error_states = [c for c in state_changed_calls if c.payload["state"] == "error"]
+        assert len(error_states) == 1
+        assert error_states[0].payload["fatal"] is True
+        assert "Model download failed" in error_states[0].payload["message"]
+        assert "network error" in error_states[0].payload["message"]
+
+        # backend.initialize() must NOT be called after download failure
+        mock_backend.initialize.assert_not_called()
+
+    def test_discovery_unexpected_error_falls_back_to_initialize(self, handler, mock_server):
+        """Unexpected error in model discovery falls back to backend.initialize()."""
+        ready_called = threading.Event()
+
+        def on_ready():
+            ready_called.set()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch(
+            "textbrush.ipc.handler.is_flux_available",
+            side_effect=Exception("Unexpected discovery error"),
+        ):
+            handler._init_backend(on_ready, mock_server)
+
+        # Should still call backend.initialize() (graceful degradation)
+        mock_backend.initialize.assert_called_once()
+        assert ready_called.is_set()
+
+
+class TestDetectHfCredentials:
+    """Tests for HuggingFace credential detection in MessageHandler."""
+
+    def test_huggingface_hub_token_env_var_found(self, handler):
+        """HUGGINGFACE_HUB_TOKEN env var is returned first."""
+        import os
+
+        with patch.dict(os.environ, {"HUGGINGFACE_HUB_TOKEN": "hf_env_token"}, clear=False):
+            handler.config.huggingface.token = None
+            result = handler._detect_hf_credentials()
+
+        assert result == "hf_env_token"
+
+    def test_config_token_found_when_no_env_var(self, handler):
+        """config.huggingface.token returned when HUGGINGFACE_HUB_TOKEN not set."""
+        import os
+
+        env = {k: v for k, v in os.environ.items() if k != "HUGGINGFACE_HUB_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            handler.config.huggingface.token = "hf_config_token"
+            result = handler._detect_hf_credentials()
+
+        assert result == "hf_config_token"
+
+    def test_hf_cli_cache_file_used_as_fallback(self, handler, tmp_path):
+        """HuggingFace CLI login cache file used when env var and config token absent."""
+        import os
+        from pathlib import Path as RealPath
+
+        # Create fake HF home with token file
+        hf_cache_dir = tmp_path / ".cache" / "huggingface"
+        hf_cache_dir.mkdir(parents=True)
+        token_file = hf_cache_dir / "token"
+        token_file.write_text("hf_cached_token\n")
+
+        env = {k: v for k, v in os.environ.items() if k != "HUGGINGFACE_HUB_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            handler.config.huggingface.token = None
+            with patch.object(RealPath, "home", staticmethod(lambda: tmp_path)):
+                result = handler._detect_hf_credentials()
+
+        assert result == "hf_cached_token"
+
+    def test_no_credentials_returns_none(self, handler):
+        """Returns None when no credentials found from any source."""
+        import os
+
+        env = {k: v for k, v in os.environ.items() if k != "HUGGINGFACE_HUB_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            handler.config.huggingface.token = None
+            with patch("pathlib.Path.exists", return_value=False):
+                result = handler._detect_hf_credentials()
+
+        assert result is None
+
+    def test_env_var_takes_priority_over_config(self, handler):
+        """HUGGINGFACE_HUB_TOKEN env var takes priority over config token."""
+        import os
+
+        with patch.dict(os.environ, {"HUGGINGFACE_HUB_TOKEN": "hf_env_token"}, clear=False):
+            handler.config.huggingface.token = "hf_config_token"
+            result = handler._detect_hf_credentials()
+
+        assert result == "hf_env_token"
 
 
 class TestErrorHandling:
@@ -1004,20 +1213,21 @@ class TestUpdateConfigCommand:
         with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
             with patch("textbrush.ipc.handler.threading.Thread", side_effect=ImmediateThread):
                 with patch.object(handler, "_start_image_delivery") as mock_start_delivery:
-                    init_payload = {
-                        "prompt": "A watercolor painting of a cat",
-                        "aspect_ratio": "1:1",
-                        "width": 256,
-                        "height": 256,
-                    }
-                    handler.handle_init(init_payload, mock_server)
+                    with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+                        init_payload = {
+                            "prompt": "A watercolor painting of a cat",
+                            "aspect_ratio": "1:1",
+                            "width": 256,
+                            "height": 256,
+                        }
+                        handler.handle_init(init_payload, mock_server)
 
-                    mock_backend.start_generation.assert_called_once()
-                    start_call = mock_backend.start_generation.call_args.kwargs
-                    assert start_call["prompt"] == "futuristic neon lobster"
-                    assert start_call["width"] == 512
-                    assert start_call["height"] == 512
-                    mock_start_delivery.assert_called_once()
+                        mock_backend.start_generation.assert_called_once()
+                        start_call = mock_backend.start_generation.call_args.kwargs
+                        assert start_call["prompt"] == "futuristic neon lobster"
+                        assert start_call["width"] == 512
+                        assert start_call["height"] == 512
+                        mock_start_delivery.assert_called_once()
 
         error_events = [
             call[0][0]

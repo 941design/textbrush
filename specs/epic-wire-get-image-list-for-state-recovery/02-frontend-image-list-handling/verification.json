@@ -1,0 +1,16 @@
+{
+  "story_id": "02",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "tests_passing": true,
+  "test_command": "cd src-tauri/ui && npm test && npx tsc --noEmit",
+  "results": "129 frontend tests pass, TypeScript compiles cleanly",
+  "changes": [
+    "src-tauri/ui/main.ts: Added ImageListPayload import",
+    "src-tauri/ui/main.ts: Added recoveryAttempted module-level flag",
+    "src-tauri/ui/main.ts: Added case 'image_list' in handleMessage switch",
+    "src-tauri/ui/main.ts: Added handleImageList() async function",
+    "src-tauri/ui/main.ts: Added recovery invocation in handleStateChanged (get_image_list after first non-loading state when imageList empty)",
+    "src-tauri/ui/main.ts: Fixed exhaustive switch default branch to avoid TS2339 never error",
+    "src-tauri/ui/main.ts: Exposed handleImageList in window.textbrushApp test surface"
+  ]
+}

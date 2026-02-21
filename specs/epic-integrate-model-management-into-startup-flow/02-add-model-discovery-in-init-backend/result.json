@@ -1,0 +1,10 @@
+{
+  "story_id": "02",
+  "status": "done",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "files_changed": [
+    "textbrush/ipc/handler.py",
+    "tests/test_ipc_handler.py"
+  ],
+  "summary": "Added model discovery step in _init_backend. When model missing: checks credentials (HUGGINGFACE_HUB_TOKEN env, config.huggingface.token, HF CLI cache), auto-downloads if credentials found, emits fatal error with actionable instructions if not. Graceful degradation on unexpected errors. Added 10 new tests."
+}

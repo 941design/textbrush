@@ -1,0 +1,28 @@
+{
+  "epic_name": "fix-accepted-path-ordering-to-chronological",
+  "created_at": "2026-02-21T20:31:34Z",
+  "updated_at": "2026-02-21T20:31:34Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "delivery-order-tracking",
+      "title": "Add delivery order tracking and use it in handle_accept",
+      "description": "Add _delivery_order list to MessageHandler, populate it in _assign_image_index (which is called immediately before the IMAGE_READY event is sent), use it in handle_accept instead of sorted(index_map.keys()), and clear it alongside other state after accept.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005"],
+      "scope": {
+        "includes": ["MessageHandler.__init__: add _delivery_order field", "_assign_image_index: append to _delivery_order", "handle_accept: iterate _delivery_order", "handle_accept: clear _delivery_order after accept"],
+        "excludes": ["frontend changes", "multi-session tracking"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Single atomic change to handler.py - add field, populate it, use it, clear it"
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks needed."
+}

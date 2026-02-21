@@ -1,0 +1,22 @@
+{
+  "story_id": "02",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "verification_method": "code_review",
+  "checks": [
+    {
+      "check": "actionable error when uv not found (dev build)",
+      "result": "pass",
+      "evidence": "'Failed to start backend: uv not found. Install uv (https://docs.astral.sh/uv/) or run a release build.'"
+    },
+    {
+      "check": "actionable error when python3 not found (release build)",
+      "result": "pass",
+      "evidence": "'Failed to start backend: python3 not found. Ensure Python 3.11+ is installed and textbrush package is available (pip install textbrush).'"
+    },
+    {
+      "check": "actionable error when module missing (release build)",
+      "result": "pass",
+      "evidence": "'Failed to start backend: No module named textbrush. Run: pip install textbrush'"
+    }
+  ]
+}

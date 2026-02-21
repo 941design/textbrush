@@ -1,0 +1,11 @@
+{
+  "story_id": "01",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "test_command": "cargo check (in src-tauri)",
+  "pre_existing_state": {
+    "commands_rs_line_64": "let mut sidecar = Sidecar::spawn(\"uv\", &[\"run\", \"python\", \"-m\", \"textbrush.ipc\"])?;",
+    "spawn_strategy": "Always uses 'uv run python -m textbrush.ipc' regardless of build type",
+    "problem": "Release builds fail on systems without uv installed"
+  },
+  "notes": "cargo check completes successfully with existing artifacts; Rust tests can compile"
+}

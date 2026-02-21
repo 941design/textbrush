@@ -1,0 +1,12 @@
+{
+  "story_id": "01",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "test_command": "python -m pytest tests/test_weights.py -v",
+  "tests_passing": 22,
+  "tests_failing": 0,
+  "relevant_files": [
+    "textbrush/model/weights.py",
+    "tests/test_weights.py"
+  ],
+  "notes": "is_flux_available() currently only checks HuggingFace cache via try_to_load_from_cache. No custom directory support."
+}

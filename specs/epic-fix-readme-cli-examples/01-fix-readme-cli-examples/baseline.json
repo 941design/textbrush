@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-02-21T21:14:50Z",
+  "story_id": "01",
+  "story_name": "fix-readme-cli-examples",
+  "observations": [
+    {
+      "type": "broken_examples",
+      "description": "README.md line 67: positional prompt + --output flag",
+      "value": "uv run textbrush \"a serene mountain landscape\" --output output.png"
+    },
+    {
+      "type": "broken_examples",
+      "description": "README.md line 106: positional prompt",
+      "value": "uv run textbrush \"test image\" --headless --auto-accept --out output.png"
+    },
+    {
+      "type": "broken_examples",
+      "description": "README.md line 109: positional prompt",
+      "value": "uv run textbrush \"test\" --headless --auto-abort"
+    },
+    {
+      "type": "broken_examples",
+      "description": "README.md line 125: --output flag",
+      "value": "uv run textbrush --prompt \"sunset over mountains\" --output ~/Desktop/sunset.png"
+    }
+  ],
+  "correct_examples": [
+    "line 45: uv run textbrush --download-model",
+    "line 58: uv run textbrush --prompt \"a watercolor painting of a cat\"",
+    "line 128: uv run textbrush --prompt \"abstract art\" --format jpg --seed 42",
+    "line 131: uv run textbrush --prompt \"portrait\" --aspect-ratio 9:16",
+    "line 134: uv run textbrush --config ./project-config.toml --prompt \"portrait\"",
+    "line 137: uv run textbrush --verbose --prompt \"landscape\"",
+    "line 170: uv run textbrush --prompt \"test\"",
+    "line 181: uv run textbrush --download-model"
+  ]
+}

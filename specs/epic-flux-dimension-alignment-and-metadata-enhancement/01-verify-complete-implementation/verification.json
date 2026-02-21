@@ -1,0 +1,56 @@
+{
+  "verified_at": "2026-02-21T00:00:00Z",
+  "story_id": "01",
+  "story_name": "verify-complete-implementation",
+  "verdict": "pass",
+  "acceptance_criteria_results": {
+    "AC-001": {
+      "status": "pass",
+      "evidence": "textbrush/inference/flux.py:207-208 contains exact formula: generated_width = ((final_width + 15) // 16) * 16; generated_height = ((final_height + 15) // 16) * 16"
+    },
+    "AC-002": {
+      "status": "pass",
+      "evidence": "textbrush/inference/flux.py:239-245: center crop applied when generated_width != final_width or generated_height != final_height. left = (generated_width - final_width) // 2; top = (generated_height - final_height) // 2"
+    },
+    "AC-003": {
+      "status": "pass",
+      "evidence": "textbrush/inference/flux.py:240: condition 'if generated_width != final_width or generated_height != final_height' means no crop when already aligned"
+    },
+    "AC-004": {
+      "status": "pass",
+      "evidence": "textbrush/backend.py:277-280: GeneratedWidth and GeneratedHeight added to PngInfo when not None"
+    },
+    "AC-005": {
+      "status": "pass",
+      "evidence": "textbrush/backend.py:277-280: conditional check 'if buffered_image.generated_width is not None' before adding to PNG metadata"
+    },
+    "AC-006": {
+      "status": "pass",
+      "evidence": "textbrush/buffer.py:51-52 and textbrush/inference/base.py:38-42: both dataclasses have generated_width: int | None = None and generated_height: int | None = None. textbrush/worker.py:363-367 propagates from GenerationResult to BufferedImage"
+    },
+    "AC-007": {
+      "status": "pass",
+      "evidence": "src-tauri/ui/index.html:119-125: <dt>Generated Size:</dt><dd id='metadata-generated-size'> and <dt>Final Size:</dt><dd id='metadata-final-size'>. src-tauri/ui/main.ts:634-644: updateMetadataPanelFromRecord() sets both fields using × character"
+    },
+    "AC-008": {
+      "status": "pass",
+      "evidence": "src-tauri/ui/png-metadata.ts:86-90: getInt('GeneratedWidth') and getInt('GeneratedHeight') extract values; src-tauri/ui/types.ts:140-141: generatedWidth? and generatedHeight? in ImageRecord; src-tauri/ui/main.ts:392-393: record populated from metadata"
+    },
+    "AC-009": {
+      "status": "pass",
+      "evidence": "For +7 pixel diff: left = 7 // 2 = 3, right crop = 7 - 3 = 4. Verified by formula analysis and test_specific_odd_pixel_crop"
+    },
+    "AC-010": {
+      "status": "pass",
+      "evidence": "textbrush/inference/flux.py:200-208: 'custom' aspect ratio path applies rounding before pipeline call, same as preset aspect ratios"
+    }
+  },
+  "test_results": {
+    "typescript_tests": "129 passed, 0 failed",
+    "worker_tests": "68 passed (includes test_worker_creates_buffered_image_correctly)",
+    "buffer_tests": "38 passed",
+    "flux_inference_tests": "Cannot run in CI - requires torch. Implementation verified by code inspection.",
+    "backend_metadata_tests": "Cannot run in CI - requires torch (via factory import). Implementation verified by code inspection."
+  },
+  "notes": "Feature is fully implemented. No new code needed. All integration points confirmed present and correct by thorough code inspection. The test_backend_save_metadata.py and test_flux_inference.py tests are environment-limited (require torch) but are present and comprehensive."
+}

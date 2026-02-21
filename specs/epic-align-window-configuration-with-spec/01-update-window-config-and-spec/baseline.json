@@ -1,0 +1,16 @@
+{
+  "story_id": "01",
+  "story_name": "update-window-config-and-spec",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "test_results": [],
+  "pre_conditions": {
+    "tauri_conf_window": {
+      "width": 1024,
+      "height": 768,
+      "resizable": true,
+      "center": true
+    },
+    "spec_md_window_config": "Fixed size: 800x700 pixels\nCentered, non-resizable\nmacOS minimum: 10.15"
+  },
+  "notes": "Configuration-only change. No unit tests apply. Baseline captures current config values. width and height are already correct at 1024x768. Only resizable needs changing (true -> false). spec.md needs updating from 800x700 to 1024x768."
+}

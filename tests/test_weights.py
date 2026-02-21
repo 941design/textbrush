@@ -11,6 +11,7 @@ from textbrush.model.weights import (
     _mask_token,
     download_flux_weights,
     get_cache_info,
+    is_flux_available,
 )
 
 
@@ -273,6 +274,116 @@ class TestTokenMasking:
         assert "Middle" not in masked
         assert "Secret" not in masked.replace("hf_S", "")
         assert "Hidden" not in masked
+
+
+class TestIsFluxAvailableCustomDirs:
+    """Tests for custom directory support in is_flux_available."""
+
+    def test_custom_dir_with_model_index_returns_true(self, tmp_path):
+        """Custom directory containing model_index.json reports model available."""
+        model_dir = tmp_path / "my-flux-model"
+        model_dir.mkdir()
+        (model_dir / "model_index.json").write_text('{"_class_name": "FluxPipeline"}')
+
+        with patch("textbrush.model.weights.try_to_load_from_cache", return_value=None):
+            result = is_flux_available(custom_dirs=[model_dir])
+
+        assert result is True
+
+    def test_custom_dir_without_model_index_falls_back_to_hf_cache(self, tmp_path):
+        """Custom directory without model_index.json falls back to HF cache check."""
+        model_dir = tmp_path / "empty-dir"
+        model_dir.mkdir()
+
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache",
+            return_value="/some/hf/path",
+        ):
+            result = is_flux_available(custom_dirs=[model_dir])
+
+        assert result is True
+
+    def test_nonexistent_custom_dir_falls_back_to_hf_cache(self, tmp_path):
+        """Non-existent custom directory is silently skipped, falls back to HF cache."""
+        nonexistent = tmp_path / "does-not-exist"
+
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache",
+            return_value="/some/hf/path",
+        ):
+            result = is_flux_available(custom_dirs=[nonexistent])
+
+        assert result is True
+
+    def test_custom_dirs_checked_before_hf_cache(self, tmp_path):
+        """Custom directories are checked before HF cache (HF cache not called if found)."""
+        model_dir = tmp_path / "local-model"
+        model_dir.mkdir()
+        (model_dir / "model_index.json").write_text('{"_class_name": "FluxPipeline"}')
+
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache"
+        ) as mock_try_load:
+            result = is_flux_available(custom_dirs=[model_dir])
+
+        assert result is True
+        mock_try_load.assert_not_called()
+
+    def test_no_custom_dirs_uses_only_hf_cache(self):
+        """Without custom directories, only HF cache is checked."""
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache",
+            return_value=None,
+        ):
+            result = is_flux_available()
+
+        assert result is False
+
+    def test_empty_custom_dirs_list_uses_hf_cache(self):
+        """Empty custom_dirs list falls back to HF cache."""
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache",
+            return_value=None,
+        ):
+            result = is_flux_available(custom_dirs=[])
+
+        assert result is False
+
+    def test_multiple_custom_dirs_first_match_wins(self, tmp_path):
+        """First custom directory with model wins; subsequent dirs not checked."""
+        dir1 = tmp_path / "dir1"
+        dir1.mkdir()
+        (dir1 / "model_index.json").write_text("{}")
+
+        dir2 = tmp_path / "dir2"
+        dir2.mkdir()
+        (dir2 / "model_index.json").write_text("{}")
+
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache"
+        ) as mock_try_load:
+            result = is_flux_available(custom_dirs=[dir1, dir2])
+
+        assert result is True
+        mock_try_load.assert_not_called()
+
+    def test_multiple_custom_dirs_second_match_if_first_empty(self, tmp_path):
+        """If first custom dir has no model, second is checked."""
+        dir1 = tmp_path / "dir1"
+        dir1.mkdir()
+        # No model_index.json in dir1
+
+        dir2 = tmp_path / "dir2"
+        dir2.mkdir()
+        (dir2 / "model_index.json").write_text("{}")
+
+        with patch(
+            "textbrush.model.weights.try_to_load_from_cache"
+        ) as mock_try_load:
+            result = is_flux_available(custom_dirs=[dir1, dir2])
+
+        assert result is True
+        mock_try_load.assert_not_called()
 
 
 class TestCacheInfo:

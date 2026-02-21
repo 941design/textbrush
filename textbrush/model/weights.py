@@ -104,14 +104,25 @@ def get_cache_info() -> CacheInfo:
         )
 
 
-def is_flux_available() -> bool:
-    """Check if FLUX.1 Schnell is available in the HuggingFace cache.
+def is_flux_available(custom_dirs: list[Path] | None = None) -> bool:
+    """Check if FLUX.1 Schnell is available in custom directories or the HuggingFace cache.
 
-    Uses model_index.json as a marker file since it's required for loading.
+    Checks custom directories first (if provided), then falls back to the
+    HuggingFace cache. Uses model_index.json as a marker file since it's
+    required for loading.
+
+    Args:
+        custom_dirs: Optional list of directories to check before the HuggingFace
+            cache. Each directory is checked for a model_index.json marker file.
 
     Returns:
-        True if the model appears to be cached.
+        True if the model appears to be available.
     """
+    if custom_dirs:
+        for directory in custom_dirs:
+            if Path(directory).is_dir() and (Path(directory) / "model_index.json").exists():
+                return True
+
     result = try_to_load_from_cache(
         FLUX_SCHNELL_ID,
         filename="model_index.json",

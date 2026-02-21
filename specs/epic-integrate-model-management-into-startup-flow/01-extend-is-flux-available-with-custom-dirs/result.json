@@ -1,0 +1,10 @@
+{
+  "story_id": "01",
+  "status": "done",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "files_changed": [
+    "textbrush/model/weights.py",
+    "tests/test_weights.py"
+  ],
+  "summary": "Extended is_flux_available() with optional custom_dirs parameter. Added 8 new tests covering all custom directory scenarios."
+}

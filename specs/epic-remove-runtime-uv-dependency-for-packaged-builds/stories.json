@@ -1,0 +1,62 @@
+{
+  "epic_name": "remove-runtime-uv-dependency-for-packaged-builds",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 3,
+  "stories": [
+    {
+      "id": "01",
+      "name": "conditional-sidecar-spawn",
+      "title": "Implement conditional sidecar spawn strategy (dev=uv, release=python3)",
+      "description": "Modify src-tauri/src/commands.rs init_generation to use #[cfg(debug_assertions)] to spawn 'uv run python -m textbrush.ipc' in dev builds and 'python3 -m textbrush.ipc' in release builds.",
+      "acceptance_criteria": ["AC-001", "AC-002"],
+      "scope": {
+        "includes": ["src-tauri/src/commands.rs init_generation function"],
+        "excludes": ["error message enhancements", "documentation changes"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Use #[cfg(debug_assertions)] / #[cfg(not(debug_assertions))] compile-time flags. Keep existing tests which use python3 directly."
+    },
+    {
+      "id": "02",
+      "name": "enhanced-spawn-error-messages",
+      "title": "Enhance sidecar spawn error messages for actionable diagnostics",
+      "description": "Improve the error messages returned when the sidecar fails to spawn. Map OS error codes to human-readable messages: 'python3 not found. Ensure Python 3.11+ is installed.' and 'uv not found. Install uv or set TEXTBRUSH_DEV=0.'",
+      "acceptance_criteria": ["AC-003"],
+      "scope": {
+        "includes": ["src-tauri/src/commands.rs init_generation spawn error handling"],
+        "excludes": ["conditional spawn logic changes"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Wrap the Sidecar::spawn error with context-specific messages."
+    },
+    {
+      "id": "03",
+      "name": "update-documentation",
+      "title": "Update README.md and release workflow to document Python dependency requirement",
+      "description": "Update README.md Installation section to document that packaged builds require Python 3.11+ with textbrush installed. Update release.yml to include instructions. Update specs/spec.md architecture section to note spawn mechanism distinction.",
+      "acceptance_criteria": ["AC-004"],
+      "scope": {
+        "includes": ["README.md", ".github/workflows/release.yml", "specs/spec.md"],
+        "excludes": ["code changes"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Document clearly that release builds need python3 -m textbrush.ipc to work."
+    }
+  ],
+  "story_order": ["01", "02", "03"],
+  "dependency_notes": "Stories are independent. No mocks required.",
+  "mock_resolution_plan": "No temporary mocks - all changes are independent."
+}

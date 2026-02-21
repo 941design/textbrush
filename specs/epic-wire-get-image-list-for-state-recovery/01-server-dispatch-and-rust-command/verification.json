@@ -1,0 +1,13 @@
+{
+  "story_id": "01",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "tests_passing": true,
+  "test_command": "python -m pytest tests/test_ipc_server.py -q",
+  "results": "14 passed (2 new tests for GET_IMAGE_LIST dispatch)",
+  "changes": [
+    "textbrush/ipc/server.py: Added GET_IMAGE_LIST dispatch branch in _handle_message",
+    "src-tauri/src/commands.rs: Added get_image_list Tauri command",
+    "src-tauri/src/main.rs: Registered get_image_list command",
+    "tests/test_ipc_server.py: Added handle_get_image_list to MockHandler, 2 new tests"
+  ]
+}

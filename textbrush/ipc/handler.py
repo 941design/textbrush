@@ -17,7 +17,17 @@ from textbrush.ipc.protocol import (
     MessageType,
     dataclass_to_dict,
 )
+from textbrush.model.weights import download_flux_weights, is_flux_available
 from textbrush.paths import display_path
+
+_MISSING_MODEL_MESSAGE = """\
+FLUX.1 schnell model not found. To set up the model:
+
+1. Get a HuggingFace token from https://huggingface.co/settings/tokens
+2. Accept the license at https://huggingface.co/black-forest-labs/FLUX.1-schnell
+3. Run: HUGGINGFACE_HUB_TOKEN=hf_xxx textbrush --download-model
+
+Or manually place model files in the HuggingFace cache directory."""
 
 logger = logging.getLogger(__name__)
 
@@ -821,6 +831,41 @@ class MessageHandler:
         """
         self._action_event.set()
 
+    def _detect_hf_credentials(self) -> str | None:
+        """Detect available HuggingFace credentials from multiple sources.
+
+        Checks in priority order:
+          1. HUGGINGFACE_HUB_TOKEN environment variable
+          2. config.huggingface.token from config file
+          3. HuggingFace CLI login cache (~/.cache/huggingface/token)
+
+        Returns:
+            Token string if found, None otherwise.
+        """
+        import os
+        from pathlib import Path
+
+        # 1. HUGGINGFACE_HUB_TOKEN env var
+        token = os.environ.get("HUGGINGFACE_HUB_TOKEN")
+        if token:
+            return token
+
+        # 2. config.huggingface.token
+        if self.config.huggingface.token:
+            return self.config.huggingface.token
+
+        # 3. HuggingFace CLI login cache
+        hf_token_file = Path.home() / ".cache" / "huggingface" / "token"
+        if hf_token_file.exists():
+            try:
+                content = hf_token_file.read_text().strip()
+                if content:
+                    return content
+            except OSError:
+                pass
+
+        return None
+
     def _init_backend(self, on_ready, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Load model in background and call ready callback.
 
@@ -834,23 +879,97 @@ class MessageHandler:
           Outputs: none (calls callback or sends error)
 
           Invariants:
-            - Calls backend.initialize() (blocks for model loading)
-            - If successful: calls on_ready()
-            - If exception: logs error, sends fatal ERROR event
+            - Checks model availability before backend.initialize()
+            - If model available: calls backend.initialize() directly
+            - If model missing with credentials: emits loading state, downloads,
+              then calls backend.initialize()
+            - If model missing without credentials: emits fatal error and returns
+            - If discovery logic fails unexpectedly: falls back to direct
+              backend.initialize() call (graceful degradation)
+            - If backend.initialize() fails: logs error, sends fatal ERROR event
 
           Properties:
             - Blocking: waits for model to load
             - Error handling: sends fatal error if init fails
             - Callback: on_ready() called only after successful init
+            - Graceful degradation: unexpected discovery errors fall back to
+              original behavior
 
           Algorithm:
-            1. Try:
+            1. Try model discovery:
+               a. Call is_flux_available(custom_dirs=config.model.directories)
+               b. If not available: check credentials
+                  - If credentials found: emit loading state, call download_flux_weights()
+                    - If download fails: emit fatal error, return
+                  - If no credentials: emit fatal error with instructions, return
+               c. If unexpected error: log warning, fall through to backend.initialize()
+            2. Try:
                a. Call self.backend.initialize() (blocks)
                b. Call on_ready()
-            2. Catch Exception as e:
+            3. Catch Exception as e:
                a. Log error
                b. Send fatal ERROR event with exception message
         """
+        import os
+
+        # Model discovery step — graceful degradation on unexpected errors
+        proceed_to_init = True
+        try:
+            custom_dirs = self.config.model.directories
+            model_available = is_flux_available(custom_dirs=custom_dirs)
+
+            if not model_available:
+                token = self._detect_hf_credentials()
+
+                if token:
+                    # Credentials found — attempt auto-download
+                    logger.info("Model not found, credentials available — starting auto-download")
+                    self._emit_state_changed(server, "loading")
+
+                    try:
+                        # Set HF_TOKEN so download_flux_weights can find it
+                        old_hf_token = os.environ.get("HF_TOKEN")
+                        os.environ["HF_TOKEN"] = token
+                        try:
+                            download_flux_weights()
+                        finally:
+                            if old_hf_token is None:
+                                os.environ.pop("HF_TOKEN", None)
+                            else:
+                                os.environ["HF_TOKEN"] = old_hf_token
+
+                        logger.info("Model download succeeded, proceeding to initialize")
+                    except Exception as download_err:
+                        logger.error(f"Model download failed: {download_err}", exc_info=True)
+                        self._emit_state_changed(
+                            server,
+                            "error",
+                            message=f"Model download failed: {download_err}",
+                            fatal=True,
+                        )
+                        proceed_to_init = False
+                else:
+                    # No credentials — emit actionable error
+                    logger.warning("Model not found and no HuggingFace credentials available")
+                    self._emit_state_changed(
+                        server,
+                        "error",
+                        message=_MISSING_MODEL_MESSAGE,
+                        fatal=True,
+                    )
+                    proceed_to_init = False
+
+        except Exception as discovery_err:
+            # Unexpected error in discovery logic — fall back to original behavior
+            logger.warning(
+                f"Model discovery failed unexpectedly ({discovery_err}); "
+                "falling back to direct backend init",
+                exc_info=True,
+            )
+
+        if not proceed_to_init:
+            return
+
         try:
             logger.info("Initializing backend (loading model)...")
             self.backend.initialize()

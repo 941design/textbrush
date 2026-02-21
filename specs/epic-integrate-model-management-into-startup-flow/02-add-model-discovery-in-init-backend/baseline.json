@@ -1,0 +1,12 @@
+{
+  "story_id": "02",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "test_command": "python -m pytest tests/test_ipc_handler.py -v",
+  "tests_passing": 61,
+  "tests_failing": 0,
+  "relevant_files": [
+    "textbrush/ipc/handler.py",
+    "tests/test_ipc_handler.py"
+  ],
+  "notes": "_init_backend currently calls backend.initialize() directly without any model discovery check."
+}

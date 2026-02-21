@@ -1,0 +1,39 @@
+{
+  "story_id": "01",
+  "story_name": "update-window-config-and-spec",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "title": "tauri.conf.json window width is 1024",
+      "status": "pass",
+      "evidence": "jq '.app.windows[0].width' src-tauri/tauri.conf.json returns 1024"
+    },
+    {
+      "id": "AC-002",
+      "title": "tauri.conf.json window height is 768",
+      "status": "pass",
+      "evidence": "jq '.app.windows[0].height' src-tauri/tauri.conf.json returns 768"
+    },
+    {
+      "id": "AC-003",
+      "title": "tauri.conf.json window is non-resizable",
+      "status": "pass",
+      "evidence": "jq '.app.windows[0].resizable' src-tauri/tauri.conf.json returns false"
+    },
+    {
+      "id": "AC-004",
+      "title": "tauri.conf.json window is centered",
+      "status": "pass",
+      "evidence": "jq '.app.windows[0].center' src-tauri/tauri.conf.json returns true"
+    },
+    {
+      "id": "AC-005",
+      "title": "spec.md window configuration matches tauri.conf.json",
+      "status": "pass",
+      "evidence": "grep -A3 'Window Configuration' specs/spec.md shows '* Fixed size: 1024x768 pixels' and '* Centered, non-resizable'"
+    }
+  ],
+  "all_passing": true,
+  "notes": "Pure configuration + documentation update. tauri.conf.json had resizable=true changed to false. spec.md had 800x700 changed to 1024x768. Width and height were already correct at 1024x768."
+}

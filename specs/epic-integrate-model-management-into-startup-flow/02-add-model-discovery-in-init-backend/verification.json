@@ -1,0 +1,10 @@
+{
+  "story_id": "02",
+  "verified_at": "2026-02-21T00:00:00Z",
+  "test_command": "python -m pytest tests/test_ipc_handler.py tests/test_weights.py -v",
+  "tests_passing": 101,
+  "tests_failing": 0,
+  "new_tests_added": 10,
+  "acceptance_criteria_verified": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-008", "AC-009"],
+  "notes": "_init_backend now checks model availability via is_flux_available(custom_dirs=config.model.directories) before calling backend.initialize(). Credential detection checks HUGGINGFACE_HUB_TOKEN env, config token, then HF CLI cache file. Graceful degradation on unexpected discovery errors. All existing tests updated to mock is_flux_available."
+}

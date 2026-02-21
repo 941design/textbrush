@@ -1,0 +1,11 @@
+{
+  "completed_at": "2026-02-21T00:00:00Z",
+  "story_id": "01",
+  "status": "done",
+  "files_changed": [
+    "textbrush/cli.py",
+    "tests/test_cli_headless.py"
+  ],
+  "commit": "33e13ed",
+  "summary": "Removed the error-and-exit block for the neither-flag case in run_headless(). The auto_accept conditional is removed, making generate-and-save the default path when auto_abort is not set. Updated --headless help text. Updated TestNoAutoAcceptOrAbort test class from 4 old-behavior tests to 6 new-behavior tests. All 47 tests pass."
+}

@@ -1,0 +1,40 @@
+{
+  "epic_name": "flux-dimension-alignment-and-metadata-enhancement",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "verify-complete-implementation",
+      "title": "Verify Complete Feature Implementation",
+      "description": "The entire Flux Dimension Alignment feature is already implemented across the codebase. This story verifies all integration points: dimension rounding in FluxInferenceEngine, center cropping after generation, generated dimension fields in GenerationResult and BufferedImage, PNG metadata storage in _save_with_metadata, and UI display in the metadata panel. Tests already exist for all backend components.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010"],
+      "scope": {
+        "includes": [
+          "Verify dimension rounding in FluxInferenceEngine.generate()",
+          "Verify center cropping logic in FluxInferenceEngine.generate()",
+          "Verify GenerationResult and BufferedImage have generated dimension fields",
+          "Verify worker propagates generated dimensions to BufferedImage",
+          "Verify backend saves GeneratedWidth/GeneratedHeight in PNG tEXt chunks",
+          "Verify frontend parses and displays generated/final dimensions",
+          "Check all tests pass"
+        ],
+        "excludes": [
+          "New implementation work (feature already complete)",
+          "JPEG EXIF metadata (out of scope per spec)",
+          "E2E tests (resource intensive, require live model)"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Feature is fully implemented. The test_backend_save_metadata.py tests fail due to torch import issue in CI (factory tries to import torch even in test context). This is an environment limitation. The test_flux_inference.py tests verify dimension rounding and cropping completely."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story - no dependencies.",
+  "mock_resolution_plan": "No temporary mocks. All implementation is final production code."
+}

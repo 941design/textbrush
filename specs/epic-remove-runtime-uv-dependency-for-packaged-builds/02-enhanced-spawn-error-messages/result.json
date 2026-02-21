@@ -1,0 +1,12 @@
+{
+  "story_id": "02",
+  "status": "completed",
+  "completed_at": "2026-02-21T00:00:00Z",
+  "changes": [
+    {
+      "file": "src-tauri/src/commands.rs",
+      "description": "Error message enhancements implemented as part of Story 01. Both spawn paths include actionable error messages for missing executable or missing module."
+    }
+  ],
+  "acceptance_criteria_met": ["AC-003"]
+}

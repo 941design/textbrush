@@ -1,0 +1,132 @@
+{
+  "created_at": "2026-02-21T00:00:00Z",
+  "key_files": [
+    {
+      "path": "textbrush/inference/flux.py",
+      "lines": "1-322",
+      "relevance": "FluxInferenceEngine.generate() already implements dimension rounding (lines 207-208) and center cropping (lines 239-245). GenerationResult already includes generated_width and generated_height fields.",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/inference/base.py",
+      "lines": "11-42",
+      "relevance": "GenerationResult dataclass already has optional generated_width and generated_height fields (lines 38-42).",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/buffer.py",
+      "lines": "17-53",
+      "relevance": "BufferedImage dataclass already has optional generated_width and generated_height fields (lines 51-52).",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/worker.py",
+      "lines": "359-367",
+      "relevance": "GenerationWorker._run() already propagates generated_width and generated_height from GenerationResult to BufferedImage.",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/backend.py",
+      "lines": "224-286",
+      "relevance": "_save_with_metadata() already stores GeneratedWidth and GeneratedHeight in PNG tEXt chunks when present.",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/index.html",
+      "lines": "119-125",
+      "relevance": "Metadata panel already has Generated Size and Final Size rows with correct IDs.",
+      "source": "similar-features"
+    },
+    {
+      "path": "src-tauri/ui/types.ts",
+      "lines": "129-142",
+      "relevance": "ImageRecord interface already has optional generatedWidth and generatedHeight fields.",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/png-metadata.ts",
+      "lines": "1-127",
+      "relevance": "parsePngMetadata() already extracts GeneratedWidth and GeneratedHeight from PNG tEXt chunks.",
+      "source": "architecture"
+    },
+    {
+      "path": "src-tauri/ui/main.ts",
+      "lines": "613-669",
+      "relevance": "updateMetadataPanelFromRecord() already displays Generated Size and Final Size from record fields.",
+      "source": "similar-features"
+    },
+    {
+      "path": "tests/test_flux_inference.py",
+      "lines": "401-524",
+      "relevance": "Comprehensive tests for dimension rounding and center cropping (TestDimensionRoundingAndCropping class).",
+      "source": "testing-and-conventions"
+    },
+    {
+      "path": "tests/test_backend_save_metadata.py",
+      "lines": "81-225",
+      "relevance": "Property-based tests for PNG metadata including GeneratedWidth and GeneratedHeight (TestPNGMetadataGeneration class).",
+      "source": "testing-and-conventions"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "Optional dimension fields with None default",
+      "description": "Both GenerationResult and BufferedImage use Optional[int] = None pattern for generated dimensions to maintain backward compatibility.",
+      "reference": "textbrush/inference/base.py:38-42, textbrush/buffer.py:51-52"
+    },
+    {
+      "name": "PNG tEXt metadata chunks",
+      "description": "Images are saved as PNG with metadata in tEXt chunks using PngImagePlugin.PngInfo(). Keys used: AspectRatio, Width, Height, Prompt, Model, Seed, GeneratedWidth, GeneratedHeight.",
+      "reference": "textbrush/backend.py:266-281"
+    },
+    {
+      "name": "Rounding formula",
+      "description": "Dimension alignment: rounded = ((dim + 15) // 16) * 16",
+      "reference": "textbrush/inference/flux.py:207-208"
+    },
+    {
+      "name": "Center crop formula",
+      "description": "Left/top offset: (generated_dim - final_dim) // 2; remainder goes to right/bottom.",
+      "reference": "textbrush/inference/flux.py:240-244"
+    }
+  ],
+  "similar_features": [
+    {
+      "name": "Aspect ratio metadata",
+      "description": "AspectRatio stored in PNG tEXt chunk, parsed in frontend, displayed in metadata panel.",
+      "reference": "textbrush/backend.py:271, src-tauri/ui/png-metadata.ts:76-78"
+    }
+  ],
+  "architecture": {
+    "data_flow": "FluxInferenceEngine.generate() -> GenerationResult (with generated_dims) -> GenerationWorker -> BufferedImage (with generated_dims) -> ImageBuffer -> IPC handler -> save_to_preview (PNG tEXt) -> UI parsePngMetadata -> ImageRecord -> metadata panel",
+    "key_invariants": [
+      "Generated dimensions are always multiples of 16",
+      "Final image size exactly matches requested dimensions",
+      "None generated dimensions means no dimension alignment occurred (backward compatibility)"
+    ]
+  },
+  "extension_points": [
+    {
+      "name": "GenerationResult.generated_width/height",
+      "description": "Optional fields already added for engines to communicate dimension alignment."
+    },
+    {
+      "name": "BufferedImage.generated_width/height",
+      "description": "Optional fields already added for pipeline metadata propagation."
+    }
+  ],
+  "testing": {
+    "framework": "pytest with hypothesis for property-based tests",
+    "relevant_test_files": [
+      "tests/test_flux_inference.py (TestDimensionRoundingAndCropping)",
+      "tests/test_backend_save_metadata.py (TestPNGMetadataGeneration)"
+    ],
+    "note": "Tests require torch for flux inference tests; backend metadata tests need torch-free factory mock"
+  },
+  "conventions": [
+    "Contract docstrings in all methods",
+    "Optional fields with None default for backward compatibility",
+    "Property-based testing with Hypothesis",
+    "PNG tEXt chunks for metadata storage"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "epic_name": "fix-default-resolution-inconsistency",
+  "created_at": "2026-02-21T20:39:57Z",
+  "updated_at": "2026-02-21T20:39:57Z",
+  "total_stories": 1,
+  "stories": [
+    {
+      "id": "01",
+      "name": "update-rust-defaults",
+      "title": "Update launch_args.rs defaults and tests to match CLI/TS smallest resolutions",
+      "description": "Change get_default_resolution in launch_args.rs to return the first (smallest) resolution for each aspect ratio (matching cli.py SUPPORTED_RATIOS[ratio][0]). Update the unit test assertions. Add a note to specs/spec.md that the first resolution in each ratio list is the default.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004"],
+      "scope": {
+        "includes": [
+          "src-tauri/src/launch_args.rs get_default_resolution values",
+          "src-tauri/src/launch_args.rs test assertions",
+          "specs/spec.md resolution table note"
+        ],
+        "excludes": [
+          "textbrush/cli.py (already correct)",
+          "src-tauri/ui/config_controls.ts (already correct)",
+          "adding new resolution options",
+          "user-configurable defaults"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Purely mechanical: change 5 number pairs in launch_args.rs and update 5 test assertions. Also add one note to spec.md."
+    }
+  ],
+  "story_order": ["01"],
+  "dependency_notes": "Single story, no dependencies.",
+  "mock_resolution_plan": "No mocks required."
+}

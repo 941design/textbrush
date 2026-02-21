@@ -1,0 +1,45 @@
+{
+  "epic_name": "wire-get-image-list-for-state-recovery",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 2,
+  "stories": [
+    {
+      "id": "01",
+      "name": "server-dispatch-and-rust-command",
+      "title": "Wire GET_IMAGE_LIST server dispatch and Rust command",
+      "description": "Add GET_IMAGE_LIST dispatch branch in IPCServer._handle_message (server.py) and add get_image_list Tauri command in commands.rs. Register the command in main.rs. The Python handler already exists (handle_get_image_list in handler.py) - only the server dispatch and Rust layer are missing.",
+      "acceptance_criteria": ["AC-001", "AC-002"],
+      "scope": {
+        "includes": ["server.py dispatch branch", "commands.rs get_image_list command", "main.rs command registration"],
+        "excludes": ["frontend changes", "handler.py changes (already implemented)"]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Follow skip_image pattern for Rust command. No payload needed."
+    },
+    {
+      "id": "02",
+      "name": "frontend-image-list-handling",
+      "title": "Frontend image_list event handler and recovery invocation",
+      "description": "Add case 'image_list' in handleMessage switch in main.ts to rebuild imageList from ImageListPayload. Add recovery invocation: after first non-loading state_changed event, if imageList.length === 0, invoke get_image_list once (guarded by recoveryAttempted flag). ImageListPayload type already exists in types.ts.",
+      "acceptance_criteria": ["AC-003", "AC-004", "AC-005"],
+      "scope": {
+        "includes": ["handleMessage image_list case", "recovery invocation in handleStateChanged", "recoveryAttempted guard flag"],
+        "excludes": ["types.ts changes (ImageListPayload already defined)", "backend changes"]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "Filter deleted entries. Rebuild imageList entirely. Use convertFileSrc for blobUrl. Set currentIndex to last entry or -1."
+    }
+  ],
+  "story_order": ["01", "02"],
+  "dependency_notes": "Stories are independent. Story 01 is backend/Rust, Story 02 is frontend.",
+  "mock_resolution_plan": "No temporary mocks needed."
+}

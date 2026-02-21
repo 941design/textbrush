@@ -1,0 +1,66 @@
+{
+  "epic_name": "integrate-model-management-into-startup-flow",
+  "created_at": "2026-02-21T00:00:00Z",
+  "updated_at": "2026-02-21T00:00:00Z",
+  "total_stories": 2,
+  "stories": [
+    {
+      "id": "01",
+      "name": "extend-is-flux-available-with-custom-dirs",
+      "title": "Extend is_flux_available to check custom model directories",
+      "description": "Modify is_flux_available() in textbrush/model/weights.py to accept an optional list of custom directories. When custom directories are provided, check each for model_index.json before falling back to HuggingFace cache. The handler will pass config.model.directories when calling this function.",
+      "acceptance_criteria": ["AC-007", "AC-009"],
+      "scope": {
+        "includes": [
+          "Modify is_flux_available() signature to accept optional custom_dirs parameter",
+          "Check each custom dir for model_index.json marker file before HF cache check",
+          "Update tests for the extended function",
+          "Ensure backward compat: default (no custom_dirs) behaves as before"
+        ],
+        "excludes": [
+          "Handler changes (Story 02)",
+          "Credential detection logic"
+        ]
+      },
+      "complexity": "low",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "is_flux_available currently only calls try_to_load_from_cache. Need to also check custom directories as a first pass before HF cache."
+    },
+    {
+      "id": "02",
+      "name": "add-model-discovery-in-init-backend",
+      "title": "Add model discovery and credential-based download logic in _init_backend",
+      "description": "Modify _init_backend in textbrush/ipc/handler.py to check model availability before calling backend.initialize(). Logic: (1) call is_flux_available(custom_dirs=config.model.directories); (2) if available, proceed as before; (3) if missing, check for credentials (HUGGINGFACE_HUB_TOKEN env, config.huggingface.token, ~/.cache/huggingface/token file); (4) if credentials found, emit state_changed(loading), call download_flux_weights(), then proceed to backend.initialize(); (5) if no credentials, emit fatal error with actionable instructions from FR3. Wrap in try/except for graceful degradation.",
+      "acceptance_criteria": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-008", "AC-009"],
+      "scope": {
+        "includes": [
+          "Modify _init_backend to check model availability",
+          "Implement credential detection (3 sources in order)",
+          "Emit state_changed(loading) before download",
+          "Call download_flux_weights() when credentials available",
+          "Emit fatal error state when model missing and no credentials",
+          "Graceful degradation: wrap in try/except to fall back to original behavior on unexpected errors",
+          "Add unit tests for all new code paths"
+        ],
+        "excludes": [
+          "Download progress bars/callbacks",
+          "--download-model CLI flag",
+          "Model selection UI",
+          "weights.py changes (Story 01)"
+        ]
+      },
+      "complexity": "medium",
+      "mock_dependencies": [],
+      "introduces_mocks": [],
+      "test_fixtures": [],
+      "status": "pending",
+      "notes": "The HF token env var used in weights.py is HF_TOKEN, but the spec says HUGGINGFACE_HUB_TOKEN. Need to check both. The HF CLI cache file check requires reading ~/.cache/huggingface/token."
+    }
+  ],
+  "story_order": ["01", "02"],
+  "dependency_notes": "Story 01 changes the is_flux_available signature, Story 02 uses the new signature. However, they can be made independent by having Story 02 import and use is_flux_available with the new signature only after Story 01 is complete.",
+  "mock_resolution_plan": "No temporary mocks introduced. All model availability checks are mockable via the existing patch patterns in tests/test_weights.py and tests/test_ipc_handler.py."
+}

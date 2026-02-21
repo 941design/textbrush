@@ -1,0 +1,35 @@
+{
+  "created_at": "2026-02-21T21:14:08Z",
+  "key_files": [
+    {
+      "path": "README.md",
+      "lines": "1-216",
+      "relevance": "Target file - contains CLI examples that need fixing",
+      "source": "architecture"
+    },
+    {
+      "path": "textbrush/cli.py",
+      "lines": "34-166",
+      "relevance": "Source of truth for CLI argument parser - defines --prompt, --out, --headless, --auto-accept, --auto-abort flags",
+      "source": "architecture"
+    }
+  ],
+  "patterns": [
+    {
+      "name": "CLI flag naming",
+      "description": "Parser uses --prompt (not positional), --out (not --output), --headless, --auto-accept, --auto-abort",
+      "reference": "textbrush/cli.py:87-164"
+    }
+  ],
+  "similar_features": [],
+  "architecture": {
+    "parser": "build_parser() in textbrush/cli.py",
+    "flags": ["--prompt", "--out", "--config", "--seed", "--aspect-ratio", "--format", "--verbose", "--headless", "--auto-accept", "--auto-abort", "--download-model"]
+  },
+  "extension_points": [],
+  "testing": {
+    "framework": "pytest",
+    "test_dirs": ["tests/"]
+  },
+  "conventions": ["uv for package management", "README examples use 'uv run textbrush' prefix"]
+}

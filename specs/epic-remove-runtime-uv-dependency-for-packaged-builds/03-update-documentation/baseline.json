@@ -1,0 +1,10 @@
+{
+  "story_id": "03",
+  "captured_at": "2026-02-21T00:00:00Z",
+  "pre_existing_state": {
+    "README_requirements": "Lists 'uv' as a requirement without distinguishing dev vs. release",
+    "README_installation": "Only documents 'from source' installation; no packaged release instructions",
+    "release_yml_body": "Lists installation steps but no mention of Python/textbrush requirement",
+    "spec_md_process_model": "Says 'Tauri app spawns Python backend on startup' without spawn mechanism detail"
+  }
+}

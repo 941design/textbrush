@@ -1,3 +1,9 @@
+---
+epic: flux-dimension-alignment-and-metadata-enhancement
+created: 2026-02-21T00:00:00Z
+status: validated
+---
+
 # Flux Dimension Alignment and Metadata Enhancement - Requirements Specification
 
 ## Problem Statement

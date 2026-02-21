@@ -1,0 +1,31 @@
+{
+  "epic_name": "integrate-model-management-into-startup-flow",
+  "created_at": "2026-02-21T21:56:56Z",
+  "updated_at": "2026-02-21T22:05:33Z",
+  "status": "done",
+  "phase": "DONE",
+  "current_story": null,
+  "completed_stories": [
+    "01",
+    "02"
+  ],
+  "blocked_stories": [],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-02-21T21:56:56Z",
+      "trigger": "validation_passed"
+    },
+    {
+      "phase": "STORIES_DEFINED",
+      "timestamp": "2026-02-21T21:57:58Z",
+      "trigger": "stories_created"
+    },
+    {
+      "phase": "DONE",
+      "timestamp": "2026-02-21T22:05:33Z",
+      "trigger": "all_stories_completed"
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "started_at": "2026-02-21T17:30:00Z",
+  "updated_at": "2026-02-21T23:20:00Z",
+  "status": "complete",
+  "features": [
+    {
+      "id": "01",
+      "source": "specs/cli-download-model-spec.md",
+      "epic_dir": "specs/epic-feature-specification-cli-model-download-command",
+      "status": "done",
+      "started_at": "2026-02-21T18:00:00Z",
+      "completed_at": "2026-02-21T21:10:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "02",
+      "source": "specs/emit-loading-state-on-init-spec.md",
+      "epic_dir": "specs/epic-emit-loading-state-on-backend-init",
+      "status": "done",
+      "started_at": "2026-02-21T22:00:00Z",
+      "completed_at": "2026-02-21T23:20:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "03",
+      "source": "specs/feature-backend-owns-image-list.md",
+      "epic_dir": "specs/epic-backend-owns-image-list",
+      "status": "done",
+      "started_at": "2026-02-21T23:20:00Z",
+      "completed_at": "2026-02-21T23:58:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "04",
+      "source": "specs/fix-accepted-path-ordering-spec.md",
+      "epic_dir": "specs/epic-fix-accepted-path-ordering-to-chronological",
+      "status": "done",
+      "started_at": "2026-02-21T23:58:00Z",
+      "completed_at": "2026-02-22T00:10:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "05",
+      "source": "specs/fix-default-resolution-inconsistency-spec.md",
+      "epic_dir": "specs/epic-fix-default-resolution-inconsistency",
+      "status": "done",
+      "started_at": "2026-02-22T00:10:00Z",
+      "completed_at": "2026-02-22T00:20:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "06",
+      "source": "specs/fix-headless-no-flag-behavior-spec.md",
+      "epic_dir": "specs/epic-fix-headless-no-flag-behavior",
+      "status": "done",
+      "started_at": "2026-02-22T00:20:00Z",
+      "completed_at": "2026-02-22T00:30:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "07",
+      "source": "specs/fix-init-error-event-handling-spec.md",
+      "epic_dir": "specs/epic-fix-init-error-event-handling",
+      "status": "done",
+      "started_at": "2026-02-22T00:30:00Z",
+      "completed_at": "2026-02-22T00:50:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "08",
+      "source": "specs/fix-readme-cli-examples-spec.md",
+      "epic_dir": "specs/epic-fix-readme-cli-examples",
+      "status": "done",
+      "started_at": "2026-02-22T00:50:00Z",
+      "completed_at": "2026-02-22T00:55:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "09",
+      "source": "specs/fix-release-dmg-packaging-spec.md",
+      "epic_dir": "specs/epic-produce-dmg-release-artifacts-for-macos",
+      "status": "done",
+      "started_at": "2026-02-22T00:55:00Z",
+      "completed_at": "2026-02-22T01:10:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "10",
+      "source": "specs/fix-sidecar-uv-dependency-spec.md",
+      "epic_dir": "specs/epic-remove-runtime-uv-dependency-for-packaged-builds",
+      "status": "done",
+      "started_at": "2026-02-22T01:10:00Z",
+      "completed_at": "2026-02-22T01:25:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "11",
+      "source": "specs/fix-window-configuration-spec.md",
+      "epic_dir": "specs/epic-align-window-configuration-with-spec",
+      "status": "done",
+      "started_at": "2026-02-22T01:25:00Z",
+      "completed_at": "2026-02-22T01:30:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "12",
+      "source": "specs/flux-dimension-alignment-spec.md",
+      "epic_dir": "specs/epic-flux-dimension-alignment-and-metadata-enhancement",
+      "status": "done",
+      "started_at": "2026-02-22T01:30:00Z",
+      "completed_at": "2026-02-22T01:45:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "13",
+      "source": "specs/integrate-model-management-startup-spec.md",
+      "epic_dir": "specs/epic-integrate-model-management-into-startup-flow",
+      "status": "done",
+      "started_at": "2026-02-22T01:45:00Z",
+      "completed_at": "2026-02-22T02:00:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "14",
+      "source": "specs/update-check-spec.md",
+      "epic_dir": "specs/epic-manual-update-check",
+      "status": "done",
+      "started_at": "2026-02-22T02:00:00Z",
+      "completed_at": "2026-02-22T02:10:00Z",
+      "agent_task_id": null,
+      "error": null
+    },
+    {
+      "id": "15",
+      "source": "specs/wire-get-image-list-spec.md",
+      "epic_dir": "specs/epic-wire-get-image-list-for-state-recovery",
+      "status": "done",
+      "started_at": "2026-02-22T02:10:00Z",
+      "completed_at": "2026-02-22T02:25:00Z",
+      "agent_task_id": null,
+      "error": null
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "pending": 0,
+    "in_progress": 0,
+    "done": 15,
+    "escalated": 0,
+    "error": 0
+  }
+}
