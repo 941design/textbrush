@@ -198,7 +198,7 @@
         ],
         "playwright_file": "tests/e2e/story-02-cli-download-flag.spec.ts"
       },
-      "status": "in_progress",
+      "status": "done",
       "notes": "validate_args() currently raises ValueError for semantic errors. The spec mandates parser.error() for the three new mutual-exclusivity checks (which produces exit code 2 and is argparse-standard). The implementer must reconcile this: either pass the parser object into validate_args(), or add a separate early-check step in main() before validate_args(). Choose the approach that minimally disturbs existing ValueError behaviour for other validations."
     },
     {
@@ -244,7 +244,7 @@
         ],
         "playwright_file": "tests/e2e/story-03-documentation.spec.ts"
       },
-      "status": "pending",
+      "status": "in_progress",
       "notes": "This story is independent of Stories 01 and 02 from a code dependency standpoint — README.md changes do not depend on the Python implementation being complete. However, the correct token env var name (HF_TOKEN) and the flag name (--download-model) are specified in the spec and acceptance criteria, so Story 03 can proceed in parallel with Stories 01 and 02."
     }
   ],

@@ -1,0 +1,36 @@
+{
+  "created_at": "2026-02-21T20:55:00Z",
+  "status": "ready",
+  "story_id": "03",
+  "checks": {
+    "compiles": {
+      "passed": true,
+      "command": "python3 -c 'import textbrush.cli'",
+      "evidence": "Exit code 0"
+    },
+    "tests_pass": {
+      "passed": true,
+      "command": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=no",
+      "evidence": "132/132 tests pass",
+      "failing_tests": []
+    },
+    "coverage": {
+      "value": null,
+      "threshold": null,
+      "passed": true
+    },
+    "dependencies": {
+      "passed": true,
+      "command": "N/A - documentation only story",
+      "evidence": "No dependencies needed for README changes"
+    }
+  },
+  "test_snapshot": {
+    "total": 132,
+    "passing": 132,
+    "failing": 0,
+    "skipped": 0,
+    "coverage_percent": null
+  },
+  "blocking_issues": []
+}

@@ -1,0 +1,119 @@
+{
+  "story_id": "03",
+  "status": "done",
+  "created_at": "2026-02-21T20:55:00Z",
+  "updated_at": "2026-02-21T21:00:00Z",
+  "completed_at": "2026-02-21T21:00:00Z",
+
+  "implementation": {
+    "status": "done",
+    "started_at": "2026-02-21T20:55:00Z",
+    "completed_at": "2026-02-21T20:58:00Z",
+    "architect_session_id": null,
+    "files_created": [],
+    "files_modified": [
+      "README.md"
+    ],
+    "mocks_introduced": []
+  },
+
+  "verification_rounds": [
+    {
+      "round": 1,
+      "timestamp": "2026-02-21T21:00:00Z",
+      "results": [
+        {
+          "question_id": "VQ-03-001",
+          "question": "Does README.md contain 'uv run textbrush --download-model' as the model download command?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["README.md"],
+            "findings": "2 occurrences of 'uv run textbrush --download-model' found (installation section and development section)",
+            "specific_locations": ["README.md:45", "README.md:181"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-03-002",
+          "question": "Does README.md use HF_TOKEN as the recommended environment variable?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["README.md"],
+            "findings": "3 occurrences of HF_TOKEN found; 0 occurrences of HUGGINGFACE_HUB_TOKEN",
+            "specific_locations": ["README.md:44", "README.md:154", "README.md:181"]
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-03-003",
+          "question": "Does README.md NOT reference 'make download-model' as the primary download method?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["README.md"],
+            "findings": "0 occurrences of 'make download-model' found",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-03-M1",
+          "question": "Do all 132 tests still pass with zero failures?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["tests/test_cli.py", "tests/test_weights.py", "tests/test_config.py"],
+            "findings": "132/132 tests pass in 6.73s",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        },
+        {
+          "question_id": "VQ-03-M2",
+          "question": "Do all e2e_smoke tests pass?",
+          "result": "pass",
+          "evidence": {
+            "files_examined": ["tests/e2e/test_full_workflow.py"],
+            "findings": "5/5 e2e_smoke tests pass, 2 skipped (model-dependent)",
+            "specific_locations": []
+          },
+          "severity": 1,
+          "confidence": 1.0
+        }
+      ],
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "partial": 0
+      },
+      "verification_passed": true,
+      "test_gate": {
+        "ran_at": "2026-02-21T21:00:00Z",
+        "command": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=no",
+        "passed": true,
+        "total_tests": 132,
+        "passed_tests": 132,
+        "failed_tests": 0,
+        "failures": [],
+        "evidence": "132/132 tests pass",
+        "e2e_tests": {
+          "ran_at": "2026-02-21T21:00:00Z",
+          "command": "python3 -m pytest tests -m 'e2e_smoke' --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_reproducibility.py --ignore=tests/test_inference_integration.py -v",
+          "passed": true,
+          "total_tests": 5,
+          "passed_tests": 5,
+          "failed_tests": 0,
+          "test_files": ["tests/e2e/test_full_workflow.py"],
+          "evidence": "5/5 e2e_smoke tests pass, 2 skipped (model-dependent). Documentation-only story — no new tests needed."
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "remediation_attempts": [],
+  "escalation": null,
+  "final_outcome": "accepted"
+}

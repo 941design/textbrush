@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-02-21T20:55:00Z",
+  "story_id": "03",
+  "questions": [
+    {
+      "id": "VQ-03-001",
+      "category": "correctness",
+      "question": "Does README.md contain 'uv run textbrush --download-model' as the model download command?",
+      "actionable_check": "grep 'uv run textbrush --download-model' README.md",
+      "evidence_required": ["At least one match found"],
+      "pass_criteria": "'uv run textbrush --download-model' present in README.md"
+    },
+    {
+      "id": "VQ-03-002",
+      "category": "correctness",
+      "question": "Does README.md use HF_TOKEN as the recommended environment variable (not HUGGINGFACE_HUB_TOKEN)?",
+      "actionable_check": "grep 'HF_TOKEN' README.md && ! grep 'HUGGINGFACE_HUB_TOKEN' README.md",
+      "evidence_required": ["HF_TOKEN present in README.md", "HUGGINGFACE_HUB_TOKEN absent from README.md"],
+      "pass_criteria": "HF_TOKEN referenced; HUGGINGFACE_HUB_TOKEN absent"
+    },
+    {
+      "id": "VQ-03-003",
+      "category": "correctness",
+      "question": "Does README.md NOT reference 'make download-model' as the primary download method?",
+      "actionable_check": "grep -c 'make download-model' README.md",
+      "evidence_required": ["Zero matches or only in non-primary context"],
+      "pass_criteria": "'make download-model' absent from README.md or not the primary recommended method"
+    }
+  ],
+  "mandatory_questions": [
+    {
+      "id": "VQ-03-M1",
+      "category": "regression",
+      "question": "Do all 132 tests still pass with zero failures?",
+      "actionable_check": "python3 -m pytest tests/test_cli.py tests/test_weights.py tests/test_config.py -q --tb=no",
+      "evidence_required": ["132/132 tests pass"],
+      "pass_criteria": "132/132 tests pass"
+    },
+    {
+      "id": "VQ-03-M2",
+      "category": "e2e",
+      "question": "Do all e2e_smoke tests pass?",
+      "actionable_check": "python3 -m pytest tests -m 'e2e_smoke' --ignore=tests/test_flux_inference.py --ignore=tests/test_flux_load.py --ignore=tests/test_reproducibility.py --ignore=tests/test_inference_integration.py -v",
+      "evidence_required": ["5/5 e2e_smoke tests pass"],
+      "pass_criteria": "5 e2e_smoke tests pass, 2 skipped (model-dependent)"
+    }
+  ]
+}

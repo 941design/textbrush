@@ -41,8 +41,8 @@ Text-to-image generation tool with customizable workflows and local model infere
 uv sync
 
 # Download model (requires HuggingFace token)
-export HUGGINGFACE_HUB_TOKEN="hf_xxxxxxxxxxxxx"
-make download-model
+export HF_TOKEN="hf_xxxxxxxxxxxxx"
+uv run textbrush --download-model
 
 # Build the application
 make build
@@ -151,7 +151,7 @@ directories = []  # Additional model search paths
 buffer_size = 8
 
 [huggingface]
-token = ""  # Or use HUGGINGFACE_HUB_TOKEN env var
+token = ""  # Or use HF_TOKEN env var
 
 [inference]
 backend = "flux"
@@ -178,7 +178,7 @@ Configuration priority: CLI arguments > environment variables > config file > de
 
 ```bash
 make install        # Install dependencies
-make download-model # Download FLUX.1 schnell (requires HuggingFace token)
+uv run textbrush --download-model  # Download FLUX.1 schnell (requires HF_TOKEN)
 ```
 
 ### Development Tasks
