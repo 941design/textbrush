@@ -233,7 +233,9 @@ class TestImageReadyEvent:
         assert "display_path" in image_ready_call.payload
         assert image_ready_call.payload["path"] == str(preview_path.absolute())
 
-    def test_delivery_continues_without_waiting_for_user_action(self, handler, mock_server, tmp_path):
+    def test_delivery_continues_without_waiting_for_user_action(
+        self, handler, mock_server, tmp_path
+    ):
         """Delivery persists multiple previews without requiring skip/accept signals."""
         image = Image.new("RGB", (64, 64))
         buffered_1 = BufferedImage(image=image, seed=100)

@@ -94,6 +94,10 @@ let pendingDisplayRequest: { record: ImageRecord; listIdx: number | null } | nul
 
 // Recovery guard: prevent duplicate get_image_list invocations per session
 let recoveryAttempted = false;
+let initPromise: Promise<void> | null = null;
+let messageListenerInitialized = false;
+let buttonListenersInitialized = false;
+let keyboardListenersInitialized = false;
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
@@ -140,6 +144,11 @@ function allElementsPresent(): boolean {
 
 // Initialize Application
 async function init(): Promise<void> {
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = (async () => {
   console.log('Textbrush UI initializing...');
   try {
     // Initialize theme and font size before DOM manipulation
@@ -207,10 +216,18 @@ async function init(): Promise<void> {
       elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
+  })();
+
+  return initPromise;
 }
 
 // Message Event Listener
 function setupMessageListener(): void {
+  if (messageListenerInitialized) {
+    return;
+  }
+  messageListenerInitialized = true;
+
   console.log('Setting up sidecar message listener...');
   listen<SidecarMessage>('sidecar-message', (event) => {
     const msg = event.payload;
@@ -1250,6 +1267,11 @@ function enableAcceptButton(): void {
 }
 
 function setupButtonListeners(): void {
+  if (buttonListenersInitialized) {
+    return;
+  }
+  buttonListenersInitialized = true;
+
   if (elements.prevButton) {
     elements.prevButton.addEventListener('click', prev);
   }
@@ -1333,9 +1355,29 @@ function setupButtonListeners(): void {
 }
 
 function setupKeyboardListeners(): void {
+  if (keyboardListenersInitialized) {
+    return;
+  }
+  keyboardListenersInitialized = true;
+
   document.addEventListener('keydown', (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text') {
+    const eventTarget = e.target;
+    const target = eventTarget instanceof HTMLElement ? eventTarget : null;
+    const isTextInput =
+      target?.tagName === 'INPUT' && (target as HTMLInputElement).type === 'text';
+    const isInteractiveControl =
+      target?.tagName === 'BUTTON' ||
+      target?.tagName === 'SELECT' ||
+      target?.tagName === 'TEXTAREA' ||
+      (target?.tagName === 'INPUT' && !isTextInput) ||
+      target?.getAttribute('role') === 'button' ||
+      target?.isContentEditable === true;
+
+    if (isTextInput || isInteractiveControl) {
+      return;
+    }
+
+    if (e.repeat) {
       return;
     }
 

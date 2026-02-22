@@ -8955,10 +8955,8 @@ async function fetchAndParsePngMetadata(url) {
 var appWindow = getCurrentWindow();
 var state = {
   currentImage: null,
-  backendState: {
-    state: "loading"
-    // Initial state - waiting for backend to load model
-  },
+  backendState: null,
+  // null until first state_changed(loading) event arrives from backend
   isPaused: false,
   // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
@@ -9016,6 +9014,11 @@ var MAGNIFIER_SIZE = 200;
 var MAGNIFICATION = 3;
 var imageReadyQueue = Promise.resolve();
 var pendingDisplayRequest = null;
+var recoveryAttempted = false;
+var initPromise = null;
+var messageListenerInitialized = false;
+var buttonListenersInitialized = false;
+var keyboardListenersInitialized = false;
 function cacheElements() {
   elements.app = document.getElementById("app");
   elements.headerBar = document.querySelector(".header-bar");
@@ -9058,56 +9061,66 @@ function allElementsPresent() {
   return Object.values(elements).every((el) => el !== null);
 }
 async function init() {
-  console.log("Textbrush UI initializing...");
-  try {
-    initTheme();
-    initFontSize();
-    cacheElements();
-    if (!allElementsPresent()) {
-      const missing = Object.entries(elements).filter(([, el]) => el === null).map(([key]) => key);
-      console.error("Missing DOM elements:", missing);
-      throw new Error(`Missing DOM elements: ${missing.join(", ")}`);
-    }
-    console.log("DOM elements cached, getting launch args...");
-    const launchArgs = await invoke("get_launch_args");
-    console.log("Launch args received:", launchArgs);
-    state.prompt = launchArgs.prompt || "";
-    state.generationPrompt = launchArgs.prompt || "";
-    state.aspectRatio = launchArgs.aspect_ratio || "1:1";
-    state.outputPath = launchArgs.output_path || null;
-    if (elements.promptDisplay) {
-      elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
-    }
-    state.width = launchArgs.width;
-    state.height = launchArgs.height;
-    initConfigControls(
-      state.prompt,
-      state.aspectRatio,
-      launchArgs.width,
-      launchArgs.height,
-      state,
-      elements
-    );
-    setupMessageListener();
-    setupButtonListeners();
-    setupKeyboardListeners();
-    await invoke("init_generation", {
-      prompt: state.prompt,
-      outputPath: launchArgs.output_path || null,
-      seed: launchArgs.seed || null,
-      aspectRatio: launchArgs.aspect_ratio || "1:1",
-      width: launchArgs.width,
-      height: launchArgs.height
-    });
-    console.log("Application initialized successfully");
-  } catch (error) {
-    console.error("Initialization failed:", error);
-    if (elements.loadingPrompt) {
-      elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
-    }
+  if (initPromise) {
+    return initPromise;
   }
+  initPromise = (async () => {
+    console.log("Textbrush UI initializing...");
+    try {
+      initTheme();
+      initFontSize();
+      cacheElements();
+      if (!allElementsPresent()) {
+        const missing = Object.entries(elements).filter(([, el]) => el === null).map(([key]) => key);
+        console.error("Missing DOM elements:", missing);
+        throw new Error(`Missing DOM elements: ${missing.join(", ")}`);
+      }
+      console.log("DOM elements cached, getting launch args...");
+      const launchArgs = await invoke("get_launch_args");
+      console.log("Launch args received:", launchArgs);
+      state.prompt = launchArgs.prompt || "";
+      state.generationPrompt = launchArgs.prompt || "";
+      state.aspectRatio = launchArgs.aspect_ratio || "1:1";
+      state.outputPath = launchArgs.output_path || null;
+      if (elements.promptDisplay) {
+        elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
+      }
+      state.width = launchArgs.width;
+      state.height = launchArgs.height;
+      initConfigControls(
+        state.prompt,
+        state.aspectRatio,
+        launchArgs.width,
+        launchArgs.height,
+        state,
+        elements
+      );
+      setupMessageListener();
+      setupButtonListeners();
+      setupKeyboardListeners();
+      await invoke("init_generation", {
+        prompt: state.prompt,
+        outputPath: launchArgs.output_path || null,
+        seed: launchArgs.seed || null,
+        aspectRatio: launchArgs.aspect_ratio || "1:1",
+        width: launchArgs.width,
+        height: launchArgs.height
+      });
+      console.log("Application initialized successfully");
+    } catch (error) {
+      console.error("Initialization failed:", error);
+      if (elements.loadingPrompt) {
+        elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+  })();
+  return initPromise;
 }
 function setupMessageListener() {
+  if (messageListenerInitialized) {
+    return;
+  }
+  messageListenerInitialized = true;
   console.log("Setting up sidecar message listener...");
   listen("sidecar-message", (event) => {
     const msg = event.payload;
@@ -9131,6 +9144,9 @@ function handleMessage(msg) {
         console.error("Failed to handle image_ready event:", err);
       });
       break;
+    case "image_list":
+      void handleImageList(msg.payload);
+      break;
     case "accepted":
       void handleAccepted(msg.payload);
       break;
@@ -9140,8 +9156,13 @@ function handleMessage(msg) {
     case "delete_ack":
       handleDeleteAck(msg.payload);
       break;
-    default:
-      console.warn("Unknown message type:", msg.type);
+    case "error":
+      handleErrorMessage(msg.payload);
+      break;
+    default: {
+      const unknownMsg = msg;
+      console.warn("Unknown message type:", unknownMsg.type);
+    }
   }
 }
 function handleStateChanged(payload) {
@@ -9156,6 +9177,12 @@ function handleStateChanged(payload) {
   }
   updateLoadingOverlayForState();
   updatePauseButton();
+  if (!recoveryAttempted && payload.state !== "loading" && state.imageList.length === 0) {
+    recoveryAttempted = true;
+    invoke("get_image_list").catch((err) => {
+      console.warn("get_image_list recovery call failed (non-fatal):", err);
+    });
+  }
   console.log("Backend state changed:", payload.state, payload);
 }
 function handleFatalError(message) {
@@ -9199,6 +9226,23 @@ function handleFatalError(message) {
     void appWindow.close();
   }, 3e3);
 }
+function handleErrorMessage(payload) {
+  if (payload.fatal) {
+    handleFatalError(payload.message);
+  } else {
+    console.warn("Non-fatal backend error:", payload.message);
+    if (elements.loadingPrompt) {
+      const original = elements.loadingPrompt.textContent;
+      elements.loadingPrompt.textContent = `Error: ${payload.message}`;
+      elements.loadingPrompt.classList.remove("hidden");
+      setTimeout(() => {
+        if (elements.loadingPrompt) {
+          elements.loadingPrompt.textContent = original;
+        }
+      }, 3e3);
+    }
+  }
+}
 async function handleImageReady(payload) {
   state.currentImage = payload;
   const assetUrl = convertFileSrc(payload.path);
@@ -9226,6 +9270,51 @@ async function handleImageReady(payload) {
   void displayImageRecord(record);
   showLoading(false);
   enableAcceptButton();
+}
+async function handleImageList(payload) {
+  const entries = payload.images ?? [];
+  console.log("Received image_list event with", entries.length, "entries");
+  const activeEntries = entries.filter((entry) => !entry.deleted);
+  if (activeEntries.length === 0) {
+    console.log("image_list: no active images, skipping rebuild");
+    return;
+  }
+  const newImageList = [];
+  for (const entry of activeEntries) {
+    const assetUrl = convertFileSrc(entry.path);
+    let metadata;
+    try {
+      metadata = await fetchAndParsePngMetadata(assetUrl);
+    } catch (err) {
+      console.warn("image_list: failed to parse metadata for", entry.path, err);
+      metadata = {};
+    }
+    const record = {
+      index: entry.index,
+      path: entry.path,
+      displayPath: entry.display_path,
+      seed: metadata.seed ?? 0,
+      blobUrl: assetUrl,
+      prompt: metadata.prompt ?? "",
+      model: metadata.model ?? "",
+      aspectRatio: metadata.aspectRatio ?? state.aspectRatio,
+      width: metadata.width ?? 0,
+      height: metadata.height ?? 0,
+      generatedWidth: metadata.generatedWidth,
+      generatedHeight: metadata.generatedHeight
+    };
+    newImageList.push(record);
+  }
+  state.imageList = newImageList;
+  state.currentIndex = newImageList.length - 1;
+  const currentRecord = state.imageList[state.currentIndex];
+  if (currentRecord) {
+    void displayImageRecord(currentRecord, state.currentIndex);
+    showLoading(false);
+    enableAcceptButton();
+  }
+  updateNavDots();
+  console.log("image_list: rebuilt imageList with", newImageList.length, "images, currentIndex=", state.currentIndex);
 }
 async function handleAccepted(payload) {
   const retainedPaths = payload.paths || [];
@@ -9284,6 +9373,9 @@ function handleDeleteAck(payload) {
   }
 }
 function updateLoadingOverlayForState() {
+  if (!state.backendState) {
+    return;
+  }
   const backendStateValue = state.backendState.state;
   const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating";
   if (elements.loadingSpinner) {
@@ -9680,7 +9772,7 @@ function next() {
   if (state.isTransitioning) {
     return;
   }
-  const isAlreadyGenerating = state.backendState.state === "generating" || state.backendState.state === "loading";
+  const isAlreadyGenerating = state.backendState !== null && (state.backendState.state === "generating" || state.backendState.state === "loading");
   if (isAlreadyGenerating && state.currentIndex >= state.imageList.length - 1) {
     console.log("Already waiting for next image");
     return;
@@ -9768,7 +9860,7 @@ function deleteCurrentImage() {
       if (elements.loadingPrompt) {
         elements.loadingPrompt.textContent = `Delete failed: ${err instanceof Error ? err.message : String(err)}`;
         setTimeout(() => {
-          if (elements.loadingPrompt && state.backendState.state === "generating") {
+          if (elements.loadingPrompt && state.backendState !== null && state.backendState.state === "generating") {
             elements.loadingPrompt.textContent = state.backendState.prompt;
           }
         }, 2e3);
@@ -9784,6 +9876,10 @@ function enableAcceptButton() {
   }
 }
 function setupButtonListeners() {
+  if (buttonListenersInitialized) {
+    return;
+  }
+  buttonListenersInitialized = true;
   if (elements.prevButton) {
     elements.prevButton.addEventListener("click", prev);
   }
@@ -9849,9 +9945,19 @@ function setupButtonListeners() {
   }
 }
 function setupKeyboardListeners() {
+  if (keyboardListenersInitialized) {
+    return;
+  }
+  keyboardListenersInitialized = true;
   document.addEventListener("keydown", (e) => {
-    const target = e.target;
-    if (target.tagName === "INPUT" && target.type === "text") {
+    const eventTarget = e.target;
+    const target = eventTarget instanceof HTMLElement ? eventTarget : null;
+    const isTextInput = target?.tagName === "INPUT" && target.type === "text";
+    const isInteractiveControl = target?.tagName === "BUTTON" || target?.tagName === "SELECT" || target?.tagName === "TEXTAREA" || target?.tagName === "INPUT" && !isTextInput || target?.getAttribute("role") === "button" || target?.isContentEditable === true;
+    if (isTextInput || isInteractiveControl) {
+      return;
+    }
+    if (e.repeat) {
       return;
     }
     const ctrlOrCmd = e.ctrlKey || e.metaKey;
@@ -9887,6 +9993,7 @@ if (typeof window !== "undefined") {
     elements,
     init,
     handleMessage,
+    handleImageList,
     displayImageRecord,
     updateNavDots,
     navigateToIndex,
