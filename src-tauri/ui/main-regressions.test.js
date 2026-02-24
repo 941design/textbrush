@@ -67,11 +67,12 @@ function createDom() {
   });
 }
 
-async function setupMain() {
+async function setupMain(options = {}) {
   const dom = createDom();
   const { window } = dom;
   const { document } = window;
   const calls = [];
+  const failConfigUpdates = options.failConfigUpdates === true;
 
   global.window = window;
   global.document = document;
@@ -107,6 +108,9 @@ async function setupMain() {
         width: 256,
         height: 256,
       };
+    }
+    if (cmd === 'update_generation_config' && failConfigUpdates) {
+      throw new Error('Simulated config update failure');
     }
     return null;
   }, { shouldMockEvents: true });
@@ -178,5 +182,50 @@ describe('Main UI regression tests', () => {
 
     const pauseCalls = countCalls(calls, 'pause_generation').slice(beforePause);
     assert.strictEqual(pauseCalls.length, 1, 'repeat keydown does not trigger extra pause command');
+  });
+
+  test('resolution controls roll back visual state when config update fails', async () => {
+    const { document, calls } = await setupMain({ failConfigUpdates: true });
+
+    const increaseBtn = document.getElementById('resolution-increase');
+    const decreaseBtn = document.getElementById('resolution-decrease');
+    const dimensionDisplay = document.getElementById('dimension-display');
+    assert.ok(increaseBtn, 'resolution increase button exists');
+    assert.ok(decreaseBtn, 'resolution decrease button exists');
+    assert.ok(dimensionDisplay, 'dimension display exists');
+
+    increaseBtn.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const updateCalls = countCalls(calls, 'update_generation_config');
+    assert.strictEqual(updateCalls.length, 1, 'one backend config update attempt for one click');
+    assert.strictEqual(dimensionDisplay.textContent, '256×256', 'dimension display rolls back to actual size');
+    assert.strictEqual(decreaseBtn.disabled, true, 'decrease button matches rolled-back minimum size');
+    assert.strictEqual(increaseBtn.disabled, false, 'increase button remains enabled after rollback');
+  });
+
+  test('aspect ratio controls roll back selection and size when config update fails', async () => {
+    const { document } = await setupMain({ failConfigUpdates: true });
+
+    const ratio11 = document.querySelector('input[name="aspect-ratio"][value="1:1"]');
+    const ratio169 = document.querySelector('input[name="aspect-ratio"][value="16:9"]');
+    const dimensionDisplay = document.getElementById('dimension-display');
+    const decreaseBtn = document.getElementById('resolution-decrease');
+    const increaseBtn = document.getElementById('resolution-increase');
+    assert.ok(ratio11, '1:1 radio exists');
+    assert.ok(ratio169, '16:9 radio exists');
+    assert.ok(dimensionDisplay, 'dimension display exists');
+    assert.ok(decreaseBtn, 'resolution decrease button exists');
+    assert.ok(increaseBtn, 'resolution increase button exists');
+
+    ratio169.checked = true;
+    ratio169.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.strictEqual(ratio11.checked, true, 'ratio selection rolls back to previous value');
+    assert.strictEqual(ratio169.checked, false, 'failed ratio change is reverted');
+    assert.strictEqual(dimensionDisplay.textContent, '256×256', 'dimension display rolls back to previous size');
+    assert.strictEqual(decreaseBtn.disabled, true, 'decrease button matches rolled-back size');
+    assert.strictEqual(increaseBtn.disabled, false, 'increase button matches rolled-back size');
   });
 });

@@ -131,6 +131,20 @@ function updateResolutionButtons(ratio: string, width: number, height: number): 
   }
 }
 
+function syncControlsFromState(state: AppState): void {
+  const dimensionDisplay = document.getElementById('dimension-display') as HTMLElement | null;
+  if (dimensionDisplay) {
+    dimensionDisplay.textContent = `${state.width}×${state.height}`;
+  }
+
+  const aspectRatioRadios = document.querySelectorAll<HTMLInputElement>('input[name="aspect-ratio"]');
+  Array.from(aspectRatioRadios).forEach((radio) => {
+    radio.checked = radio.value === state.aspectRatio;
+  });
+
+  updateResolutionButtons(state.aspectRatio, state.width, state.height);
+}
+
 /**
  * Initialize configuration controls in the UI.
  */
@@ -163,9 +177,7 @@ export function initConfigControls(
   }
 
   // Update dimension display
-  if (dimensionDisplay) {
-    dimensionDisplay.textContent = `${state.width}×${state.height}`;
-  }
+  syncControlsFromState(state);
 
   // Convert NodeList to array and set initial checked state
   const radios = Array.from(aspectRatioRadios);
@@ -198,9 +210,7 @@ export function initConfigControls(
       const ratio = radio.value;
       const dims = getDefaultResolution(ratio);
 
-      // Update state and display
-      state.width = dims.width;
-      state.height = dims.height;
+      // Optimistically update control display while handleConfigUpdate owns state mutation.
       if (dimensionDisplay) {
         dimensionDisplay.textContent = `${dims.width}×${dims.height}`;
       }
@@ -209,7 +219,7 @@ export function initConfigControls(
       updateResolutionButtons(ratio, dims.width, dims.height);
 
       const config = getCurrentConfig(elements, state);
-      void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+      void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state);
     });
   });
 
@@ -331,6 +341,7 @@ export async function handleConfigUpdate(
           state.aspectRatio = previousAspectRatio;
           state.width = previousWidth;
           state.height = previousHeight;
+          syncControlsFromState(state);
         }
 
         const promptInput = document.getElementById('prompt-input');

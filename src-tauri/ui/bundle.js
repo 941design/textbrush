@@ -187,6 +187,17 @@ function updateResolutionButtons(ratio, width, height) {
     increaseBtn.disabled = !canIncreaseResolution(ratio, width, height);
   }
 }
+function syncControlsFromState(state2) {
+  const dimensionDisplay = document.getElementById("dimension-display");
+  if (dimensionDisplay) {
+    dimensionDisplay.textContent = `${state2.width}\xD7${state2.height}`;
+  }
+  const aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+  Array.from(aspectRatioRadios).forEach((radio) => {
+    radio.checked = radio.value === state2.aspectRatio;
+  });
+  updateResolutionButtons(state2.aspectRatio, state2.width, state2.height);
+}
 function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, initialHeight, state2, elements2) {
   state2.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : "1:1";
   state2.width = initialWidth;
@@ -200,9 +211,7 @@ function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, ini
     promptInput.value = initialPrompt;
     elements2.promptInput = promptInput;
   }
-  if (dimensionDisplay) {
-    dimensionDisplay.textContent = `${state2.width}\xD7${state2.height}`;
-  }
+  syncControlsFromState(state2);
   const radios = Array.from(aspectRatioRadios);
   radios.forEach((radio) => {
     radio.checked = radio.value === state2.aspectRatio;
@@ -225,14 +234,12 @@ function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, ini
     radio.addEventListener("change", () => {
       const ratio = radio.value;
       const dims = getDefaultResolution(ratio);
-      state2.width = dims.width;
-      state2.height = dims.height;
       if (dimensionDisplay) {
         dimensionDisplay.textContent = `${dims.width}\xD7${dims.height}`;
       }
       updateResolutionButtons(ratio, dims.width, dims.height);
       const config = getCurrentConfig(elements2, state2);
-      void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state2);
+      void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state2);
     });
   });
   if (decreaseBtn) {
@@ -305,6 +312,7 @@ async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, hei
         state2.aspectRatio = previousAspectRatio;
         state2.width = previousWidth;
         state2.height = previousHeight;
+        syncControlsFromState(state2);
       }
       const promptInput = document.getElementById("prompt-input");
       if (promptInput) {
