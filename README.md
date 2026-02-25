@@ -206,6 +206,8 @@ make clippy        # Check Rust code quality (cargo clippy)
 make fmt-rust      # Format Rust code (cargo fmt)
 make fmt-check     # Verify all code is formatted (CI)
 make build         # Build Tauri application
+make package       # Build and package (.app + .dmg)
+make release       # Full release build (clean, install, package)
 make run           # Run Tauri application locally
 make run-debug     # Run Tauri with debug logging
 make dev           # Run CLI with --help

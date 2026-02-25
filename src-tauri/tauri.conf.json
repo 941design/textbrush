@@ -1,7 +1,7 @@
 {
   "productName": "Textbrush",
   "version": "0.1.0",
-  "identifier": "com.textbrush.app",
+  "identifier": "com.941design.textbrush",
   "build": {
     "beforeDevCommand": "cd ui && npm run build",
     "beforeBuildCommand": "cd ui && npm run build",

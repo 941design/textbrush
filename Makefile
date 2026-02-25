@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build build-ui build-python release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build build-ui build-python package release clean run run-debug
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -113,14 +113,23 @@ build: build-ui  ## Build Tauri application (includes UI)
 build-python:  ## Build Python package wheel
 	uv build
 
-release:  ## Build optimized release binary
-	cd src-tauri && cargo build --release
+package: build-ui  ## Build and package the application (.app + .dmg)
+	rm -rf src-tauri/ui-dist
+	mkdir -p src-tauri/ui-dist/styles
+	cp src-tauri/ui/index.html src-tauri/ui/bundle.js src-tauri/ui-dist/
+	cp src-tauri/ui/styles/*.css src-tauri/ui-dist/styles/
+	cd src-tauri && npx @tauri-apps/cli build -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"}}'
+	rm -rf src-tauri/ui-dist
+
+release: clean install package  ## Full release build (clean, install, build, package)
+	@echo "Release build completed successfully!"
+	@echo "Artifacts available in src-tauri/target/release/bundle/"
 
 # ============================================================================
 # Cleanup
 # ============================================================================
 
 clean:  ## Remove build artifacts and caches
-	rm -rf dist build .pytest_cache __pycache__ .ruff_cache
+	rm -rf dist build .pytest_cache __pycache__ .ruff_cache src-tauri/ui-dist
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
