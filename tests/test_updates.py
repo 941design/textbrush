@@ -21,6 +21,7 @@ from textbrush.updates import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_http_response(body: bytes, status: int = 200) -> MagicMock:
     """Create a mock urllib response with read() and context manager support."""
     mock_response = MagicMock()
@@ -263,9 +264,7 @@ class TestCheckForUpdatesHappyPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_prints_update_available_message(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_prints_update_available_message(self, mock_version, mock_urlopen, capsys):
         """Prints update-available notification when newer version exists."""
         body = json.dumps(SAMPLE_RELEASE).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -281,9 +280,7 @@ class TestCheckForUpdatesHappyPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_update_message_includes_release_notes_url(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_update_message_includes_release_notes_url(self, mock_version, mock_urlopen, capsys):
         """Update notification includes release notes link."""
         body = json.dumps(SAMPLE_RELEASE).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -296,9 +293,7 @@ class TestCheckForUpdatesHappyPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_update_message_includes_download_link(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_update_message_includes_download_link(self, mock_version, mock_urlopen, capsys):
         """Update notification includes direct download link."""
         body = json.dumps(SAMPLE_RELEASE).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -311,9 +306,7 @@ class TestCheckForUpdatesHappyPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_update_message_includes_asset_names(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_update_message_includes_asset_names(self, mock_version, mock_urlopen, capsys):
         """Update notification lists release assets."""
         body = json.dumps(SAMPLE_RELEASE).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -359,9 +352,7 @@ class TestCheckForUpdatesHappyPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_always_exits_with_code_0_on_success(
-        self, mock_version, mock_urlopen
-    ):
+    def test_always_exits_with_code_0_on_success(self, mock_version, mock_urlopen):
         """Always exits with code 0 on successful check."""
         body = json.dumps(SAMPLE_RELEASE).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -381,9 +372,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_network_error_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_network_error_exits_0(self, mock_version, mock_urlopen, capsys):
         """Network error prints informative message and exits 0."""
         mock_urlopen.side_effect = urllib.error.URLError("connection refused")
 
@@ -398,9 +387,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_rate_limit_403_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_rate_limit_403_exits_0(self, mock_version, mock_urlopen, capsys):
         """HTTP 403 rate limit prints rate limit message and exits 0."""
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url=GITHUB_RELEASES_URL,
@@ -421,9 +408,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_rate_limit_429_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_rate_limit_429_exits_0(self, mock_version, mock_urlopen, capsys):
         """HTTP 429 rate limit prints rate limit message and exits 0."""
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url=GITHUB_RELEASES_URL,
@@ -442,9 +427,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_invalid_json_response_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_invalid_json_response_exits_0(self, mock_version, mock_urlopen, capsys):
         """Invalid JSON response prints unexpected API response and exits 0."""
         mock_urlopen.return_value = _make_http_response(b"not json")
 
@@ -459,9 +442,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_missing_tag_name_in_response_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_missing_tag_name_in_response_exits_0(self, mock_version, mock_urlopen, capsys):
         """Missing tag_name in API response prints unexpected response and exits 0."""
         body = json.dumps({"name": "Release", "html_url": "https://example.com"}).encode()
         mock_urlopen.return_value = _make_http_response(body)
@@ -475,9 +456,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_handles_http_500_exits_0(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_handles_http_500_exits_0(self, mock_version, mock_urlopen, capsys):
         """HTTP 500 prints unexpected API response and exits 0."""
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url=GITHUB_RELEASES_URL,
@@ -496,9 +475,7 @@ class TestCheckForUpdatesErrorPaths:
 
     @patch("urllib.request.urlopen")
     @patch("textbrush.updates.get_current_version", return_value="0.1.0")
-    def test_network_error_message_includes_manual_link(
-        self, mock_version, mock_urlopen, capsys
-    ):
+    def test_network_error_message_includes_manual_link(self, mock_version, mock_urlopen, capsys):
         """Network error message includes manual releases link."""
         mock_urlopen.side_effect = urllib.error.URLError("timeout")
 
@@ -535,9 +512,7 @@ class TestCheckUpdatesCLIIntegration:
 
     @patch("textbrush.cli.load_config")
     @patch("textbrush.updates.check_for_updates")
-    def test_check_updates_dispatches_to_module(
-        self, mock_check, mock_load_config, sample_config
-    ):
+    def test_check_updates_dispatches_to_module(self, mock_check, mock_load_config, sample_config):
         """--check-updates invokes check_for_updates() and exits."""
         from textbrush.cli import main
 
@@ -578,9 +553,7 @@ class TestCheckUpdatesCLIIntegration:
         assert "Cannot use --check-updates with --download-model" in captured.err
 
     @patch("textbrush.cli.load_config")
-    def test_check_updates_with_headless_exits_2(
-        self, mock_load_config, sample_config, capsys
-    ):
+    def test_check_updates_with_headless_exits_2(self, mock_load_config, sample_config, capsys):
         """--check-updates with --headless exits with code 2."""
         from textbrush.cli import main
 

@@ -73,6 +73,7 @@ class MessageHandler:
         self._current_prompt: str = ""  # Tracks current generation prompt for state_changed events
         self._generation_started = False  # True after backend.start_generation() succeeds
         self._pending_startup_config: dict | None = None  # Latest UPDATE_CONFIG before start
+        self._pending_start_paused = False  # Pause intent before worker starts
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle INIT command: load model and start generation.
@@ -135,13 +136,12 @@ class MessageHandler:
         self.backend = TextbrushBackend(self.config)
         self._generation_started = False
         self._pending_startup_config = None
+        self._pending_start_paused = False
         logger.info("Backend created, starting init thread")
 
         def on_ready():
-            logger.info("Backend ready, emitting state_changed(idle)")
-            self._emit_state_changed(server, "idle")
-
             pending_config = self._pending_startup_config
+            start_paused = self._pending_start_paused
             start_prompt = cmd.prompt
             start_aspect_ratio = cmd.aspect_ratio
             start_width = cmd.width
@@ -176,9 +176,16 @@ class MessageHandler:
                 width=start_width,
                 height=start_height,
                 on_generation_start=on_generation_start,
+                start_paused=start_paused,
             )
             self._generation_started = True
             self._current_prompt = start_prompt
+            if start_paused:
+                logger.info("Backend ready, emitting state_changed(paused)")
+                self._emit_state_changed(server, "paused")
+            else:
+                logger.info("Backend ready, emitting state_changed(idle)")
+                self._emit_state_changed(server, "idle")
             logger.info("Starting image delivery")
             self._start_image_delivery(server, cmd.output_path)
 
@@ -588,6 +595,19 @@ class MessageHandler:
             )
             return
 
+        # During startup/loading, preserve pause intent and reflect it in state.
+        # This avoids emitting paused while silently dropping the request.
+        if not self._generation_started:
+            self._pending_start_paused = not self._pending_start_paused
+            if self._pending_start_paused:
+                self._emit_state_changed(server, "paused")
+            else:
+                if self._current_state == "loading":
+                    self._emit_state_changed(server, "loading")
+                else:
+                    self._emit_state_changed(server, "idle")
+            return
+
         is_paused = self.backend.is_paused()
 
         if is_paused:
@@ -771,7 +791,10 @@ class MessageHandler:
                         )
                     )
 
-                    self._emit_state_changed(server, "idle")
+                    if self.backend.is_paused():
+                        self._emit_state_changed(server, "paused")
+                    else:
+                        self._emit_state_changed(server, "idle")
 
                 except Exception as e:
                     logger.error(f"Image delivery error: {e}")

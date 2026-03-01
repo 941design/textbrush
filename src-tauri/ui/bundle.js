@@ -9027,6 +9027,17 @@ var initPromise = null;
 var messageListenerInitialized = false;
 var buttonListenersInitialized = false;
 var keyboardListenersInitialized = false;
+var pauseCommandInFlight = false;
+var desiredPausedState = null;
+function isBackendStatePaused(stateValue) {
+  if (stateValue === "paused") {
+    return true;
+  }
+  if (stateValue === "idle" || stateValue === "generating") {
+    return false;
+  }
+  return null;
+}
 function cacheElements() {
   elements.app = document.getElementById("app");
   elements.headerBar = document.querySelector(".header-bar");
@@ -9106,6 +9117,7 @@ async function init() {
       setupMessageListener();
       setupButtonListeners();
       setupKeyboardListeners();
+      updatePauseButton();
       await invoke("init_generation", {
         prompt: state.prompt,
         outputPath: launchArgs.output_path || null,
@@ -9175,6 +9187,14 @@ function handleMessage(msg) {
 }
 function handleStateChanged(payload) {
   state.backendState = payload;
+  const backendPaused = isBackendStatePaused(payload.state);
+  if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+  } else if (payload.state === "error") {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+  }
   state.isPaused = payload.state === "paused";
   if (payload.state === "generating" && "prompt" in payload) {
     state.generationPrompt = payload.prompt;
@@ -9441,6 +9461,11 @@ function updatePauseButton() {
     if (elements.pauseButton) {
       elements.pauseButton.classList.remove("paused");
     }
+  }
+  if (elements.pauseButton) {
+    const backendStateValue = state.backendState?.state ?? null;
+    const backendAllowsPause = backendStateValue === "idle" || backendStateValue === "generating" || backendStateValue === "paused";
+    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight;
   }
 }
 async function displayImageRecord(record, listIdx = null) {
@@ -9844,7 +9869,19 @@ function abort() {
   });
 }
 function togglePause() {
+  const backendStateValue = state.backendState?.state ?? null;
+  const backendAllowsPause = backendStateValue === "idle" || backendStateValue === "generating" || backendStateValue === "paused";
+  if (!backendAllowsPause || pauseCommandInFlight) {
+    return;
+  }
+  const currentPaused = state.backendState?.state === "paused";
+  desiredPausedState = !currentPaused;
+  pauseCommandInFlight = true;
+  updatePauseButton();
   invoke("pause_generation").catch((err) => {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+    updatePauseButton();
     console.error("Pause toggle failed:", err);
   });
 }

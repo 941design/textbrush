@@ -108,9 +108,7 @@ class TestDownloadFailureHandling:
                 with patch("textbrush.model.weights.get_cache_info") as mock_cache_info:
                     mock_cache_dir = MagicMock()
                     mock_cache_dir.__truediv__ = MagicMock(
-                        return_value=MagicMock(
-                            is_dir=MagicMock(return_value=False)
-                        )
+                        return_value=MagicMock(is_dir=MagicMock(return_value=False))
                     )
                     mock_cache_info.return_value = {
                         "cache_dir": mock_cache_dir,
@@ -195,9 +193,7 @@ class TestTokenRequiredError:
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
             with patch("textbrush.model.weights.is_flux_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
-                    mock_download.side_effect = HfHubHTTPError(
-                        "Forbidden", response=mock_response
-                    )
+                    mock_download.side_effect = HfHubHTTPError("Forbidden", response=mock_response)
 
                     with pytest.raises(TokenRequiredError) as exc_info:
                         download_flux_weights(force=False)
@@ -321,9 +317,7 @@ class TestIsFluxAvailableCustomDirs:
         model_dir.mkdir()
         (model_dir / "model_index.json").write_text('{"_class_name": "FluxPipeline"}')
 
-        with patch(
-            "textbrush.model.weights.try_to_load_from_cache"
-        ) as mock_try_load:
+        with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[model_dir])
 
         assert result is True
@@ -359,9 +353,7 @@ class TestIsFluxAvailableCustomDirs:
         dir2.mkdir()
         (dir2 / "model_index.json").write_text("{}")
 
-        with patch(
-            "textbrush.model.weights.try_to_load_from_cache"
-        ) as mock_try_load:
+        with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[dir1, dir2])
 
         assert result is True
@@ -377,9 +369,7 @@ class TestIsFluxAvailableCustomDirs:
         dir2.mkdir()
         (dir2 / "model_index.json").write_text("{}")
 
-        with patch(
-            "textbrush.model.weights.try_to_load_from_cache"
-        ) as mock_try_load:
+        with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[dir1, dir2])
 
         assert result is True

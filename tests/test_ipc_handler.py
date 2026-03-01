@@ -170,6 +170,52 @@ class TestInitCommand:
             f"First STATE_CHANGED must be 'loading' for all payload variations, got '{first_state}'"
         )
 
+    def test_pause_during_loading_starts_worker_paused(self, handler, mock_server):
+        """PAUSE during loading is preserved and applied at generation start."""
+        payload = {
+            "prompt": "test prompt",
+            "seed": None,
+            "aspect_ratio": "1:1",
+            "width": 256,
+            "height": 256,
+        }
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.start_generation = Mock()
+        mock_backend.initialize = Mock()
+        mock_backend.is_paused.return_value = False
+
+        class ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                if self._target:
+                    self._target(*self._args)
+
+        def mock_init_backend(on_ready, server):
+            # Simulate user pressing pause while model is still loading.
+            handler.handle_pause(server)
+            on_ready()
+
+        with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
+            with patch("textbrush.ipc.handler.threading.Thread", side_effect=ImmediateThread):
+                with patch.object(handler, "_init_backend", side_effect=mock_init_backend):
+                    with patch.object(handler, "_start_image_delivery"):
+                        handler.handle_init(payload, mock_server)
+
+        mock_backend.start_generation.assert_called_once()
+        start_kwargs = mock_backend.start_generation.call_args.kwargs
+        assert start_kwargs["start_paused"] is True
+
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert state_changed_calls[-1].payload["state"] == "paused"
+
 
 class TestSkipCommand:
     """Property-based tests for SKIP command handling."""
@@ -606,6 +652,38 @@ class TestImageDelivery:
 
             assert image_ready_sent
             mock_backend.save_to_preview.assert_called_once_with(buffered)
+
+    def test_image_delivery_preserves_paused_state(self):
+        """Delivery emits paused (not idle) when worker is paused."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = get_default_config()
+            handler = MessageHandler(config)
+            mock_server = Mock()
+            test_image = Image.new("RGB", (64, 64), color=(1, 2, 3))
+            buffered = BufferedImage(image=test_image, seed=111)
+
+            preview_path = tmp_path / "preview.png"
+
+            mock_backend = Mock(spec=TextbrushBackend)
+            mock_backend.get_next_image = Mock(side_effect=[buffered, None])
+            mock_backend.check_worker_error = Mock(return_value=None)
+            mock_backend.save_to_preview = Mock(return_value=preview_path)
+            mock_backend.is_paused = Mock(return_value=True)
+            handler.backend = mock_backend
+
+            handler._start_image_delivery(mock_server, None)
+            time.sleep(0.1)
+
+            states = [
+                call[0][0].payload["state"]
+                for call in mock_server.send.call_args_list
+                if call[0][0].type == MessageType.STATE_CHANGED
+            ]
+            assert "paused" in states
+            assert "idle" not in states
 
 
 class TestBackendInitialization:

@@ -134,7 +134,8 @@ class TestBackendLoadingStateEmission:
                 handler.handle_init(payload, mock_server)
 
         state_changed_calls = [
-            call for call in mock_server.send.call_args_list
+            call
+            for call in mock_server.send.call_args_list
             if call[0][0].type == MessageType.STATE_CHANGED
         ]
         assert len(state_changed_calls) >= 1, (

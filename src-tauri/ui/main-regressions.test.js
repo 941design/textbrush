@@ -163,6 +163,7 @@ describe('Main UI regression tests', () => {
 
     await window.textbrushApp.init();
     await window.textbrushApp.init();
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
 
     const beforePause = countCalls(calls, 'pause_generation').length;
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
@@ -174,6 +175,7 @@ describe('Main UI regression tests', () => {
 
   test('repeated Space keydown events are ignored when event.repeat is true', async () => {
     const { window, document, calls } = await setupMain();
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
 
     const beforePause = countCalls(calls, 'pause_generation').length;
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, repeat: false }));
@@ -182,6 +184,69 @@ describe('Main UI regression tests', () => {
 
     const pauseCalls = countCalls(calls, 'pause_generation').slice(beforePause);
     assert.strictEqual(pauseCalls.length, 1, 'repeat keydown does not trigger extra pause command');
+  });
+
+  test('rapid pause toggles are suppressed while command is in flight', async () => {
+    const { window, document, calls } = await setupMain();
+
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    const beforePause = countCalls(calls, 'pause_generation').length;
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    await Promise.resolve();
+
+    const pauseCalls = countCalls(calls, 'pause_generation').slice(beforePause);
+    assert.strictEqual(pauseCalls.length, 1, 'second toggle is ignored until backend state update');
+  });
+
+  test('pause in-flight clears only when backend reaches requested state', async () => {
+    const { window, document, calls } = await setupMain();
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+
+    const beforePause = countCalls(calls, 'pause_generation').length;
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    await Promise.resolve();
+
+    // Mismatched state update should not clear in-flight (request was paused=true)
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    await Promise.resolve();
+    assert.strictEqual(
+      countCalls(calls, 'pause_generation').slice(beforePause).length,
+      1,
+      'mismatched state does not unlock another toggle',
+    );
+
+    // Matching paused state clears in-flight and allows next toggle (resume)
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'paused' } });
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    await Promise.resolve();
+    assert.strictEqual(
+      countCalls(calls, 'pause_generation').slice(beforePause).length,
+      2,
+      'matching state clears in-flight and next toggle is allowed',
+    );
+  });
+
+  test('pause button syncs with backend paused/generating states', async () => {
+    const { window, document } = await setupMain();
+    const pauseLabel = document.getElementById('pause-label');
+    const pauseIcon = document.getElementById('pause-icon');
+    const pauseBtn = document.getElementById('pause-btn');
+    assert.ok(pauseLabel);
+    assert.ok(pauseIcon);
+    assert.ok(pauseBtn);
+
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'paused' } });
+    assert.strictEqual(pauseLabel.textContent, 'Resume');
+    assert.strictEqual(pauseIcon.textContent, '▶');
+    assert.strictEqual(pauseBtn.classList.contains('paused'), true);
+
+    window.textbrushApp.handleMessage({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    assert.strictEqual(pauseLabel.textContent, 'Pause');
+    assert.strictEqual(pauseIcon.textContent, '⏸');
+    assert.strictEqual(pauseBtn.classList.contains('paused'), false);
   });
 
   test('resolution controls roll back visual state when config update fails', async () => {

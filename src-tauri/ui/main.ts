@@ -98,6 +98,18 @@ let initPromise: Promise<void> | null = null;
 let messageListenerInitialized = false;
 let buttonListenersInitialized = false;
 let keyboardListenersInitialized = false;
+let pauseCommandInFlight = false;
+let desiredPausedState: boolean | null = null;
+
+function isBackendStatePaused(stateValue: string): boolean | null {
+  if (stateValue === 'paused') {
+    return true;
+  }
+  if (stateValue === 'idle' || stateValue === 'generating') {
+    return false;
+  }
+  return null;
+}
 
 function cacheElements(): void {
   elements.app = document.getElementById('app');
@@ -198,6 +210,7 @@ async function init(): Promise<void> {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
+    updatePauseButton();
 
     // Initialize image generation
     await invoke('init_generation', {
@@ -290,6 +303,14 @@ function handleMessage(msg: SidecarMessage): void {
 // Message Handlers
 function handleStateChanged(payload: StateChangedPayload): void {
   state.backendState = payload;
+  const backendPaused = isBackendStatePaused(payload.state);
+  if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+  } else if (payload.state === 'error') {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+  }
 
   // Update deprecated isPaused flag for compatibility
   state.isPaused = payload.state === "paused";
@@ -653,6 +674,15 @@ function updatePauseButton(): void {
     if (elements.pauseButton) {
       elements.pauseButton.classList.remove('paused');
     }
+  }
+
+  if (elements.pauseButton) {
+    const backendStateValue = state.backendState?.state ?? null;
+    const backendAllowsPause =
+      backendStateValue === 'idle' ||
+      backendStateValue === 'generating' ||
+      backendStateValue === 'paused';
+    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight;
   }
 }
 
@@ -1213,7 +1243,23 @@ function abort(): void {
 }
 
 function togglePause(): void {
+  const backendStateValue = state.backendState?.state ?? null;
+  const backendAllowsPause =
+    backendStateValue === 'idle' ||
+    backendStateValue === 'generating' ||
+    backendStateValue === 'paused';
+  if (!backendAllowsPause || pauseCommandInFlight) {
+    return;
+  }
+
+  const currentPaused = state.backendState?.state === 'paused';
+  desiredPausedState = !currentPaused;
+  pauseCommandInFlight = true;
+  updatePauseButton();
   invoke('pause_generation').catch(err => {
+    pauseCommandInFlight = false;
+    desiredPausedState = null;
+    updatePauseButton();
     console.error('Pause toggle failed:', err);
   });
 }

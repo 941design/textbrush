@@ -3,7 +3,7 @@
 Tests validate:
 1. Index assignment: unique, stable, monotonic
 2. IMAGE_READY event format: includes index, path, display_path (no buffer fields)
-3. State transitions: GENERATING → IDLE after each image
+3. State transitions: GENERATING → IDLE or PAUSED after each image
 4. Thread safety: concurrent deliveries don't corrupt indices
 """
 
@@ -309,8 +309,9 @@ class TestImageReadyEvent:
 class TestStateTransitions:
     """Property-based tests for state transitions after image ready."""
 
-    def test_emits_state_changed_idle_after_image(self, handler, mock_server, tmp_path):
-        """STATE_CHANGED(state=idle) emitted after IMAGE_READY."""
+    @pytest.mark.parametrize("is_paused", [False, True])
+    def test_emits_state_changed_after_image(self, handler, mock_server, tmp_path, is_paused):
+        """STATE_CHANGED emits idle/paused after IMAGE_READY based on backend pause state."""
         image = Image.new("RGB", (64, 64))
         buffered = BufferedImage(image=image, seed=12345)
         preview_path = tmp_path / "preview.png"
@@ -319,6 +320,7 @@ class TestStateTransitions:
         mock_backend.get_next_image = Mock(side_effect=[buffered, None])
         mock_backend.check_worker_error = Mock(return_value=None)
         mock_backend.save_to_preview = Mock(return_value=preview_path)
+        mock_backend.is_paused = Mock(return_value=is_paused)
         handler.backend = mock_backend
 
         delivery_done = threading.Event()
@@ -333,10 +335,11 @@ class TestStateTransitions:
         assert delivery_done.wait(timeout=2.0)
 
         state_changed_found = False
+        expected_state = "paused" if is_paused else "idle"
         for call_obj in mock_server.send.call_args_list:
             msg = call_obj[0][0]
             if msg.type == MessageType.STATE_CHANGED:
-                assert msg.payload["state"] == "idle"
+                assert msg.payload["state"] == expected_state
                 state_changed_found = True
                 break
 
@@ -352,6 +355,7 @@ class TestStateTransitions:
         mock_backend.get_next_image = Mock(side_effect=[buffered, None])
         mock_backend.check_worker_error = Mock(return_value=None)
         mock_backend.save_to_preview = Mock(return_value=preview_path)
+        mock_backend.is_paused = Mock(return_value=False)
         handler.backend = mock_backend
 
         delivery_done = threading.Event()
@@ -381,10 +385,10 @@ class TestStateTransitions:
         assert state_changed_idx is not None
         assert state_changed_idx > image_ready_idx
 
-    @given(num_images=st.integers(min_value=2, max_value=4))
+    @given(num_images=st.integers(min_value=2, max_value=4), is_paused=st.booleans())
     @settings(deadline=None)
-    def test_idle_state_emitted_after_each_image(self, num_images):
-        """STATE_CHANGED(idle) emitted after each image delivery."""
+    def test_state_emitted_after_each_image_matches_pause_status(self, num_images, is_paused):
+        """STATE_CHANGED emits expected state after each image delivery."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -401,6 +405,7 @@ class TestStateTransitions:
             mock_backend.get_next_image = Mock(side_effect=buffered_images + [None])
             mock_backend.check_worker_error = Mock(return_value=None)
             mock_backend.save_to_preview = Mock(side_effect=preview_paths)
+            mock_backend.is_paused = Mock(return_value=is_paused)
             handler.backend = mock_backend
 
             delivery_done = threading.Event()
@@ -417,10 +422,14 @@ class TestStateTransitions:
             handler._start_image_delivery(mock_server, None)
             assert delivery_done.wait(timeout=5.0)
 
+            expected_state = "paused" if is_paused else "idle"
             state_changed_count = 0
             for call_obj in mock_server.send.call_args_list:
                 msg = call_obj[0][0]
-                if msg.type == MessageType.STATE_CHANGED and msg.payload.get("state") == "idle":
+                if (
+                    msg.type == MessageType.STATE_CHANGED
+                    and msg.payload.get("state") == expected_state
+                ):
                     state_changed_count += 1
 
             assert state_changed_count == num_images
