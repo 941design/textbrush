@@ -170,8 +170,8 @@ class TestInitCommand:
             f"First STATE_CHANGED must be 'loading' for all payload variations, got '{first_state}'"
         )
 
-    def test_pause_during_loading_starts_worker_paused(self, handler, mock_server):
-        """PAUSE during loading is preserved and applied at generation start."""
+    def test_pause_during_loading_toggles_to_running(self, handler, mock_server):
+        """PAUSE during loading toggles pending startup state from paused to running."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
@@ -195,8 +195,52 @@ class TestInitCommand:
                     self._target(*self._args)
 
         def mock_init_backend(on_ready, server):
-            # Simulate user pressing pause while model is still loading.
+            # Startup defaults to paused; PAUSE toggles to running.
             handler.handle_pause(server)
+            on_ready()
+
+        with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
+            with patch("textbrush.ipc.handler.threading.Thread", side_effect=ImmediateThread):
+                with patch.object(handler, "_init_backend", side_effect=mock_init_backend):
+                    with patch.object(handler, "_start_image_delivery"):
+                        handler.handle_init(payload, mock_server)
+
+        mock_backend.start_generation.assert_called_once()
+        start_kwargs = mock_backend.start_generation.call_args.kwargs
+        assert start_kwargs["start_paused"] is False
+
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert state_changed_calls[-1].payload["state"] == "idle"
+
+    def test_init_starts_worker_paused_by_default(self, handler, mock_server):
+        """INIT starts generation paused by default."""
+        payload = {
+            "prompt": "test prompt",
+            "seed": None,
+            "aspect_ratio": "1:1",
+            "width": 256,
+            "height": 256,
+        }
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.start_generation = Mock()
+        mock_backend.initialize = Mock()
+        mock_backend.is_paused.return_value = True
+
+        class ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                if self._target:
+                    self._target(*self._args)
+
+        def mock_init_backend(on_ready, server):
             on_ready()
 
         with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
@@ -215,7 +259,6 @@ class TestInitCommand:
             if call[0][0].type == MessageType.STATE_CHANGED
         ]
         assert state_changed_calls[-1].payload["state"] == "paused"
-
 
 class TestSkipCommand:
     """Property-based tests for SKIP command handling."""

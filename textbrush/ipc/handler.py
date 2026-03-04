@@ -73,7 +73,7 @@ class MessageHandler:
         self._current_prompt: str = ""  # Tracks current generation prompt for state_changed events
         self._generation_started = False  # True after backend.start_generation() succeeds
         self._pending_startup_config: dict | None = None  # Latest UPDATE_CONFIG before start
-        self._pending_start_paused = False  # Pause intent before worker starts
+        self._pending_start_paused = True  # Default startup behavior: begin paused
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle INIT command: load model and start generation.
@@ -136,7 +136,7 @@ class MessageHandler:
         self.backend = TextbrushBackend(self.config)
         self._generation_started = False
         self._pending_startup_config = None
-        self._pending_start_paused = False
+        self._pending_start_paused = True
         logger.info("Backend created, starting init thread")
 
         def on_ready():
