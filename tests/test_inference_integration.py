@@ -11,6 +11,8 @@ from unittest.mock import Mock, patch
 import pytest
 from PIL import Image
 
+pytest.importorskip("torch")
+
 from textbrush.backend import TextbrushBackend
 from textbrush.buffer import BufferedImage
 from textbrush.config import (

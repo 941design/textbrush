@@ -15,6 +15,8 @@ from hypothesis import strategies as st
 from PIL import Image
 from skimage.metrics import structural_similarity as ssim
 
+pytest.importorskip("torch")
+
 from textbrush.inference.base import GenerationOptions, GenerationResult
 from textbrush.inference.flux import FluxInferenceEngine
 

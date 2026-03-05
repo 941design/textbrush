@@ -1,5 +1,9 @@
 .PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build build-ui build-python package release clean run run-debug
 
+# Use a user-writable Cargo home (the system CARGO_HOME may be read-only)
+override CARGO_HOME := $(HOME)/.cargo
+export CARGO_HOME
+
 # Default target: show help
 .DEFAULT_GOAL := help
 
@@ -12,8 +16,8 @@ help:  ## Show this help message
 # Setup
 # ============================================================================
 
-install:  ## Install Python dependencies with uv
-	uv sync
+install:  ## Install Python dependencies with uv (includes model extras)
+	uv sync --extra model
 
 download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
 	uv run python scripts/download_model.py
@@ -118,8 +122,9 @@ package: build-ui  ## Build and package the application (.app + .dmg)
 	mkdir -p src-tauri/ui-dist/styles
 	cp src-tauri/ui/index.html src-tauri/ui/bundle.js src-tauri/ui-dist/
 	cp src-tauri/ui/styles/*.css src-tauri/ui-dist/styles/
-	cd src-tauri && npx @tauri-apps/cli build -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"}}'
+	cd src-tauri && npx @tauri-apps/cli build --bundles app -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"}}'
 	rm -rf src-tauri/ui-dist
+	hdiutil create -volname Textbrush -srcfolder src-tauri/target/release/bundle/macos/Textbrush.app -ov -format UDZO src-tauri/target/release/bundle/macos/Textbrush.dmg
 
 release: clean install package  ## Full release build (clean, install, build, package)
 	@echo "Release build completed successfully!"

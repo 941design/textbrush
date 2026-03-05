@@ -4,9 +4,12 @@ from unittest.mock import Mock, patch
 
 import hypothesis.strategies as st
 import pytest
-import torch
 from hypothesis import given, settings
 from PIL import Image
+
+pytest.importorskip("torch")
+
+import torch
 
 from textbrush.inference.base import GenerationOptions, GenerationResult
 from textbrush.inference.flux import FluxInferenceEngine

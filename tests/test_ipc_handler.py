@@ -260,6 +260,7 @@ class TestInitCommand:
         ]
         assert state_changed_calls[-1].payload["state"] == "paused"
 
+
 class TestSkipCommand:
     """Property-based tests for SKIP command handling."""
 

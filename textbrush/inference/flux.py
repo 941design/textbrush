@@ -7,9 +7,6 @@ import random
 import threading
 import time
 
-import torch
-from diffusers import FluxPipeline
-
 from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
 
 logger = logging.getLogger(__name__)
@@ -113,6 +110,9 @@ class FluxInferenceEngine(InferenceEngine):
         if self.is_loaded():
             return
 
+        import torch
+        from diffusers import FluxPipeline
+
         if torch.cuda.is_available():
             self._device = "cuda"
             self._dtype = torch.bfloat16
@@ -213,6 +213,8 @@ class FluxInferenceEngine(InferenceEngine):
             f"final_dimensions={final_width}×{final_height}, "
             f"generated_dimensions={generated_width}×{generated_height}"
         )
+
+        import torch
 
         generator = torch.Generator(self._device)
         seed = options.seed if options.seed is not None else random.randint(0, 2**32 - 1)

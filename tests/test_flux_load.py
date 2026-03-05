@@ -3,6 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+pytest.importorskip("torch")
+
 import torch
 
 from textbrush.inference.flux import FluxInferenceEngine

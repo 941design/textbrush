@@ -9,6 +9,10 @@ requires-python = ">=3.11"
 dependencies = [
   "huggingface-hub>=0.20.0,<1.0.0",
   "tomli_w>=1.0.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+model = [
   "torch>=2.0.0,<3.0.0",
   "diffusers>=0.25.0,<1.0.0",
   "transformers>=4.36.0,<5.0.0",
