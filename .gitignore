@@ -36,14 +36,19 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+.DS_Store
+.claude/
+.clauded.yaml
 
 # Rust/Tauri build artifacts
+target/
 src-tauri/target/
 src-tauri/ui-dist/
 
 # Tool artifacts
 .serena/
 .ruff_cache/
+.audit-reports/
 
 # Local configuration
 .mcp.json
