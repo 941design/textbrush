@@ -3,11 +3,74 @@
 // Commands are invoked from JavaScript UI, manage sidecar lifecycle and send IPC messages.
 
 use crate::sidecar::{IpcMessage, Sidecar};
+#[cfg(any(test, not(debug_assertions)))]
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{command, Emitter, State, Window};
 
 pub struct AppState {
     pub sidecar: Mutex<Option<Sidecar>>,
+}
+
+#[cfg(any(test, not(debug_assertions)))]
+fn bundled_python_from_exe(exe_path: &Path) -> Option<PathBuf> {
+    let contents_dir = exe_path.parent()?.parent()?;
+    let candidate = contents_dir.join("Resources").join("python-env").join("bin").join("python3");
+    candidate.exists().then_some(candidate)
+}
+
+#[cfg(any(test, not(debug_assertions)))]
+fn repo_venv_python_from_path(start: &Path) -> Option<PathBuf> {
+    let mut current = if start.is_dir() {
+        Some(start)
+    } else {
+        start.parent()
+    };
+
+    while let Some(dir) = current {
+        let candidate = dir.join(".venv").join("bin").join("python3");
+        if candidate.exists() && dir.join("pyproject.toml").exists() {
+            return Some(candidate);
+        }
+        current = dir.parent();
+    }
+
+    None
+}
+
+#[cfg(any(test, not(debug_assertions)))]
+#[cfg_attr(test, allow(dead_code))]
+fn resolve_release_python_command() -> (String, Vec<String>) {
+    if let Ok(path) = std::env::var("TEXTBRUSH_PYTHON") {
+        let candidate = PathBuf::from(path);
+        if candidate.exists() {
+            return (
+                candidate.to_string_lossy().into_owned(),
+                vec!["-m".to_string(), "textbrush.ipc".to_string()],
+            );
+        }
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(candidate) = bundled_python_from_exe(&exe_path) {
+            return (
+                candidate.to_string_lossy().into_owned(),
+                vec!["-m".to_string(), "textbrush.ipc".to_string()],
+            );
+        }
+
+        if let Some(candidate) = repo_venv_python_from_path(&exe_path) {
+            return (
+                candidate.to_string_lossy().into_owned(),
+                vec!["-m".to_string(), "textbrush.ipc".to_string()],
+            );
+        }
+    }
+
+    (
+        "python3".to_string(),
+        vec!["-m".to_string(), "textbrush.ipc".to_string()],
+    )
 }
 
 /// Initialize backend and start generation.
@@ -72,16 +135,21 @@ pub async fn init_generation(
         })?;
 
     #[cfg(not(debug_assertions))]
-    let mut sidecar = Sidecar::spawn("python3", &["-m", "textbrush.ipc"])
+    let mut sidecar = {
+        let (python_path, python_args) = resolve_release_python_command();
+        let python_arg_refs: Vec<&str> = python_args.iter().map(String::as_str).collect();
+
+        Sidecar::spawn(&python_path, &python_arg_refs)
         .map_err(|e| {
             if e.contains("No such file") || e.contains("os error 2") {
-                "Failed to start backend: python3 not found. Ensure Python 3.11+ is installed and 'textbrush' package is available (pip install textbrush).".to_string()
+                "Failed to start backend: no usable Python runtime found. Rebuild the app with `make package` to embed the Python environment, or install Python 3.11+ with the `textbrush` model dependencies.".to_string()
             } else if e.contains("No module") {
-                "Failed to start backend: No module named 'textbrush'. Run: pip install textbrush".to_string()
+                "Failed to start backend: bundled Python environment is incomplete. Rebuild with `make package`, or install `textbrush` and its model dependencies into the selected Python runtime.".to_string()
             } else {
                 format!("Failed to start backend: {e}")
             }
-        })?;
+        })?
+    };
 
     let window_clone = window.clone();
     sidecar.start_reader(move |msg| {
@@ -368,8 +436,10 @@ pub fn abort_generation(state: State<'_, AppState>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::mpsc;
     use std::time::Duration;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn python_echo_script() -> &'static str {
         r#"
@@ -383,6 +453,52 @@ while True:
     sys.stdout.write(line)
     sys.stdout.flush()
 "#
+    }
+
+    fn make_temp_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("textbrush-{name}-{unique}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn bundled_python_from_exe_finds_app_resource_python() {
+        let root = make_temp_dir("bundled-python");
+        let exe_path = root.join("Textbrush.app/Contents/MacOS/Textbrush");
+        let python_path = root.join("Textbrush.app/Contents/Resources/python-env/bin/python3");
+
+        fs::create_dir_all(python_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(exe_path.parent().unwrap()).unwrap();
+        fs::write(&exe_path, "").unwrap();
+        fs::write(&python_path, "").unwrap();
+
+        let resolved = bundled_python_from_exe(&exe_path);
+        assert_eq!(resolved, Some(python_path));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repo_venv_python_from_path_finds_checkout_virtualenv() {
+        let root = make_temp_dir("repo-venv");
+        let nested = root.join("src-tauri/target/release/bundle/macos/Textbrush.app/Contents/MacOS");
+        let exe_path = nested.join("Textbrush");
+        let python_path = root.join(".venv/bin/python3");
+
+        fs::create_dir_all(nested).unwrap();
+        fs::create_dir_all(python_path.parent().unwrap()).unwrap();
+        fs::write(root.join("pyproject.toml"), "").unwrap();
+        fs::write(&exe_path, "").unwrap();
+        fs::write(&python_path, "").unwrap();
+
+        let resolved = repo_venv_python_from_path(&exe_path);
+        assert_eq!(resolved, Some(python_path));
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

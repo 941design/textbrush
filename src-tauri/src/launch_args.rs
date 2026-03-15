@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+const DEFAULT_PROMPT: &str = "A watercolor painting of a cat";
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LaunchArgs {
     pub prompt: String,
@@ -42,7 +44,7 @@ fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
 ///
 ///   Invariants:
 ///     - Returns arguments used to launch the application
-///     - If no arguments found: returns default values for testing
+///     - If no prompt argument is provided: returns bundled-app defaults
 ///     - Arguments match what would be passed to init_generation
 ///
 ///   Properties:
@@ -51,35 +53,33 @@ fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
 ///     - Fallback: provides sensible defaults if no CLI args
 ///
 ///   LaunchArgs Structure:
-///     - prompt: text description for image generation (required)
+///     - prompt: text description for image generation
 ///     - output_path: optional path where accepted image should be saved
 ///     - seed: optional random seed for reproducibility
 ///     - aspect_ratio: aspect ratio string (default "1:1")
 ///
 ///   Algorithm:
-///     For initial implementation (testing):
-///       1. Return default LaunchArgs with test prompt
-///       2. In production: parse from std::env::args() or Tauri config
-///
-///     Production implementation (future):
-///       1. Access Tauri App state or CLI arguments
-///       2. Parse --prompt, --output-path, --seed, --aspect-ratio flags
-///       3. Validate required arguments (prompt)
+///       1. Parse --prompt, --out, --seed, --aspect-ratio, --buffer-max,
+///          --width, and --height from process arguments
+///       2. If --prompt is omitted, use bundled-app defaults so Finder launches
+///          initialize the UI without extra CLI flags
+///       3. Resolve width/height from explicit values or aspect-ratio defaults
 ///       4. Return LaunchArgs struct
 ///
 /// IMPLEMENTATION GUIDANCE:
 ///   - Mark as #[tauri::command]
 ///   - Return Result<LaunchArgs, String> for error handling
-///   - Prompt is required; return error if not provided
-///
-/// IMPLEMENTATION GUIDANCE (Production Version - Future):
-///   - Access Tauri's CLI argument parsing or std::env::args()
-///   - Parse arguments with clap or manual parsing
-///   - Validate prompt is provided (required argument)
-///   - Return error if required arguments missing
+///   - Packaged app launches must work without requiring CLI flags
 #[tauri::command]
 pub fn get_launch_args() -> Result<LaunchArgs, String> {
-    let args: Vec<String> = std::env::args().collect();
+    parse_launch_args(std::env::args())
+}
+
+fn parse_launch_args<I>(args: I) -> Result<LaunchArgs, String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let args: Vec<String> = args.into_iter().collect();
 
     let mut prompt = String::new();
     let mut output_path: Option<String> = None;
@@ -156,9 +156,10 @@ pub fn get_launch_args() -> Result<LaunchArgs, String> {
         }
     }
 
-    // Prompt is required
+    // Finder launches packaged apps without CLI args. In that case, start with a
+    // sensible default prompt so the bundled GUI can initialize normally.
     if prompt.is_empty() {
-        return Err("--prompt is required".to_string());
+        prompt = DEFAULT_PROMPT.to_string();
     }
 
     // Use default resolution for aspect ratio if dimensions not specified
@@ -182,11 +183,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_launch_args_requires_prompt() {
-        // In test environment, CLI args won't include --prompt
-        let result = get_launch_args();
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "--prompt is required");
+    fn get_launch_args_uses_default_prompt_when_omitted() {
+        let result = parse_launch_args(vec!["textbrush".to_string()]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().prompt, DEFAULT_PROMPT);
+    }
+
+    #[test]
+    fn get_launch_args_parses_prompt_when_provided() {
+        let result = parse_launch_args(vec![
+            "textbrush".to_string(),
+            "--prompt".to_string(),
+            "sunset".to_string(),
+            "--width".to_string(),
+            "512".to_string(),
+            "--height".to_string(),
+            "512".to_string(),
+        ]);
+
+        assert!(result.is_ok());
+        let args = result.unwrap();
+        assert_eq!(args.prompt, "sunset");
+        assert_eq!(args.width, 512);
+        assert_eq!(args.height, 512);
     }
 
     #[test]

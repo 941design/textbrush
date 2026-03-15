@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build build-ui build-python package release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug
 
 # Use a user-writable Cargo home (the system CARGO_HOME may be read-only)
 override CARGO_HOME := $(HOME)/.cargo
@@ -6,6 +6,8 @@ export CARGO_HOME
 
 # Default target: show help
 .DEFAULT_GOAL := help
+
+DMG_PATH = $(firstword $(wildcard src-tauri/target/release/bundle/dmg/*.dmg))
 
 help:  ## Show this help message
 	@echo "Textbrush - Development Commands"
@@ -17,6 +19,9 @@ help:  ## Show this help message
 # ============================================================================
 
 install:  ## Install Python dependencies with uv (includes model extras)
+	uv sync --extra model
+
+ensure-model-env:  ## Ensure Python model dependencies are installed
 	uv sync --extra model
 
 download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
@@ -36,10 +41,10 @@ DEV_PROMPT ?= "A watercolor painting of a cat"
 DEV_WIDTH ?= 256
 DEV_HEIGHT ?= 256
 
-run: build  ## Build frontend/backend, then run Tauri application
+run: ensure-model-env build  ## Build frontend/backend, then run Tauri application
 	cd src-tauri && cargo run -- --prompt $(DEV_PROMPT) --width $(DEV_WIDTH) --height $(DEV_HEIGHT)
 
-run-debug: build  ## Build frontend/backend, then run Tauri application with debug logging
+run-debug: ensure-model-env build  ## Build frontend/backend, then run Tauri application with debug logging
 	cd src-tauri && RUST_LOG=debug cargo run -- --prompt $(DEV_PROMPT) --width $(DEV_WIDTH) --height $(DEV_HEIGHT)
 
 test:  ## Run test suite with pytest (excludes slow/integration tests)
@@ -109,7 +114,11 @@ fmt-check:  ## Verify all code is formatted (for CI)
 # ============================================================================
 
 build-ui:  ## Build UI TypeScript bundle
+	cd src-tauri/ui && npm install
 	cd src-tauri/ui && npm run build
+
+ui-install:  ## Install or refresh UI dependencies
+	cd src-tauri/ui && npm install
 
 build: build-ui  ## Build Tauri application (includes UI)
 	cd src-tauri && cargo build
@@ -117,24 +126,35 @@ build: build-ui  ## Build Tauri application (includes UI)
 build-python:  ## Build Python package wheel
 	uv build
 
-package: build-ui  ## Build and package the application (.app + .dmg)
+bundle-python-env: ensure-model-env  ## Prepare bundled Python environment for packaged app
+	rm -rf src-tauri/target/python-env
+	cp -R .venv src-tauri/target/python-env
+	uv pip install --python src-tauri/target/python-env/bin/python --no-deps .
+
+package: build-ui bundle-python-env  ## Build and package the application (.app + .dmg)
 	rm -rf src-tauri/ui-dist
 	mkdir -p src-tauri/ui-dist/styles
 	cp src-tauri/ui/index.html src-tauri/ui/bundle.js src-tauri/ui-dist/
 	cp src-tauri/ui/styles/*.css src-tauri/ui-dist/styles/
-	cd src-tauri && npx @tauri-apps/cli build --bundles app -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"}}'
+	rm -rf src-tauri/target/release/bundle/macos/Textbrush.app
+	rm -f src-tauri/target/release/bundle/macos/Textbrush.dmg
+	rm -f src-tauri/target/release/bundle/macos/rw.*.dmg
+	rm -rf src-tauri/target/release/bundle/dmg
+	cd src-tauri && npx @tauri-apps/cli build -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"},"bundle":{"resources":["target/python-env"]}}'
 	rm -rf src-tauri/ui-dist
-	hdiutil create -volname Textbrush -srcfolder src-tauri/target/release/bundle/macos/Textbrush.app -ov -format UDZO src-tauri/target/release/bundle/macos/Textbrush.dmg
+	@echo "App bundle: src-tauri/target/release/bundle/macos/Textbrush.app"
+	@echo "DMG: $(DMG_PATH)"
 
 release: clean install package  ## Full release build (clean, install, build, package)
 	@echo "Release build completed successfully!"
-	@echo "Artifacts available in src-tauri/target/release/bundle/"
+	@echo "App bundle: src-tauri/target/release/bundle/macos/Textbrush.app"
+	@echo "DMG: $(DMG_PATH)"
 
 # ============================================================================
 # Cleanup
 # ============================================================================
 
 clean:  ## Remove build artifacts and caches
-	rm -rf dist build .pytest_cache __pycache__ .ruff_cache src-tauri/ui-dist
+	rm -rf dist build src-tauri/target .pytest_cache __pycache__ .ruff_cache src-tauri/ui-dist
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
