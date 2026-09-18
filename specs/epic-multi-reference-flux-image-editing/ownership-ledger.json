@@ -99,7 +99,8 @@
       "name": "Decode, EXIF orientation, RGB conversion, equal-axis scaling, centered padding, and the lifetime of normalized reference data bound to one acknowledged configuration",
       "owning_module": "references",
       "type": "invariant",
-      "added_by_story": null
+      "added_by_story": "S3",
+      "reviewer_findings": "F1: the per-model reference-input dimension fact is owned by inference (S5) via an InferenceEngine accessor -- NOT by model/ModelSpec and NOT by a slug-keyed table; only the code holding the pipeline can verify it (spec.md 6.2 states it as a pipeline-runtime property; spec.md 5.5 decouples it from output presets). See blocking condition S5-BC-1. F6: spec.md 6.2 BINDS alpha-composite fill and padding fill to one value ('composited onto the same documented neutral fill'); they must not be split. See concept neutral-fill-binding."
     },
     {
       "id": "cardinality-and-preset-rules",
@@ -161,6 +162,20 @@
     {
       "id": "neutral-fill-binding",
       "name": "One documented neutral fill value serves BOTH alpha compositing and padding -- spec.md sec 6.2 binds them ('composited onto the same documented neutral fill'). They must not be split into two constants by any later story.",
+      "owning_module": "references",
+      "type": "invariant",
+      "added_by_story": "S3"
+    },
+    {
+      "id": "reference-failure-taxonomy",
+      "name": "The six-member ReferenceImageError hierarchy must be EXHAUSTIVE: it is what S7's acknowledgement-time rejection path catches (AC-STATE-3, AC-RECOVERY-1), so any decode failure escaping the base class becomes an unhandled exception inside the config-update path. F4/C2 were exactly this -- Pillow's decompression-bomb warning tier escaping as a bare DecompressionBombWarning. S7 must catch ReferenceImageError, never a narrower set; no story may add a decode path that raises outside it.",
+      "owning_module": "references",
+      "type": "public_contract",
+      "added_by_story": "S3"
+    },
+    {
+      "id": "normalized-reference-mutability",
+      "name": "NormalizedReference is frozen=True, eq=False, but pixel_data is a mutable PIL.Image.Image and is deliberately NOT defensively copied -- the no-in-place-mutation rule is documentation-only. S7 holds one instance per acknowledged configuration and S5 hands it to a pipeline on every generation, so a single in-place resize silently corrupts every later generation under that configuration. S5 must copy before any pipeline that may mutate.",
       "owning_module": "references",
       "type": "invariant",
       "added_by_story": "S3"
@@ -308,10 +323,11 @@
     }
   ],
   "reviewer_state": {
-    "last_story_reviewed": "S2",
-    "model_at": "2026-09-18T11:31:54Z",
-    "cross_story_model_snapshot": "S1 complete through round 3. Ledger refs are intentionally described rather than line-anchored from here on: the round-1 line anchors all went stale when remediation moved the code, which is the wrong failure mode for the artifact later stories rehydrate from.",
+    "last_story_reviewed": "S3",
+    "model_at": "2026-09-18T15:56:20Z",
+    "cross_story_model_snapshot": "Through S3, three modules have landed: config (S1), model (S2), references (S3). The epic's recurring failure shape is now confirmed three times and should be the first thing any reviewer checks: A FACT GETS SPELLED BEFORE ITS OWNER EXISTS, THEN DRIFTS. S1 spelled the preset lexicon in config before validation; S2 inherited two model-identity vocabularies and added a third (display_name); S3 invented a per-model reference-input dimension requirement and mis-attributed its owner to S2's ModelSpec, which has no such field. Expect the next instance in S4 (cardinality numbers) and S5 (sampling defaults). Second recurring shape: ARTIFACTS DRIFT FROM CODE DURING REMEDIATION. S1's superseded line refs; S3's architecture.json seam description still describing the pre-remediation contract after its signature_decision had been corrected. When reviewing a remediation round, re-read the story's architecture.json and verification.json, not just the diff. Third: TESTS IN THIS EPIC TEND TO RESTATE PRODUCTION ARITHMETIC. S3's original property test copied _scale_and_pad's formula, clamp and all, so it could not catch the clamp's own bug; the fix was to assert spec invariants against measured pixels. Apply that lens to S4's cardinality tables and S5's sampling-default assertions. Fourth (new in S3): CROSS-VENDOR REVIEW EARNS ITS COST. After Opus reached fixpoint, a Codex pass found three further P2 defects, one of which (C2) was a regression introduced by Opus's own round-2 thread-safety fix -- a fix for one finding silently reopened another. Do not treat a single reviewer's fixpoint as convergence. Open blocking conditions entering S4: S2-BC-1 (license URL still restated at 6 sites), S5-BC-1 (reference-input-size accessor), AC-MODEL-5b (call-site cardinality, owed by S8/S9/S10). S3 status: code complete and verified, but FORMALLY OPEN -- verification examiners never ran (run stopped at user request). Resume at Step 5 bullet 3.",
     "s2_rounds": 4,
-    "review_frame_note": "Rounds 1-3 ran a contract-conformance frame and missed four adversarial-input/partial-state defects found by the cross-vendor pass. FROM S3 ONWARD: enumerate trust boundaries and externally-supplied inputs FIRST and report the list before reviewing; add partial-state enumeration for anything built incrementally, precedence analysis wherever there is a search order, and consumer-tracing for every computed value. Highest leverage on S3 (adversarial input) and S6/S7/S8 (partial state, precedence, contention)."
+    "review_frame_note": "Rounds 1-3 ran a contract-conformance frame and missed four adversarial-input/partial-state defects found by the cross-vendor pass. FROM S3 ONWARD: enumerate trust boundaries and externally-supplied inputs FIRST and report the list before reviewing; add partial-state enumeration for anything built incrementally, precedence analysis wherever there is a search order, and consumer-tracing for every computed value. Highest leverage on S3 (adversarial input) and S6/S7/S8 (partial state, precedence, contention).",
+    "s3_rounds": 3
   }
 }
