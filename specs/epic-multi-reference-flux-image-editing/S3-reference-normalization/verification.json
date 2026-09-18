@@ -1,0 +1,71 @@
+{
+  "story_id": "S3",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Do the corrupt/truncated/unreadable image fixtures under tests/fixtures/images/ actually fail to decode when opened by the real image-decoding library used in production (verified independently of the test harness), or are they merely files named e.g. 'corrupt.jpg' that a permissive decoder opens successfully -- which would let the corresponding test pass regardless of whether the error-handling code path is ever exercised?"
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `references` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does textbrush/references/ avoid importing backend, worker, or ipc (boundary rule 2, since references is a leaf shared by both composition roots), verified by an actual import-graph check of the new module rather than a manual code-review claim?"
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a parameterized property test over non-square source dimensions (not just square test images) asserting the horizontal and vertical scale factors are exactly equal (not merely 'close' within a rounding tolerance), given that a per-axis-rounded scale factor differing by a few pixels is the specific gameable failure mode named for this story?"
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "For a source image whose visible-content aspect ratio does not evenly divide the target canvas dimensions (forcing a rounding decision), does the test measure the aspect ratio of the un-padded content region specifically (not the padded output canvas), and does it assert exact equality with the source aspect ratio rather than an approximate/tolerance-based comparison?"
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Do the failure-class tests (unsupported extension, missing file, unreadable file, corrupt file, decode-resource-constrained) each independently trigger only their intended failure mode in isolation, and is the case-insensitive extension match (e.g. `.JPG`) tested against an actual file with that literal uppercase extension on disk rather than a lowercased path string constructed only in the test?"
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a parameterized test across supported EXIF orientations and multiple non-square source dimensions asserting exact equal-axis scaling, aspect-ratio preservation measured on the content region, and full content retention, with production code (not the test) performing the actual EXIF/RGB/scale transform?",
+      "ac_id": "AC-PROCESS-1"
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test proving centered-padding output is byte-identical across repeated runs of the same source+model+app-version, a test compositing an actual alpha-channel PNG onto the documented fill value with a pixel-level assertion, and a test that a resource-constrained decode raises an actionable error rather than silently producing a cropped/stretched/omitted result?",
+      "ac_id": "AC-PROCESS-2"
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "For each of unsupported-extension, missing-file, unreadable-file, corrupt-file, and decode-resource-failure, is there a test using a real fixture file exhibiting that exact failure mode (not a mocked open() call) asserting an actionable per-file error and that inference never starts, plus one uppercase-extension (.JPG) test proving case-insensitive acceptance?",
+      "ac_id": "AC-INPUT-3"
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a test assert the full NormalizedReference contract fields (pixel_data, width, height, content_aspect_ratio, fill_value, decoded_at) are all present and independently checkable on the return value of normalize(path) -- not just that pixel_data exists -- since S5 and S7 both consume this exact shape as the seam contract?",
+      "ac_id": "AC-PROCESS-1"
+    }
+  ]
+}

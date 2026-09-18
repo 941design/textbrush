@@ -1,0 +1,50 @@
+{
+  "story_id": "S10",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S10-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new Tauri file-dialog command return ONLY a path list (no other side effects, no embedded validation), keeping the path-injection seam genuinely separable from the TypeScript selection logic -- verified by a test that drives the selection logic with a supplied path list and never invokes the native dialog at all?"
+    },
+    {
+      "question_id": "VQ-S10-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `desktop-ui` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S10-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the new Tauri command/plugin genuinely thin (path list only, no validation/business logic) as scoped in stories.json's dependency_notes, with all cardinality/extension/error logic living in the TypeScript selection layer or S4's shared validation, rather than duplicated in Rust?"
+    },
+    {
+      "question_id": "VQ-S10-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are there desktop interaction tests, via the path-injection seam, for each of: rendering up to four previews with filenames, removing an individual reference, and replacing an individual reference -- as three independently assertable scenarios, not one combined smoke test that could pass on partial implementation?"
+    },
+    {
+      "question_id": "VQ-S10-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the UI genuinely refuse to present a configuration as active before backend acknowledgement -- verified by a test that fires a config-change UI action and asserts the UI still shows the PREVIOUS configuration as active until a CONFIG_ACK-equivalent event is received in the test harness, not merely that the acknowledged state is eventually correct after all async work settles?"
+    },
+    {
+      "question_id": "VQ-S10-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Are model/reference controls actually disabled (not merely styled to look disabled) until the backend's settled signal fires, verified by a test asserting an attempted interaction on a 'disabled' control produces no config-change side effect, with a negative test that a mere pause REQUEST (not yet settled) leaves controls still disabled?"
+    },
+    {
+      "question_id": "VQ-S10-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do desktop interaction tests drive the selection logic through the path-injection seam (a supplied path list, not the real native dialog) covering preview+filename rendering, individual removal, and individual replacement, with production code (not test-only helper code) performing the actual selection-state updates?",
+      "ac_id": "AC-INPUT-1"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "story_id": "S8",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S8-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does handle_update_config's pause gate actually reject a config-change attempt made outside the paused state with the existing not-paused error (verified by a test attempting the change while a generation is actively running, not just while a status flag is set with no real generation in flight), and is the rejection an ErrorEvent(message, fatal=False) rather than a raised exception, per architecture.md's stated IPC error convention?"
+    },
+    {
+      "question_id": "VQ-S8-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `ipc` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S8-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Are textbrush/ipc/protocol.py's new CONFIG_ACK message shape, src-tauri/src/commands_update_config.rs's json! payload builder, and src-tauri/ui/types.ts's TypeScript interface all updated together in this one story with field-for-field parity (per boundary rule 4), verified by comparing the three field lists rather than assuming Rust/TS mirror Python by convention alone (the existing sync mechanism is 'comment discipline only' per exploration.json)?"
+    },
+    {
+      "question_id": "VQ-S8-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a concurrency/ordering test where a resume command is issued WHILE a config update is still being applied (not after), asserting the resume takes effect only once the update's acknowledgement has been emitted -- a test that actually interleaves the two commands via the real command-serialization path, not two sequential calls with no overlap?"
+    },
+    {
+      "question_id": "VQ-S8-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a rollback test injecting a backend rejection (unreadable/corrupt/unnormalizable reference, or missing/gated/incomplete/unloadable model weights) and asserting BOTH backend state and the UI-facing acknowledgement event report the LAST acknowledged configuration, distinguishing this rejected-and-rolled-back path from the acknowledged-and-incompatible path in the same test file so the two are not accidentally conflated?"
+    },
+    {
+      "question_id": "VQ-S8-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the CONFIG_ACK event schema make compatible=false always carry both incompatibility_reason and required_model (never one without the other), verified by a test that constructs an incompatible combination and asserts both fields are non-empty on the same event object, and is resume specifically refused (with that reason, as an ErrorEvent) while the configuration remains incompatible?"
+    },
+    {
+      "question_id": "VQ-S8-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test enumerating each rejection cause (unreadable/unsupported/corrupt/unnormalizable reference; missing/gated/incomplete/unloadable model weights; off-paused attempt) asserting the last acknowledged model, references, and preset remain active in both backend state and the emitted UI event after each rejection -- and a specific negative test proving an individually-valid-but-incompatible update is NOT rejected via this path?",
+      "ac_id": "AC-STATE-3"
+    },
+    {
+      "question_id": "VQ-S8-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there an IPC integration test adding a second reference while a one-reference model (Kontext) is active, asserting the update IS acknowledged with both references retained (not rejected, not truncated to one), the acknowledgement reports the incompatibility reason and names the required model, and a subsequent resume attempt is refused with that same reason rather than generating under the stale-but-acknowledged configuration?",
+      "ac_id": "AC-STATE-4"
+    },
+    {
+      "question_id": "VQ-S8-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a test assert the full BackendStateEvent contract shape -- event_type, paused, settled, model_id, reference_count, preset, compatible, and the conditional incompatibility_reason/required_model fields -- is identical across the Python event object, the Rust json! payload sent over the sidecar, and the TypeScript type consuming it, for the same acknowledged-and-incompatible scenario?",
+      "ac_id": "AC-STATE-4"
+    }
+  ]
+}

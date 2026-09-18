@@ -1,0 +1,230 @@
+{
+  "created_at": "2026-09-18T09:10:17Z",
+  "epic": "multi-reference-flux-image-editing",
+  "language": {
+    "primary": "python",
+    "also": [
+      "typescript",
+      "rust"
+    ],
+    "package_manager": "uv (mandated by project CLAUDE.md)",
+    "python_requires": ">=3.11",
+    "lint": "ruff (line-length 100, target py311, rules E/F/I/N/W)",
+    "test": "pytest + hypothesis",
+    "commands": {
+      "fast_tests": "make test  (uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -v, then cargo check)",
+      "full_tests": "make test-all  (uv run pytest tests -v --run-slow)",
+      "e2e": "make test-e2e  (uv run pytest tests -m e2e_smoke -v)",
+      "rust_tests": "make test-rust",
+      "ui_tests": "make test-ui  (node --test *.test.js after tsc build:modules)",
+      "checks": "make check-all  (fmt-check + lint + lint-ui + clippy + typecheck-ui; runs NO tests)"
+    }
+  },
+  "prior_learnings": [
+    {
+      "id": "install-unlimited-not-fresh-global-throttle-per-test",
+      "title": "Resetting a global throttle per test is insufficient - install an unlimited one instead",
+      "tags": [
+        "hypothesis",
+        "property-testing",
+        "test-isolation",
+        "conftest",
+        "pytest",
+        "python"
+      ],
+      "confidence": "high",
+      "relevance": "This epic adds Hypothesis property tests over reference counts 1-4, orderings and dimensions. The entry's second half is the load-bearing part here: when a newly added production constraint makes tests slow, question the constraint before exempting the tests."
+    }
+  ],
+  "generation_path_end_to_end": {
+    "summary": "UI -> Rust Tauri command -> newline-delimited JSON over sidecar stdio -> Python IPCServer -> MessageHandler -> TextbrushBackend -> GenerationWorker -> InferenceEngine, and back via a delivery thread emitting IMAGE_READY.",
+    "steps": [
+      "src-tauri/ui/config_controls.ts:270 handleConfigUpdate -> invoke('update_generation_config', {...}) at :317-323",
+      "src-tauri/src/commands_update_config.rs:54-78 builds IpcMessage{msg_type,payload} and sidecar.send()",
+      "src-tauri/src/sidecar.rs:102-118 writeln!+flush under mutex; :152-175 BufReader line loop forwards as Tauri event 'sidecar-message'",
+      "textbrush/ipc/server.py:159-182 readline -> Message.from_json -> handler.handle_*",
+      "textbrush/ipc/handler.py:78 handle_init -> TextbrushBackend(config); :172-180 backend.start_generation(...)",
+      "textbrush/backend.py:68-134 builds GenerationOptions, constructs GenerationWorker at :126-133",
+      "textbrush/worker.py:298-380 _run loop; :357 result = self.engine.generate(prompt, options)  <-- single point where prompt meets model",
+      "textbrush/worker.py:359-367 wraps in BufferedImage; buffer.put(...)",
+      "textbrush/ipc/handler.py:190 _start_image_delivery -> backend.get_next_image() -> save_to_preview -> IMAGE_READY"
+    ],
+    "commands": [
+      "init",
+      "update_config",
+      "pause",
+      "skip",
+      "accept",
+      "abort",
+      "delete",
+      "status",
+      "get_image_list"
+    ],
+    "events": [
+      "state_changed",
+      "image_ready",
+      "buffer_status",
+      "accepted",
+      "aborted",
+      "delete_ack",
+      "image_list",
+      "error"
+    ]
+  },
+  "resistance_points": [
+    {
+      "rank": 1,
+      "title": "InferenceEngine.generate() has no reference-image parameter anywhere in the call chain",
+      "evidence": [
+        "textbrush/inference/base.py:99 (abstract generate(prompt, options))",
+        "textbrush/inference/base.py:45-61 (GenerationOptions has no image field)",
+        "textbrush/inference/flux.py:134",
+        "textbrush/worker.py:357",
+        "textbrush/backend.py:119-125 and :466-472",
+        "textbrush/ipc/protocol.py:48-73 (InitCommand / UpdateConfigCommand)"
+      ],
+      "impact": "Widest-reaching change in the epic. Touches the ABC, the concrete engine, the worker, the backend, and both IPC command dataclasses."
+    },
+    {
+      "rank": 2,
+      "title": "The engine is constructed once at backend __init__; there is no runtime model-swap path",
+      "evidence": [
+        "textbrush/backend.py:41-42 (self.engine = create_engine(config.inference.backend))",
+        "textbrush/config.py:57-61 (single backend string fixed at config load)"
+      ],
+      "impact": "Model selection is currently fixed for the process lifetime. The epic requires switching models mid-session, including unload/load with a reload-on-failure path (spec 8, 11)."
+    },
+    {
+      "rank": 3,
+      "title": "model/weights.py is hardcoded to one checkpoint",
+      "evidence": [
+        "textbrush/model/weights.py:44 FLUX_SCHNELL_ID",
+        ":107-130 is_flux_available",
+        ":133-147 ensure_flux_available",
+        ":150-247 download_flux_weights",
+        ":47-65 ALLOW_PATTERNS/IGNORE_PATTERNS",
+        "textbrush/ipc/handler.py:23-30 _MISSING_MODEL_MESSAGE"
+      ],
+      "impact": "Needs parameterizing by model id (a registry keyed by model), not triplicating. get_cache_info() at :76-104 is already model-agnostic and reusable. TokenRequiredError / gated-repo handling is a good pattern worth preserving verbatim."
+    },
+    {
+      "rank": 4,
+      "title": "update_config is NOT pause-gated today, and there is no config-acknowledgement event type",
+      "evidence": [
+        "textbrush/ipc/handler.py:394-555 handle_update_config applies unconditionally at :511-517",
+        "textbrush/backend.py:426-474 update_config docstring says it is safe while running",
+        "textbrush/ipc/protocol.py:20-46 MessageType has no CONFIG_ACK"
+      ],
+      "impact": "spec 5.4 requires both a pause gate and an explicit ack. Both are new machinery, not adaptations. The existing _pending_startup_config queue-and-replay (handler.py:511-533, :142-159) is the shape to generalize."
+    },
+    {
+      "rank": 5,
+      "title": "paused is emitted before the worker is quiescent; an in-flight result lands after buffer.clear()",
+      "evidence": [
+        "textbrush/ipc/handler.py handle_pause emits state_changed(paused) immediately",
+        "textbrush/worker.py _run lets the current generate() finish then buffer.put()s",
+        "textbrush/backend.py:474 update_config calls buffer.clear() synchronously"
+      ],
+      "impact": "Directly drives AC-STATE-1's settled-signal and discard requirements. Without it the first image after a reference swap was produced with the OLD references."
+    },
+    {
+      "rank": 6,
+      "title": "No file-dialog plugin or dependency exists in src-tauri",
+      "evidence": [
+        "src-tauri/Cargo.toml:13 tauri features = ['protocol-asset'] only",
+        "src-tauri/ui/package.json has no deps beyond exifreader",
+        "no dialog/FileDialog references anywhere"
+      ],
+      "impact": "Reference picking starts from zero UI precedent; needs a new Tauri plugin plus a new command. spec 5.2 requires a path-injection seam so selection logic stays testable without driving the native dialog."
+    },
+    {
+      "rank": 7,
+      "title": "Aspect ratios are duplicated in four places and the handler already validates a narrower set",
+      "evidence": [
+        "textbrush/inference/flux.py:25-32 ASPECT_RATIOS",
+        "textbrush/cli.py:17-24 SUPPORTED_RATIOS",
+        "src-tauri/ui/config_controls.ts:20-48 ASPECT_RATIO_RESOLUTIONS",
+        "src-tauri/ui/index.html:33-56 radio inputs",
+        "textbrush/ipc/handler.py:464-479 accepts only {1:1,16:9,9:16}"
+      ],
+      "impact": "Pre-existing three-way drift. The six editing presets must not become a fifth uncoordinated copy."
+    },
+    {
+      "rank": 8,
+      "title": "Provenance reaches the UI through the saved PNG file, not through IPC",
+      "evidence": [
+        "textbrush/ipc/protocol.py:144-146 ImageReadyEvent carries only index/path/display_path",
+        "src-tauri/ui/png-metadata.ts:113-126 fetchAndParsePngMetadata",
+        "src-tauri/ui/main.ts:441,492",
+        "textbrush/backend.py:224-286 _save_with_metadata writes tEXt chunks"
+      ],
+      "impact": "AC-META-1 forbids persisting reference identity in output files while AC-STATE-2 requires per-result attribution. Reference-related provenance therefore cannot use the existing on-disk channel and must be session-local."
+    },
+    {
+      "rank": 9,
+      "title": "No immutable snapshot object exists",
+      "evidence": [
+        "textbrush/worker.py:344-349 local-variable capture before generate()",
+        "textbrush/inference/base.py:45-61 GenerationOptions is a mutable dataclass",
+        "textbrush/worker.py:377 dataclasses.replace for seed advance"
+      ],
+      "impact": "spec 9's snapshot must be introduced, not extended."
+    },
+    {
+      "rank": 10,
+      "title": "cli.py is a second composition root and never imports ipc/",
+      "evidence": [
+        "textbrush/cli.py:383,594 deferred import of backend",
+        "no ipc import in cli.py"
+      ],
+      "impact": "Cardinality/preset validation must land in BOTH cli.py and ipc/handler.py. There is no shared validator module today - introducing one is a design choice this epic should make rather than duplicating."
+    }
+  ],
+  "testing": {
+    "inference_mocking": {
+      "fake_engine": "tests/mocks.py:10-72 MockInferenceEngine implements the ABC; generate(prompt, options) has NO reference parameter - this is the contract point the epic extends",
+      "fixtures": "tests/conftest.py:91-113 mock_engine / mock_engine_factory",
+      "canonical_pipeline_assertion": "tests/test_flux_inference.py:240-311 TestGeneratePipelineInvocation injects engine._pipeline = Mock() then asserts engine._pipeline.call_args.kwargs - this is the pattern for proving exact ordered references reach the pipeline",
+      "real_weights_gate": "tests/conftest.py:64-88 flux_engine_session is the ONLY real-weight fixture; used solely by tests/test_reproducibility.py which is marked slow+integration; conftest.py:35-57 auto-skips slow/integration unless --run-slow"
+    },
+    "hypothesis": "st.composite strategy factories + @given + @settings(max_examples=N); examples tests/test_flux_inference.py:18-35, one TestXxx class per invariant group",
+    "ipc_integration": "tests/test_ipc_integration.py:60-100 StdioPipe full-duplex fake; :28-57 mock_backend fixture; TestUpdateConfigCommand at tests/test_ipc_handler.py:1223-1541 asserts exact backend call kwargs and BUFFER_STATUS payloads",
+    "ui": "node --test (NOT vitest/jest) over compiled *.test.js, jsdom for DOM; keyboard events already tested via real KeyboardEvent dispatch at src-tauri/ui/main-regressions.test.js:161-224",
+    "aria_gap": "ARIA attributes exist in source (main.ts:926,959-988; config_controls.ts:372) but NO test asserts them today - AC-ACCESS-1 must establish this",
+    "e2e": "tests/e2e/test_full_workflow.py is CLI-subprocess based (subprocess.run on the textbrush binary, asserts returncode + stdout/stderr). NO Playwright or Cypress anywhere in the repo.",
+    "image_fixtures": "NONE exist. All test images are synthesized in-memory via PIL Image.new (147 occurrences). No corrupt/unreadable/truncated image cases exist at all - AC-INPUT-3 needs this built from scratch.",
+    "conventions": {
+      "docstrings": "CONTRACT style (Inputs:/Outputs:/Invariants:/Properties:/Algorithm:) for public behavioral functions - see textbrush/inference/base.py:70-131, textbrush/cli.py:34-97, :240-; Google style for small private helpers",
+      "typing": "from __future__ import annotations everywhere; modern int | None unions; dataclasses for structured data",
+      "errors": "ValueError for validation (often chained 'from e'), RuntimeError for engine/worker state. IPC-layer validation errors are NOT raised - they become ErrorEvent(message, fatal=False) dataclasses sent over the wire (protocol.py:204-208). Reference validation surfaced through IPC must follow the ErrorEvent pattern.",
+      "cli_exit_codes": "0 success; 1 runtime errors (ValueError/RuntimeError -> stderr -> sys.exit(1)); 2 argparse/mutual-exclusivity via parser.error(). Never print to stdout on error; backend.shutdown() guaranteed in finally."
+    }
+  },
+  "cross_language_seams": {
+    "transport": "newline-delimited JSON over sidecar stdin/stdout",
+    "schema_defined_three_times": [
+      "Python: textbrush/ipc/protocol.py dataclasses + MessageType enum (authoritative)",
+      "Rust: src-tauri/src/sidecar.rs:10-15 IpcMessage with UNTYPED serde_json::Value payload; each command hand-builds a json!({...}) literal",
+      "TypeScript: src-tauri/ui/types.ts hand-written interfaces, matched by convention only"
+    ],
+    "sync_mechanism": "none - comment discipline only. Adding a reference set means three coordinated manual edits with nothing enforcing they happen together.",
+    "existing_drift": "handler.py:464-467 accepts only 3 aspect ratios while cli.py and config_controls.ts define 6. MessageType.STATUS/BUFFER_STATUS/READY/PAUSED are marked DEPRECATED at protocol.py:31-39 yet still emitted."
+  },
+  "dependency_graph": {
+    "acyclic": true,
+    "violations_found": "none",
+    "edges": [
+      "ipc/handler.py -> backend, buffer, config, ipc/protocol, model/weights, paths",
+      "backend.py -> buffer, config, inference/base, inference/factory, worker",
+      "worker.py -> buffer, inference/base",
+      "inference/factory.py -> inference/base",
+      "inference/flux.py -> inference/base",
+      "cli.py -> config, paths, backend (deferred import)",
+      "leaves with no internal imports: buffer.py, config.py, paths.py, inference/base.py, model/weights.py"
+    ]
+  },
+  "boy_scout_notes": [
+    "src-tauri/src/commands_update_config.rs:1-4 header comment says the command is a stub awaiting integration into commands.rs; it is already fully wired at main.rs:90 and called from config_controls.ts:320. Stale/misleading documentation.",
+    "textbrush/ipc/protocol.py:31-39 marks four MessageType members DEPRECATED while handler.py still emits BUFFER_STATUS."
+  ]
+}

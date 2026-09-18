@@ -1,0 +1,64 @@
+{
+  "story_id": "S2",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S2-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the discovery-cause enumeration (absent / credentials missing / license access missing / incomplete / unloadable) actually distinguish these five states with independent test fixtures for each, or does 'unknown' silently become the de facto fallback for cases the implementation didn't bother to distinguish -- e.g. does a cache with a present top-level index but missing component weight files actually get classified 'incomplete' rather than falling through to 'unknown' or 'absent'?"
+    },
+    {
+      "question_id": "VQ-S2-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `model` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S2-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the new per-model registry genuinely replace textbrush/model/weights.py:44's single FLUX_SCHNELL_ID with a keyed structure (not three near-duplicate copies of is_flux_available/ensure_flux_available/download_flux_weights, each hardcoding one model id), and is get_cache_info() (weights.py:76-104) reused unmodified per the story's own scope note?"
+    },
+    {
+      "question_id": "VQ-S2-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test constructing a cache directory whose top-level index file is present but at least one declared component's weight file is missing, asserting the result is 'incomplete' rather than 'available' -- the exact gap AC-DISCOVERY-1 calls out ('a top-level marker alone is not sufficient')?"
+    },
+    {
+      "question_id": "VQ-S2-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does default-model resolution run only once, at launch, and never re-run mid-session -- is there a test that adds a second reference during an active desktop session and asserts the previously-resolved default model is NOT silently re-evaluated or swapped, only named/pre-highlighted for user action?"
+    },
+    {
+      "question_id": "VQ-S2-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "With outbound network connections refused by a fixture that blocks at the socket or transport layer (not merely a mocked HTTP client method), does loading a model that discovery reports as 'available' complete with zero network calls, and is there a call-count or connection-attempt assertion proving this -- rather than a stubbed HTTP library method that was simply never invoked by accident of test structure?"
+    },
+    {
+      "question_id": "VQ-S2-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "For each of the five discovery causes, is there a test constructing that literal on-disk cache state (not a mocked return value from a helper) and asserting the reported cause matches, with generation blocked for all five and 'unknown' reachable only when none of the five patterns match?",
+      "ac_id": "AC-DISCOVERY-1"
+    },
+    {
+      "question_id": "VQ-S2-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test proving an explicitly user-requested unavailable model blocks (with a clear message) rather than silently falling back to a different model, and separately a test enumerating the full availability-permutation table from spec.md sec 7.3 (0 / 1 / 2-4 references x FLUX.2 available/unavailable x Kontext available/unavailable) with the exact expected resolution for each cell?",
+      "ac_id": "AC-MODEL-5"
+    },
+    {
+      "question_id": "VQ-S2-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is the 'refuse all outbound connections' fixture applied at a layer that would actually fail a real network call (e.g. a socket-level block or fake DNS/connect refusal), rather than a mock of the specific HF Hub client method the current implementation happens to call -- such that the test would fail, not silently pass, if a new code path introduced an additional real network call, and is there a specific assertion that a model discovery reports as available is loaded local-only with no remote revalidation round trip?",
+      "ac_id": "AC-LOCAL-1"
+    }
+  ]
+}

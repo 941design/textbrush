@@ -1,0 +1,50 @@
+{
+  "story_id": "S9",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S9-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does CLI validation (via S4's shared ValidationVerdict) actually run and block BEFORE model load and generation start -- verified by a test asserting the model-loading function is never invoked when validation fails (a not-called assertion), not merely that the process exits with a particular code after validation already ran downstream of a load attempt?"
+    },
+    {
+      "question_id": "VQ-S9-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `cli` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S9-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does cli.py call S4's shared validation functions directly rather than reimplementing any cardinality/preset rule locally (per architecture.md's stated rationale that cli and ipc are separate composition roots and a re-implementation would become 'a fifth uncoordinated copy'), verified by confirming cli.py has no local aspect-ratio/cardinality table of its own post-change?"
+    },
+    {
+      "question_id": "VQ-S9-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a parameterized test over valid and invalid --model/--reference combinations (repeatable --reference in various orders) asserting order preservation reaching the validated request, run as actual subprocess or CLI-entrypoint invocations (matching tests/e2e/test_full_workflow.py's existing subprocess pattern) rather than calling an internal parsing function directly and skipping the exit-code path?"
+    },
+    {
+      "question_id": "VQ-S9-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Do reference/cardinality/preset validation failures exit with the EXACT SAME status code the app already uses for an empty-prompt failure -- verified by a test asserting numeric equality between the two exit codes, not merely that both are nonzero -- and is a new third exit-code convention absent from the diff?"
+    },
+    {
+      "question_id": "VQ-S9-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Do existing text-only CLI invocations without --model/--reference remain valid and unchanged, verified by re-running (or diffing against) the current tests/e2e/test_full_workflow.py suite's existing text-only cases post-change?"
+    },
+    {
+      "question_id": "VQ-S9-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a CLI test suite covering valid and invalid --model/repeatable --reference combinations asserting (a) order preservation, (b) validation runs and blocks before model load, and (c) reference/cardinality/preset failures share the empty-prompt failure's exact exit code -- exercised through the real CLI entrypoint (subprocess or equivalent), not a bypassed internal call?",
+      "ac_id": "AC-INPUT-2"
+    }
+  ]
+}

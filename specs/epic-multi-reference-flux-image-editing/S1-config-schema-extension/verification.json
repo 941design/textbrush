@@ -1,0 +1,79 @@
+{
+  "story_id": "S1",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S1-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new TOML field parsing for selected model id and default editing preset actually enforce safe fallback to current schnell behavior when absent, or does it merely default to a hardcoded string that happens to match without exercising the file->env->CLI merge precedence path? Show the merge-precedence test that proves an old config file with none of the new keys resolves identically to pre-epic behavior, not just a unit test on the dataclass default."
+    },
+    {
+      "question_id": "VQ-S1-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does textbrush/config.py remain a leaf module importing nothing internal (architecture.md boundary rule: leaves import nothing internal), and do the new fields avoid introducing a dependency on textbrush/model/weights.py's registry (S2) or textbrush/validation.py (S4) to constrain allowed model-id/preset string values at load time?"
+    },
+    {
+      "question_id": "VQ-S1-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `config` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S1-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a parameterized test loading a real pre-epic-style TOML fixture (no new keys present) through the full file->env->CLI merge and asserting the resulting Config object is field-for-field equivalent to the pre-epic Config, not just asserting the two or three new fields individually?"
+    },
+    {
+      "question_id": "VQ-S1-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the implementation actually let 'existing config files remain readable unchanged' per AC-COMPAT-1's wording -- does loading a config file that predates this epic (zero new keys) produce zero warnings/errors and a Config object requiring no migration step, verified by a fixture file resembling a pre-epic config rather than a synthetic in-memory dict?"
+    },
+    {
+      "question_id": "VQ-S1-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Are the new optional fields validated against a bounded set of legal values at config-load time, or is that validation explicitly and documentedly deferred to S4's validation module rather than silently accepting an arbitrary string that later produces an unhelpful failure downstream?"
+    },
+    {
+      "question_id": "VQ-S1-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "For an existing (pre-epic) TOML config file, a previously generated image file, and an existing text-only CLI invocation, is there a passing test showing (a) production code performs the merge without requiring the new fields, (b) the actual config-load code path is exercised end to end (not a mocked loader), and (c) the test is not a mock-spy proxy that only asserts the new-field defaults exist rather than that old behavior is preserved?",
+      "ac_id": "AC-COMPAT-1"
+    },
+    {
+      "question_id": "VQ-S1-008",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "Config.editing was given a dataclass-level default (field(default_factory=...)) rather than making it a required positional field like the other five sections, specifically so tests/conftest.py::sample_config and tests/test_inference_integration.py::create_test_config -- two out-of-scope fixtures that construct Config(...) directly without editing= -- keep working unchanged. Is this default consistent with (not a bypass of) AC-COMPAT-1's 'safe defaults' requirement, and does it match the identical default value used by get_default_config() and load_config_file()'s per-field fallback (single source of truth via _DEFAULT_EDITING_MODEL_ID / _DEFAULT_EDITING_PRESET)?",
+      "evidence_pointer": "textbrush/config.py: EditingConfig dataclass, Config.editing field definition, _DEFAULT_EDITING_MODEL_ID/_DEFAULT_EDITING_PRESET constants",
+      "answer": "NOT_APPLICABLE",
+      "stale_premise": true,
+      "examiner_note": "Retired 2026-09-18 per Decider caveat 5. The premise refers to EditingConfig.model_id, a field deleted in review round 2 when a severity-7 defect was found in it (persisting a concrete model id destroyed the 'unset' state spec 7.3 resolution requires). The design question it meant to ask - whether Config.editing's dataclass default is justified - was examined against the current code and answered YES (severity 2, confidence 0.8). Left as an open PARTIAL it would manufacture phantom debt for the next reader."
+    },
+    {
+      "question_id": "VQ-S1-009",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "tests/test_config.py::TestConfigLeafModuleBoundary asserts config.py's only internal (textbrush.*) import is textbrush.paths via AST inspection of the actual source file (not an import-time side-effect check). Does this test correctly distinguish `from textbrush import paths` (ImportFrom with module='textbrush') from a hypothetical `import textbrush.backend`, and would it actually fail if a future edit added an import of backend/worker/ipc/inference/model/validation?",
+      "evidence_pointer": "tests/test_config.py: TestConfigLeafModuleBoundary.test_config_module_has_no_forbidden_internal_imports"
+    },
+    {
+      "question_id": "VQ-S1-010",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "The chosen field names ('model_id', 'default_preset') and default values ('flux1-schnell', 'landscape-medium') are this story's own naming decision (documented in result.json), since spec.md section 5.5/7.3 does not literally name a TOML schema. Do S2 (model registry), S4 (validation), and S9 (CLI arguments) need to consume exactly these names/values, or is there a risk of a second, incompatible naming convention being introduced by a later story that never reconciles with config.py's schema?",
+      "evidence_pointer": "textbrush/config.py: EditingConfig; result.json implementation_notes",
+      "answer": "PARTIAL",
+      "severity": 4,
+      "confidence": 0.65,
+      "root_cause_category": "spec_gap",
+      "disposition": "ACCEPTED with caveats by Decider 2026-09-18. Out of S1's reach by construction: the short-slug <-> HF-repo-id mapping cannot live in config.py, a leaf that must not import model or validation. Converted to a blocking acceptance condition on S2 (see stories.json S2 blocking_conditions). Re-opens as a blocking finding against S2 if S2 closes without the mapping under a single explicit owner; must NOT be re-deferred to S9 or S10."
+    }
+  ]
+}

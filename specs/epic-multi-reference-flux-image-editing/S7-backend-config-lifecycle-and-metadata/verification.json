@@ -1,0 +1,71 @@
+{
+  "story_id": "S7",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S7-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the runtime engine-swap path genuinely unload the current engine and load the new one (verified by asserting the old engine's teardown/cleanup was invoked, not just that a new engine object was assigned to self.engine), and is there a test where the FIRST reload attempt (back to the previous engine) fails and the swap is still recoverable only if a further fallback succeeds, distinct from a test where both simply succeed on the first try?"
+    },
+    {
+      "question_id": "VQ-S7-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `backend` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S7-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does backend.py call into S3's references module and S5's inference module through their public seam contracts (normalize() and InferenceEngine.generate()) rather than reimplementing decode/normalization logic inline, keeping backend a coordinator rather than a second resource owner per architecture.md's stated rationale for the references module split?"
+    },
+    {
+      "question_id": "VQ-S7-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test that acknowledges a configuration, then modifies the underlying source file bytes on disk, then triggers a generation, asserting the generation receives the ORIGINALLY decoded reference data unchanged (proving decode-once-at-acknowledgement, not re-read-per-generation)? And a separate test that deletes the source file after acknowledgement and asserts generation still succeeds using the held decoded data?"
+    },
+    {
+      "question_id": "VQ-S7-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does the metadata test assert the PNG text-chunk key SET is exactly equal (not merely 'contains') to the current documented set, both asserted directly against the written file, and separately assert JPEG output has zero custom metadata chunks -- since exact key-set equality is the only form of this assertion that can catch an added reference-derived key?"
+    },
+    {
+      "question_id": "VQ-S7-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Is there a byte-for-byte comparison of source reference files before and after a full generation cycle (hash or byte-diff, not just an mtime/existence check), and a test asserting no reference source file is ever copied into an accepted-output directory?"
+    },
+    {
+      "question_id": "VQ-S7-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Beyond the decode-lifetime tests above, is there a test that a corrupt reference file is rejected AT ACKNOWLEDGEMENT time (not inside the generation loop on a later iteration), and cleanup tests asserting the held normalized data is released on configuration change, abort, fatal error, and shutdown -- all four release triggers independently tested?",
+      "ac_id": "AC-PROCESS-3"
+    },
+    {
+      "question_id": "VQ-S7-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Beyond the byte-comparison test above, are cleanup tests present for temporary normalized-data teardown across accept, abort, fatal error, and normal shutdown, each as an independent test scenario?",
+      "ac_id": "AC-STORAGE-1"
+    },
+    {
+      "question_id": "VQ-S7-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a metadata test read back an actual written PNG and JPEG file (not an in-memory metadata dict) and assert: the PNG text-chunk key set is exactly the current set, the recorded model field is the one actually selected for that generation (varied across at least two different models in the test), and JPEG carries no custom metadata chunks at all?",
+      "ac_id": "AC-META-1"
+    },
+    {
+      "question_id": "VQ-S7-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there an error-injection test for each of reference/compatibility/normalization/configuration error classes asserting image history is preserved and correction is possible while paused, a specific test where a model switch fails and the previous model successfully reloads (asserting the app remains usable and does not exit), and a fatal-path test asserting no accepted path is written to stdout when no model can be made active?",
+      "ac_id": "AC-RECOVERY-1"
+    }
+  ]
+}

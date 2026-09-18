@@ -1,0 +1,206 @@
+{
+  "epic": "multi-reference-flux-image-editing",
+  "concepts": [
+    {
+      "id": "wire-schema-authority",
+      "name": "The IPC wire schema (message types, command and event dataclasses) is defined once in ipc/protocol.py; Rust and TypeScript mirror it by hand",
+      "owning_module": "ipc",
+      "type": "public_contract",
+      "added_by_story": null
+    },
+    {
+      "id": "delivered-image-index",
+      "name": "Stable monotonic index and delivery-order bookkeeping for images that have left the buffer",
+      "owning_module": "ipc",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "backend-coordination",
+      "name": "Single coordinator owning the engine handle, buffer, worker, preview directory, and accept/skip/abort file semantics",
+      "owning_module": "backend",
+      "type": "public_contract",
+      "added_by_story": null
+    },
+    {
+      "id": "png-metadata-key-set",
+      "name": "The exact set of PNG tEXt keys written to generated output; closed by AC-META-1 so no reference identity can leak in",
+      "owning_module": "backend",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "generation-loop-lifecycle",
+      "name": "The generation loop and its pause/resume/stop events, including the quiescence point at which configuration may change",
+      "owning_module": "worker",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "buffered-image-provenance",
+      "name": "In-flight images and the generation metadata attached at creation time and never re-derived",
+      "owning_module": "buffer",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "engine-request-contract",
+      "name": "InferenceEngine.generate's request contract, including the ordered reference set and per-model sampling settings",
+      "owning_module": "inference",
+      "type": "public_contract",
+      "added_by_story": null
+    },
+    {
+      "id": "model-registry",
+      "name": "Per-model checkpoint identity, discovery of required local files, and the download/gating flow",
+      "owning_module": "model",
+      "type": "public_contract",
+      "added_by_story": null,
+      "reviewer_findings": [
+        "TWO MODEL-IDENTITY VOCABULARIES COEXIST and S2 must own the mapping explicitly rather than letting each consumer spell its own: (a) the short slugs fixed by stories.json#seams and used by config and the CLI - flux1-schnell / flux1-kontext-dev / flux2-klein-4b; (b) the HuggingFace repo id already hardcoded in the inference layer - black-forest-labs/FLUX.1-schnell. A third spelling introduced by the registry is the next duplicated_invariant, of the same shape as the already-triplicated aspect-ratio tables. The short-slug <-> repo-id mapping needs exactly one owner, and model-registry is it.",
+        "BINDING as of 2026-09-18 (Decider ACCEPT on S1, caveats 1-3): this is now blocking condition S2-BC-1 in stories.json, not an advisory note. The S1 waiver is BOUNDED BY STORY ORDER - it holds only while S2 is the next story implemented. If any story touching model identity (S8 IPC, S9 CLI) starts before S2 lands the registry, the waiver lapses and the mapping must be settled first."
+      ]
+    },
+    {
+      "id": "config-schema",
+      "name": "The on-disk TOML schema and the file to env to CLI merge precedence",
+      "owning_module": "config",
+      "type": "public_contract",
+      "added_by_story": "S1",
+      "reviewer_findings": [
+        "RESOLVED as of S1 round 2. Unset is representable (ModelConfig.selected_id: str | None = None) and selection lives under [model], not [editing]. Final shape: [model].selected_id (nullable, never materialized) + [editing].default_preset (editing-only fallback). S2/S9 consume this; do not re-derive."
+      ]
+    },
+    {
+      "id": "cli-contract",
+      "name": "Argument surface, validation order, and the 0/1/2 exit-code convention of the CLI composition root",
+      "owning_module": "cli",
+      "type": "public_contract",
+      "added_by_story": null
+    },
+    {
+      "id": "path-display",
+      "name": "Path constants and display formatting",
+      "owning_module": "paths",
+      "type": "naming_scheme",
+      "added_by_story": null
+    },
+    {
+      "id": "reference-normalization",
+      "name": "Decode, EXIF orientation, RGB conversion, equal-axis scaling, centered padding, and the lifetime of normalized reference data bound to one acknowledged configuration",
+      "owning_module": "references",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "cardinality-and-preset-rules",
+      "name": "Model/reference-count and preset compatibility rules, authoritative for both composition roots",
+      "owning_module": "validation",
+      "type": "validation_rule",
+      "added_by_story": null,
+      "reviewer_findings": [
+        "PARTIALLY ENCODED ELSEWHERE as of S1: the preset identifier vocabulary was first spelled in textbrush/config.py before the owning module existed. Multi-owner risk. S4 must adopt the canonical spelling now declared in architecture.md."
+      ]
+    },
+    {
+      "id": "tauri-command-surface",
+      "name": "Tauri commands and the sidecar stdio transport",
+      "owning_module": "desktop-shell",
+      "type": "public_contract",
+      "added_by_story": null
+    },
+    {
+      "id": "ui-acknowledgement-discipline",
+      "name": "The UI never presents a model, reference set, or preset as active before backend acknowledgement",
+      "owning_module": "desktop-ui",
+      "type": "invariant",
+      "added_by_story": null
+    },
+    {
+      "id": "editing-preset-lexicon",
+      "name": "The six canonical editing-preset identifiers (landscape|portrait x small|medium|large) and their exact spelling, shared by config, validation, cli, ipc and desktop-ui",
+      "owning_module": "validation",
+      "type": "naming_scheme",
+      "added_by_story": "S1",
+      "reviewer_findings": [
+        "Canonical spelling declared in architecture.md 'Preset lexicon'; config.py carries a documentary pointer naming validation (S4) as owner. OPEN: nothing structural binds S10's TypeScript until S4 defines the constant.",
+        "NOTE for a later simplifier: with the model id moved out, [editing] is now a single-key section. That is not over-structure to be cleaned up - users' config files will already carry the section, so collapsing it is a user-visible schema break."
+      ]
+    },
+    {
+      "id": "default-model-resolution",
+      "name": "When no model is chosen, the selected model is resolved from the reference count at launch only (spec 7.3), never persisted as a static default",
+      "owning_module": "validation",
+      "type": "validation_rule",
+      "added_by_story": "S1",
+      "reviewer_findings": [
+        "Schema half satisfied by S1 (nullable selected_id, no materialized default). Re-owned from `cli` to `validation` after round 2: spec 7.3 resolution runs at launch on BOTH composition roots, so an owner of `cli` alone invites S7/S8 to write a second resolver - the duplicated_invariant class this epic already demonstrates with the aspect-ratio tables. S4 must expose the resolver; cli and ipc call it, neither reimplements it."
+      ]
+    }
+  ],
+  "stories": [
+    {
+      "story_id": "S1",
+      "surfaces_touched": [
+        "textbrush/config.py :: EditingConfig(default_preset) - editing-only settings; holds NO model id",
+        "textbrush/config.py :: ModelConfig.selected_id: str | None = None - selected model, nullable, unset by default",
+        "textbrush/config.py :: Config.editing (defaulted field)",
+        "textbrush/config.py :: _insert_model_selected_id_example() - writes a commented example, never a live key",
+        "on-disk TOML schema :: [editing].default_preset; [model].selected_id (optional, never materialized)",
+        "TEXTBRUSH_* env namespace :: TEXTBRUSH_MODEL_SELECTED_ID, TEXTBRUSH_EDITING_DEFAULT_PRESET",
+        "tests/test_config.py :: _internal_imports() - relative-import-aware AST leaf-boundary detector; template for S3/S4"
+      ],
+      "findings": [
+        {
+          "category": "round_1_summary",
+          "caught_via": "direct",
+          "severity": 7,
+          "ref": "Round 1: 7 findings (1 sev-7, 2 sev-6, 2 sev-5, 1 sev-4, 2 sev-3) ALL RESOLVED in round 2. Line refs in the superseded record were pre-remediation - do not follow them."
+        },
+        {
+          "category": "doc_drift",
+          "caught_via": "direct",
+          "severity": 5,
+          "ref": "docs/configuration.md:26 - 'Complete Example' omits [editing], model.selected_id and both new env vars. Routed into S1 scope (the doc describes exactly the contract S1 changed)."
+        },
+        {
+          "category": "encoding_mismatch",
+          "caught_via": "direct",
+          "severity": 4,
+          "ref": "textbrush/config.py:205,214 - tomli_w UTF-8 output round-tripped through the locale codec; inserted line contains U+00A7"
+        },
+        {
+          "category": "weak_guard",
+          "caught_via": "direct",
+          "severity": 4,
+          "ref": "tests/test_config.py:182 - comment insertion can silently no-op; no test asserts the example is present"
+        },
+        {
+          "category": "convention_drift",
+          "caught_via": "direct",
+          "severity": 3,
+          "ref": "textbrush/config.py:265 - conditional concrete-id write contradicts architecture.md's unconditional rule"
+        },
+        {
+          "category": "weak_guard",
+          "caught_via": "direct",
+          "severity": 3,
+          "ref": "tests/test_config.py:1044 - forbidden-set match is prefix-blind; propagates to S3/S4 if copied"
+        },
+        {
+          "category": "multi_owner",
+          "caught_via": "ledger",
+          "severity": 3,
+          "ref": "default-model-resolution was owned by cli alone; both composition roots resolve at launch. Re-owned to validation."
+        }
+      ],
+      "verdict": "examiner_ready_after_round_3"
+    }
+  ],
+  "reviewer_state": {
+    "last_story_reviewed": "S1",
+    "model_at": "2026-09-18T10:02:51Z",
+    "cross_story_model_snapshot": "S1 complete through round 3. Ledger refs are intentionally described rather than line-anchored from here on: the round-1 line anchors all went stale when remediation moved the code, which is the wrong failure mode for the artifact later stories rehydrate from.",
+    "s1_disposition": "ACCEPTED with caveats 1-3 and 5 standing. Caveat 4 (Stage-2 cross-vendor review) DISCHARGED: Codex re-authenticated, stale broker restarted, review clean. S1 carries both Opus and Codex review."
+  }
+}

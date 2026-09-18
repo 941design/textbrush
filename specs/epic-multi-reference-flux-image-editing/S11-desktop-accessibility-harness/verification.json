@@ -1,0 +1,50 @@
+{
+  "story_id": "S11",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S11-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the new headless-browser harness actually render the compiled UI in a real browser engine (e.g. Playwright driving Chromium) and query the LIVE DOM/accessibility tree, or does it fall back to jsdom/node --test (the project's existing UI test mechanism) or source-level pattern matching -- either of which does not satisfy this requirement?"
+    },
+    {
+      "question_id": "VQ-S11-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `desktop-ui` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S11-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Is the desktop/Tauri bridge genuinely stubbed at the harness boundary (so no real backend process or native file dialog is required to run the accessibility suite), verified by confirming the test suite runs with the backend absent/unreachable, rather than the harness accidentally depending on a running sidecar?"
+    },
+    {
+      "question_id": "VQ-S11-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Are there separate, independently-passing assertions for: keyboard reachability of every new control (tab-order or explicit focus() plus real key-event dispatch, not a static tabindex attribute check), accessible name presence for each control (queried from the accessibility tree, not grep'd from source), and the four-preview layout at each supported window size (resize plus overflow/clip measurement, not just a CSS class name check)?"
+    },
+    {
+      "question_id": "VQ-S11-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does at least one test assert an error is presented as TEXT (queryable string content) rather than only a color/style change, and does a preview's accessible name derive from filename+position without asserting or implying identification of image content?"
+    },
+    {
+      "question_id": "VQ-S11-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Do the new accessibility tests preserve and re-verify existing focus/theme/font-size/disabled-state conventions for the new controls specifically (not just for pre-existing controls), given this story may return small fixes to S10's files where gaps are found?"
+    },
+    {
+      "question_id": "VQ-S11-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Are keyboard operability, accessible names, and text-form error presentation asserted against the REAL RENDERED interface in a headless browser with the desktop bridge stubbed (not pattern-matched against source), and is the four-preview layout asserted at each supported window size such that no control loses keyboard or pointer reachability and no preview is clipped by overflow -- with a specific negative check proving a source-grep-only approach would NOT have been accepted as satisfying this criterion?",
+      "ac_id": "AC-ACCESS-1"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "story_id": "S5",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S5-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does asserting 'pipeline invoked with resizing disabled' actually inspect the kwargs/flags passed to the mocked pipeline call (per the existing tests/test_flux_inference.py:240-311 pattern of asserting engine._pipeline.call_args.kwargs), or does it only assert generate() was called with the right prompt/references while remaining silent on whether the pipeline would internally resize the reference -- the exact gameable failure named for reference fidelity?"
+    },
+    {
+      "question_id": "VQ-S5-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `inference` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S5-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Was InferenceEngine.generate(prompt, options)'s signature extended consistently across the ABC (inference/base.py), the concrete flux.py engines, AND tests/mocks.py's MockInferenceEngine together in one change (per exploration.json's 'must move with it' note), or does MockInferenceEngine now silently diverge from the real ABC's references parameter, letting tests that use the mock pass without ever exercising reference-passing?"
+    },
+    {
+      "question_id": "VQ-S5-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a parameterized contract test over reference counts 1-4 AND multiple distinct orderings (not just ascending-index order) for FLUX.2 [klein] 4B asserting exact-once delivery in stable selection order, and a separate exactly-one-reference test for FLUX.1 Kontext [dev]?"
+    },
+    {
+      "question_id": "VQ-S5-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a regression test proving FLUX.1 schnell's existing text-to-image path is unaffected -- specifically that no editing model is loaded and the aspect-ratio option set for schnell is unchanged from its pre-epic set -- run against the actual factory/engine selection code, not a hand-written assertion of intent?"
+    },
+    {
+      "question_id": "VQ-S5-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Are each model's documented default sampling settings (e.g. num_inference_steps, guidance_scale) sourced from a per-model table rather than a single shared constant, verified by a test that would fail if a single global default were substituted for all three models?"
+    },
+    {
+      "question_id": "VQ-S5-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test asserting that, given no references and FLUX.1 schnell, no editing model is loaded and the existing aspect-ratio option set is unchanged, run end-to-end through the real text-to-image code path (not a unit test isolated from the factory)?",
+      "ac_id": "AC-MODEL-1"
+    },
+    {
+      "question_id": "VQ-S5-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a mocked-pipeline contract test asserting the exact single reference and exact prompt reach the Kontext pipeline's call arguments, that internal reference-resizing is disabled (or references are pre-sized to what the pipeline accepts unchanged, verified by asserting the exact width/height reaching the pipeline call), and that the result flows through the existing output path?",
+      "ac_id": "AC-MODEL-2"
+    },
+    {
+      "question_id": "VQ-S5-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a parameterized test over 1, 2, 3, and 4 references and multiple orderings for FLUX.2 asserting every reference is delivered exactly once in stable selection order to the pipeline call, with a test specifically proving a duplicated reference (AC-INPUT-4) is NOT collapsed to fewer pipeline-visible references?",
+      "ac_id": "AC-MODEL-3"
+    },
+    {
+      "question_id": "VQ-S5-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a contract test per model asserting the sampling settings reaching that model's pipeline call match its documented defaults, AND asserting the GenerationRequest snapshot records those exact values -- with an explicit test that a single global default value applied uniformly across all three models fails this assertion?",
+      "ac_id": "AC-MODEL-6"
+    },
+    {
+      "question_id": "VQ-S5-011",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a test assert the complete GenerationRequest contract fields (prompt, model_id, references, sampling_settings, output_width, output_height, seed, source_identity) are populated and that len(references) matches the cardinality invariant per model (0 for schnell, 1 for Kontext, 1-4 for FLUX.2), with the object provably immutable for the request's lifetime rather than silently mutable after worker/backend has forwarded it?",
+      "ac_id": "AC-MODEL-3"
+    }
+  ]
+}

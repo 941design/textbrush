@@ -1,0 +1,68 @@
+{
+  "story_id": "S1",
+  "status": "done",
+  "files_created": [],
+  "files_modified": [
+    "textbrush/config.py",
+    "tests/test_config.py",
+    "docs/configuration.md"
+  ],
+  "tests_added": {
+    "unit": 20
+  },
+  "test_counts": {
+    "baseline": 744,
+    "final": 764
+  },
+  "mocks": [],
+  "remediation_rounds": 3,
+  "modules_touched": [
+    "config"
+  ],
+  "implementation_notes": {
+    "new_toml_section": "[editing] with keys model_id and default_preset, additive to the existing [output]/[model]/[huggingface]/[inference]/[logging] sections",
+    "new_dataclass": "EditingConfig(model_id: str, default_preset: str), added as Config.editing",
+    "default_values_chosen": {
+      "model_id": "flux1-schnell (matches the flux1-schnell CLI --model value named in spec.md section 5.2/7.3 and reproduces current text-to-image behavior)",
+      "default_preset": "landscape-medium (an arbitrary but documented pick among the six editing presets in spec.md section 5.5 -- landscape/portrait x small/medium/large; the exact slug has no functional effect yet since no other module reads editing.default_preset until S4/S9 land, but the naming convention <orientation>-<tier> is offered here as the natural scheme for those stories to adopt)"
+    },
+    "env_vars_added": [
+      "TEXTBRUSH_EDITING_MODEL_ID",
+      "TEXTBRUSH_EDITING_DEFAULT_PRESET"
+    ],
+    "dataclass_default_decision": "Config.editing was given a field(default_factory=...) default (unlike the other five sections, which are positional/required) specifically so two out-of-scope test fixtures that construct Config(...) directly -- tests/conftest.py::sample_config and tests/test_inference_integration.py::create_test_config, both outside this story's files list -- continue to work unmodified. The default value is the same constant used by get_default_config() and load_config_file()'s per-field TOML fallback (_DEFAULT_EDITING_MODEL_ID / _DEFAULT_EDITING_PRESET), so there is exactly one source of truth for 'safe default' across all three entry points (direct construction, get_default_config(), file load).",
+    "deferred_validation": "config.py performs no allow-listing of editing.model_id or editing.default_preset values -- arbitrary strings load without error. Cardinality/preset validation is explicitly S4's (textbrush/validation.py) responsibility and model existence is S2's (textbrush/model/) responsibility, per architecture.md's leaf-module boundary rule. Covered by tests/test_config.py::TestConfigLeafModuleBoundary.",
+    "ac_compat_1_scope_note": "This story owns only the configuration-file half of AC-COMPAT-1 (per the task's explicit boundary note). The CLI-invocation and generated-image halves are verified by the pre-existing, untouched test suites for tests/test_cli.py, tests/e2e/test_full_workflow.py, and PNG-metadata tests continuing to pass unchanged (see Regression Prevention: 0 new failures across the full fast suite)."
+  },
+  "verification": {
+    "verification_json_pre_impl_questions": 7,
+    "verification_json_post_impl_questions": 3,
+    "all_tests_passing": true,
+    "lint": "clean",
+    "typecheck": "NO_TYPECHECK (no Python typecheck target exists in this project)",
+    "regressions": "none -- full fast suite: 61 pre-existing failures unrelated to config (tests/test_config_controls*.py, a TypeScript source-analysis suite missing its target file) unchanged in count and identity; passed count rose from 679 to 699 (the 20 new tests), consistent with baseline.json"
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "The story's own scope bullets list only two new config fields (selected model id, default editing preset), but two files entirely outside this story's declared scope (tests/conftest.py, tests/test_inference_integration.py) construct Config(...) directly without keyword defaults for any section, which would have broken the moment `editing` became a required field. Nothing in the story brief, architecture.md, or exploration.json flagged these call sites; they only surfaced from grepping for `Config(` across the tree before finalizing the dataclass shape. Making Config.editing a defaulted field (rather than positional like its five siblings) was the fix, but it required noticing the risk rather than being told about it.",
+    "surprised_by": "The pre-flight baseline test run had 61 pre-existing failures, all in a JavaScript/TypeScript source-analysis suite unrelated to this Python leaf module (missing src-tauri/ui/main.js in this checkout) -- a real gap between 'zero tolerance for baseline failures' and the practical state of this particular checkout, resolved by treating it as pre-existing/out-of-scope per the same tolerance already granted to lint/typecheck baselines.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-09-18T10:12:23Z",
+  "decider_caveats": [
+    "VQ-S1-010 (severity 4, spec_gap) accepted, not fixed: the short-slug <-> HF-repo-id mapping cannot live in config.py, a leaf that must not import model or validation. Converted to blocking condition S2-BC-1 on the next story.",
+    "Waiver is bounded by story order: it holds only while S2 is implemented next. If S8 or S9 (both touch model identity) start before S2 lands the registry, the waiver lapses.",
+    "The finding re-opens against S2, not S1, if S2 closes without a single-owner mapping. It must not be re-deferred to S9 or S10.",
+    "VQ-S1-008 retired as stale-premise rather than carried as open PARTIAL: it asked about a field deleted in round 2.",
+    "Stage-2 cross-vendor (Codex) review caveat DISCHARGED 2026-09-18: after re-authentication and a restart of the stale shared broker, Codex reviewed the working tree and reported no actionable correctness defects. S1 carries both Opus and Codex review. Note Codex could not execute tests (read-only environment) - its pass is static analysis only; the behavioral evidence is the lead's own execution and mutation testing."
+  ],
+  "review_stages": {
+    "opus": "clean at fixpoint after 3 remediation rounds",
+    "codex": "clean - no actionable correctness defects (static only; could not run tests)"
+  }
+}

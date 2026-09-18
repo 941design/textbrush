@@ -1,0 +1,50 @@
+{
+  "story_id": "S6",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S6-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does the settled/quiescence signal actually reflect the generation loop having come to rest -- verified by a test that starts a realistically-timed generation, requests pause, and asserts the settled signal is NOT yet true until generate() actually returns -- or does it merely alias the existing pause-requested flag under a new name, which is the exact live race this story must close (state_changed(paused) emitted before quiescence)?"
+    },
+    {
+      "question_id": "VQ-S6-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `worker` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S6-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does textbrush/worker.py (and the extended textbrush/buffer.py) avoid importing upward into backend or ipc (boundary rule 3), given the settled signal and discard logic could tempt a worker->backend callback rather than an event/flag the backend/ipc layers poll or subscribe to?"
+    },
+    {
+      "question_id": "VQ-S6-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a test that reproduces the exact race sequence named in exploration.json resistance point #5 -- a generation begins under configuration A, an acknowledged change to configuration B occurs (backend.py's buffer.clear() fires), and ONLY THEN does the in-flight generation under A complete -- asserting the completed A-result is discarded (never buffer.put()) rather than merely testing the discard function in isolation with pre-ordered inputs?"
+    },
+    {
+      "question_id": "VQ-S6-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test asserting a resume request arriving while the worker has not yet reached quiescence is not honored until the settled signal fires, distinguishing 'pause requested' from 'settled' as two genuinely distinct, independently observable states in the test assertions (not just two field names that always flip together)?"
+    },
+    {
+      "question_id": "VQ-S6-006",
+      "phase": "pre-impl",
+      "category": "BEST_PRACTICES",
+      "question": "Does BufferedImage's extension with model identity and session-local reference identity (buffer.py) get populated at the exact construction site (worker.py:359-367 per architecture notes) for every generation path, verified by a test that a generation started under a specific model/reference-set produces a BufferedImage carrying that identity, not a default/placeholder value?"
+    },
+    {
+      "question_id": "VQ-S6-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there an IPC-level integration test over a pause/update/resume sequence asserting (a) rejection of model/reference changes outside the paused state, (b) controls become available only on the settled signal firing (not merely on pause request), (c) a result whose generation began before an acknowledged change never reaches the buffer or review history even when it completes after the change, and (d) a resume issued mid-update is honored only after acknowledgement -- all four as one connected sequence, not four isolated unit tests that never combine ordering?",
+      "ac_id": "AC-STATE-1"
+    }
+  ]
+}

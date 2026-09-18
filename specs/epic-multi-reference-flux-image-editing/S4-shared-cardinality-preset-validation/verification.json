@@ -1,0 +1,71 @@
+{
+  "story_id": "S4",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S4-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Is the six-preset dimension mapping and the per-model cardinality rule table implemented as real data-driven logic in textbrush/validation.py, or does either cli.py or ipc/handler.py retain (or reintroduce) a locally hardcoded copy of any rule that duplicates this module -- checked by an actual search for aspect-ratio/cardinality literals outside validation.py, not an assumption?"
+    },
+    {
+      "question_id": "VQ-S4-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could `validation` be deleted and rewritten without modifying any file outside its `dependencies_allowed` list? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S4-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does textbrush/validation.py avoid importing backend, worker, or ipc, and is it actually called identically (same function, same arguments) from both textbrush/cli.py and textbrush/ipc/handler.py rather than each composition root wrapping it in root-specific logic that could diverge over time?"
+    },
+    {
+      "question_id": "VQ-S4-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Is there a single parameterized test suite (not two separately-written suites for cli and ipc) that calls the shared validation functions directly and iterates every invalid (model, reference-count) pair, and a second bidirectional preset test enumerating both directions (editing preset vs text-only model, text-only ratio vs editing-capable model)?"
+    },
+    {
+      "question_id": "VQ-S4-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a validation failure message name both the selected model AND that model's exact cardinality rule (e.g. 'flux1-kontext-dev requires exactly 1 reference', not 'invalid reference count' or a message stating only a range spanning every model), verified against the literal message string in a test?"
+    },
+    {
+      "question_id": "VQ-S4-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Does the cardinality check count occurrences (including a duplicated path passed N times) rather than distinct paths, verified by a test passing the identical file path twice into a 2-reference-capable model and asserting it is accepted as 2 occurrences, not deduplicated to 1 and then rejected as insufficient?"
+    },
+    {
+      "question_id": "VQ-S4-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a parameterized test over every invalid (model, reference-count) pair -- not just a representative subset -- asserting inference never starts and that the error names both the model and its exact rule, with a specific test asserting a range-spanning generic message (e.g. '1-4 references required') does NOT satisfy the requirement?",
+      "ac_id": "AC-MODEL-4"
+    },
+    {
+      "question_id": "VQ-S4-008",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a test for each of the six presets asserting the exact requested output dimensions, plus one atomicity test asserting a mode switch (text-to-image <-> editing) never produces an observable intermediate state pairing a model from one mode with a preset from the other?",
+      "ac_id": "AC-PRESET-1"
+    },
+    {
+      "question_id": "VQ-S4-009",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Is there a contract test passing a duplicated source path through both the desktop and CLI reference sets (or the shared code path both invoke) asserting the pipeline receives the duplicate as two distinct ordered occurrences, with no deduplication, reordering, or warning emitted?",
+      "ac_id": "AC-INPUT-4"
+    },
+    {
+      "question_id": "VQ-S4-010",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Does a test assert the full ValidationVerdict contract -- that valid=false always carries both `reason` and `rule` fields populated (never one without the other) -- and that the verdict is field-identical for the same (model_id, reference_count, preset) input regardless of whether it is invoked from the cli or ipc call site?",
+      "ac_id": "AC-MODEL-4"
+    }
+  ]
+}

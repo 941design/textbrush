@@ -1,0 +1,43 @@
+{
+  "epic_name": "multi-reference-flux-image-editing",
+  "status": "in_progress",
+  "phase": "IN_PROGRESS",
+  "created_at": "2026-09-18T09:09:43Z",
+  "updated_at": "2026-09-18T10:47:55Z",
+  "pre_existing_dirty_files": [],
+  "completed_stories": [
+    "S1"
+  ],
+  "escalated_stories": [],
+  "phase_history": [
+    {
+      "phase": "SPEC_VALIDATED",
+      "timestamp": "2026-09-18T09:09:43Z",
+      "trigger": "validation_passed"
+    },
+    {
+      "phase": "PLANNING",
+      "timestamp": "2026-09-18T09:29:11Z",
+      "trigger": "planning_complete"
+    },
+    {
+      "phase": "IN_PROGRESS",
+      "timestamp": "2026-09-18T09:29:11Z",
+      "trigger": "implementation_started"
+    }
+  ],
+  "plugin_sha": "unknown",
+  "consumer_sha": "dba13d91dda847d81bc5e501f4bb0fbd10b13396",
+  "models": {
+    "lead": "opus",
+    "examiner": "haiku",
+    "implementer": "sonnet"
+  },
+  "gate_runs": [
+    {
+      "gate_id": "spec_adversary_review",
+      "outcome": "fired_remediated"
+    }
+  ],
+  "ownership_ledger_path": "ownership-ledger.json"
+}

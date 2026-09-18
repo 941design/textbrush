@@ -1,0 +1,31 @@
+{
+  "story_id": "S1",
+  "captured_at": "2026-09-18T11:00:00Z",
+  "commit": "dba13d91dda847d81bc5e501f4bb0fbd10b13396",
+  "tests": {
+    "command": "uv run pytest tests --ignore=tests/test_buffer_stress.py -m \"not slow and not integration\" -q",
+    "status": "PRE_EXISTING_FAILURES",
+    "passed": 679,
+    "failed": 61,
+    "skipped": 4,
+    "deselected": 42,
+    "note": "All 61 pre-existing failures are in tests/test_config_controls.py and tests/test_config_controls_integration.py, which perform source-analysis of a TypeScript module (src-tauri/ui/main.js / config_controls.js) that does not exist yet in this checkout -- unrelated to textbrush/config.py (the Python config module this story owns). Not caused by, and not fixed by, this story. Recorded per the NO_TESTS-style tolerance for pre-existing, out-of-scope failures; tests/test_config.py itself was fully green at baseline (part of the 679 passed)."
+  },
+  "cargo_check": {
+    "command": "cd src-tauri && cargo check",
+    "status": "ENVIRONMENT_BLOCKED",
+    "note": "Fails in this environment with 'system library glib-2.0 was not found' (pkg-config), unrelated to any code change -- a pre-existing environment limitation (missing native dev packages for the Tauri/GTK toolchain on this Linux box), not something this Python-only story introduces or can fix."
+  },
+  "lint": {
+    "command": "uv run ruff check textbrush tests",
+    "status": "clean"
+  },
+  "format": {
+    "command": "uv run ruff format --check textbrush tests",
+    "status": "clean"
+  },
+  "typecheck": {
+    "status": "NO_TYPECHECK",
+    "note": "No mypy/pyright target exists in Makefile or pyproject.toml for the Python codebase; make check-all's typecheck step covers the TypeScript UI only (typecheck-ui)."
+  }
+}

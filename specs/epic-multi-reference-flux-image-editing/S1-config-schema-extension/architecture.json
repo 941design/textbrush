@@ -1,0 +1,21 @@
+{
+  "module_name": "config",
+  "purpose": "On-disk TOML schema and file->env->CLI merge for textbrush configuration. Extended additively with per-model selection and default-editing-preset fields so pre-epic config files keep loading unchanged.",
+  "public_api": [
+    { "name": "Config", "signature": "@dataclass Config(output: OutputConfig, model: ModelConfig, huggingface: HuggingFaceConfig, inference: InferenceConfig, logging: LoggingConfig, editing: EditingConfig)", "description": "Complete textbrush configuration; adds new `editing` section." },
+    { "name": "EditingConfig", "signature": "@dataclass EditingConfig(model_id: str, default_preset: str)", "description": "New leaf dataclass holding the selected model identifier and the default editing preset key. Both fields are additive with safe defaults matching current FLUX.1 schnell text-to-image behavior." },
+    { "name": "get_default_config", "signature": "get_default_config() -> Config", "description": "Extended to populate editing.model_id='flux1-schnell' and editing.default_preset='landscape-medium'." },
+    { "name": "create_default_config_file", "signature": "create_default_config_file(path: Path) -> None", "description": "Extended to write the new [editing] TOML section." },
+    { "name": "load_config_file", "signature": "load_config_file(path: Path) -> Config", "description": "Extended to read the optional [editing] section, falling back to defaults field-by-field when absent (backward compatible with pre-epic files)." },
+    { "name": "apply_env_overrides", "signature": "apply_env_overrides(config: Config) -> Config", "description": "Extended with TEXTBRUSH_EDITING_MODEL_ID and TEXTBRUSH_EDITING_DEFAULT_PRESET, following the existing TEXTBRUSH_SECTION_KEY convention." },
+    { "name": "load_config", "signature": "load_config(config_path: Path | None = None) -> Config", "description": "Unchanged signature and merge order (file -> env); now also merges the editing section." }
+  ],
+  "private_files": ["textbrush/config.py"],
+  "owned_data": ["on-disk TOML config schema (~/.config/textbrush/config.toml)", "TEXTBRUSH_* environment variable namespace"],
+  "dependencies_allowed": [],
+  "dependencies_forbidden": ["backend", "worker", "ipc", "inference", "model", "validation", "references"],
+  "external_ports": ["textbrush.paths (CONFIG_PATH constant, existing dependency, imported lazily inside load_config as before)"],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": ["tests/test_config.py"]
+}

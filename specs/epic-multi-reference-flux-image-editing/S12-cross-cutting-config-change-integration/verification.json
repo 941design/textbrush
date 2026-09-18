@@ -1,0 +1,50 @@
+{
+  "story_id": "S12",
+  "authored_by": "story-planner",
+  "authored_at": "2026-09-18T11:00:00Z",
+  "questions": [
+    {
+      "question_id": "VQ-S12-001",
+      "phase": "pre-impl",
+      "category": "QUALITY",
+      "question": "Does this integration suite exercise the REAL, already-implemented S5/S6/S7/S8/S10/S11 code (no mocked producers, per the FR-A7/AC-STATE-2 cross-cutting requirement), verified by confirming no test double stands in for worker, backend, ipc handler, or inference engine selection logic in these specific test files -- only the gated real-model-weights boundary (tests/conftest.py's existing --run-slow gate) may remain stubbed?"
+    },
+    {
+      "question_id": "VQ-S12-002",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Could this integration story's verification surface be deleted and rewritten without modifying any file outside its `dependencies_allowed` list (the union of its owned ACs' `Spans modules:` set)? If not, which cross-module dependencies exist and do they flow through declared seam contracts in architecture.md?"
+    },
+    {
+      "question_id": "VQ-S12-003",
+      "phase": "pre-impl",
+      "category": "ARCHITECTURE",
+      "question": "Does the story's own scope note hold in practice -- is any production gap found during this verification pass fixed in the OWNING story's files (S5-S8/S10/S11) rather than re-implemented or patched around inside this integration story's test files?"
+    },
+    {
+      "question_id": "VQ-S12-004",
+      "phase": "pre-impl",
+      "category": "TEST",
+      "question": "Does the adversarial falsification pass explicitly attempt each of the six named interleavings from architecture.md's Order-Sensitive Composition section (stale-result visibility, control-enablement window, snapshot attribution, partial reference application, decode-lifetime, resume-during-update) as six distinct, nameable test scenarios, rather than one generic 'pause/update/resume' happy-path sequence that never forces the adversarial timing?"
+    },
+    {
+      "question_id": "VQ-S12-005",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "For a sequence of pause -> valid configuration update -> resume -> generation completion -> navigation -> deletion, does every displayed result's session record retain prompt/model/seed/dimensions from the SINGLE snapshot that produced it, verified across at least two configuration changes within one session (not just before/after one change), and is there a metadata-layer assertion (reusing AC-META-1's exact-key-set check) that no reference identity leaked into persisted output?"
+    },
+    {
+      "question_id": "VQ-S12-006",
+      "phase": "pre-impl",
+      "category": "SECURITY",
+      "question": "Given the live race named in this epic (state_changed(paused) emitted before quiescence; buffer.put() after buffer.clear()), does at least one test in this suite deliberately construct that exact timing window (a generation still in flight when an acknowledged config change occurs) and assert the stale result never becomes 'the first result after the change' -- the literal wording of architecture.md's guarantee #1?"
+    },
+    {
+      "question_id": "VQ-S12-007",
+      "phase": "pre-impl",
+      "category": "SPEC",
+      "question": "Across the real, integrated S5/S6/S7/S8/S10/S11 code (no mocked producers), is there a test proving per-result provenance holds for every displayed result across pause/update/resume/generate/navigate/delete sequences, combined with a metadata assertion (per AC-META-1's exact PNG key-set check) that no reference identity is persisted -- with production code, not test scaffolding, responsible for the provenance attribution?",
+      "ac_id": "AC-STATE-2"
+    }
+  ]
+}

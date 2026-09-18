@@ -1,0 +1,789 @@
+{
+  "epic_name": "multi-reference-flux-image-editing",
+  "created_at": "2026-09-18T09:20:00Z",
+  "updated_at": "2026-09-18T10:47:55Z",
+  "total_stories": 13,
+  "dependency_notes": "Story order follows dependency correctness only (per explicit run instruction), overriding Story Design Principle 4's 'simpler first' default -- several early stories (model, references, inference) are high-complexity precisely because everything downstream gates on them. Judgment calls made in this split, for the lead to override: (1) buffer.py's BufferedImage extension (carrying model identity + session-local reference identity) has no acceptance criterion of its own -- it is plumbing for AC-STATE-1/AC-STATE-2 -- so it is scoped into S6 (worker), which is where BufferedImage instances are constructed (worker.py:359-367), rather than spun out as its own story against the `buffer` module. (2) The new Tauri file-dialog command/plugin (desktop-shell) likewise has no AC of its own: AC-INPUT-1's verification explicitly targets the path-injection seam, not the native dialog, and AC-ACCESS-1 explicitly stubs the desktop bridge. It is scoped into S10 (desktop-ui) as thin, non-independently-tested glue -- the one deliberate exception to one-module-per-story outside the FR-A7 integration story. Split it into its own `desktop-shell` story if stricter module hygiene is wanted; it would then need a placeholder AC or an explicit AC-ownership exception. (3) Per architecture.md boundary rule 4, any wire-schema shape change is a mandatory three-language coordinated edit (protocol.py + the Rust json! builder + types.ts) done by ONE story, not split three ways -- S8 (ipc) therefore also touches src-tauri/src/commands_update_config.rs and src-tauri/ui/types.ts; this is architecture-sanctioned, not a one-module-ownership violation. (4) Several ACs describe behavior implemented across more than one module but carry no 'Spans modules:' line in acceptance-criteria.md (only AC-STATE-2 does) -- meaning Mode 1 judged them single-story-ownable. AC-STATE-1/3/4, AC-RECOVERY-1, AC-MODEL-5, AC-LOCAL-1, and AC-MODEL-6 were each assigned to the module whose code is most load-bearing for the AC's core mechanism; rebalance freely without touching acceptance-criteria.md. (5) AC-STATE-2's 'Spans modules:' line names desktop UI, IPC, backend state, worker, inference, metadata -- 'metadata' and 'backend state' both map to the `backend` module (architecture.md's module map has no separate `metadata` module), and 'desktop UI' maps to both S10 and S11 since both own `desktop-ui`. cross_cutting_acs[0].spanned_by is therefore [S5, S6, S7, S8, S10, S11], and S12 depends on that full set. (6) Seam source/destination endpoints describe runtime data-flow direction (producer -> consumer); the per-story `creates_seam` flag instead marks which story is accountable for freezing the contract's shape first in build order, and the two do not always point the same way -- e.g. GenerationRequest's shape is authored in inference/base.py by S5, even though S7 (backend) is the runtime producer of concrete request instances passed through S6 (worker) to S5's engines. (7) lighter_path is false on all twelve stories: every story's file targets include at least one non-markdown/JSON/YAML/TOML/txt file (.py, .rs, or .ts), so files_code is non-empty everywhere, which alone forces lighter_path=false under the AC-STORY-2 conjunction; S12 is additionally false by the mandatory is_integration_story exclusion.",
+  "mock_resolution_plan": "No temporary mocks are introduced by this split. tests/mocks.py's MockInferenceEngine (exploration.json resistance point #1) is a permanent test fixture standing in for gated model weights, not an epic-temporary mock -- it is tracked as FIXTURE-05-001 on S5 and must be widened (not replaced) to keep implementing the extended InferenceEngine ABC. mocks-registry.json remains empty with all_resolved:true for this epic; Mode 2 introduces no entries requiring resolution.",
+  "seams": [
+    {
+      "data": "Reference-carrying, immutable generation-request snapshot passed from backend to the inference pipeline (spec.md sec 9)",
+      "contract": {
+        "type_name": "GenerationRequest",
+        "fields": [
+          {
+            "name": "prompt",
+            "type": "string"
+          },
+          {
+            "name": "model_id",
+            "type": "string (flux1-schnell | flux1-kontext-dev | flux2-klein-4b)"
+          },
+          {
+            "name": "references",
+            "type": "array<NormalizedReference>"
+          },
+          {
+            "name": "sampling_settings",
+            "type": "object (per-model documented defaults, e.g. num_inference_steps, guidance_scale)"
+          },
+          {
+            "name": "output_width",
+            "type": "integer"
+          },
+          {
+            "name": "output_height",
+            "type": "integer"
+          },
+          {
+            "name": "seed",
+            "type": "integer"
+          },
+          {
+            "name": "source_identity",
+            "type": "array<string> (session-local identifiers binding the request to selected files)"
+          }
+        ],
+        "invariants": [
+          "len(references) == 0 for flux1-schnell, == 1 for flux1-kontext-dev, and 1-4 for flux2-klein-4b",
+          "references preserve caller-supplied selection order, with a duplicated source file passed through as a distinct occurrence per AC-INPUT-4",
+          "sampling_settings equal the selected model's own documented defaults unless an existing generation setting explicitly overrides them (AC-MODEL-6)",
+          "the object is immutable for the lifetime of the request it was created for (Snapshot, spec.md sec 9)"
+        ]
+      },
+      "source": {
+        "story": "S7",
+        "artifact": "textbrush/backend.py request/snapshot construction at start_generation"
+      },
+      "intermediaries": [
+        {
+          "story": "S6",
+          "artifact": "textbrush/worker.py _run loop forwarding the snapshot to engine.generate()"
+        }
+      ],
+      "destination": {
+        "story": "S5",
+        "artifact": "textbrush/inference/base.py InferenceEngine.generate(prompt, options) and the flux1-kontext-dev / flux2-klein-4b engines"
+      }
+    },
+    {
+      "data": "Decoded, normalized reference-image data with a lifetime bound to one acknowledged configuration (spec.md sec 6, AC-PROCESS-3)",
+      "contract": {
+        "type_name": "NormalizedReference",
+        "fields": [
+          {
+            "name": "pixel_data",
+            "type": "opaque RGB buffer/tensor"
+          },
+          {
+            "name": "width",
+            "type": "integer"
+          },
+          {
+            "name": "height",
+            "type": "integer"
+          },
+          {
+            "name": "content_aspect_ratio",
+            "type": "number (visible-content region, pre-padding)"
+          },
+          {
+            "name": "fill_value",
+            "type": "string|number (documented neutral padding fill)"
+          },
+          {
+            "name": "decoded_at",
+            "type": "string (ISO 8601 acknowledgement-time decode marker)"
+          }
+        ],
+        "invariants": [
+          "content_aspect_ratio matches the source visible-content region, not the padded canvas (AC-PROCESS-1)",
+          "identical for the same source bytes, selected model, and application version (AC-PROCESS-2)",
+          "never re-derived from disk after initial decode for the lifetime of the acknowledged configuration (AC-PROCESS-3)",
+          "never produced via per-axis independent resizing; any remainder is centered padding (AC-PROCESS-2)"
+        ]
+      },
+      "source": {
+        "story": "S3",
+        "artifact": "textbrush/references/ normalize(path) -> NormalizedReference"
+      },
+      "intermediaries": [
+        {
+          "story": "S7",
+          "artifact": "textbrush/backend.py decode-at-acknowledgement lifecycle holding the normalized set"
+        }
+      ],
+      "destination": {
+        "story": "S5",
+        "artifact": "flux1-kontext-dev / flux2-klein-4b pipelines consuming NormalizedReference via GenerationRequest.references"
+      }
+    },
+    {
+      "data": "Model/reference-count/preset compatibility verdict shared by both composition roots (architecture.md validation module)",
+      "contract": {
+        "type_name": "ValidationVerdict",
+        "fields": [
+          {
+            "name": "valid",
+            "type": "boolean"
+          },
+          {
+            "name": "reason",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "required_model",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "rule",
+            "type": "string (names the exact cardinality/preset rule evaluated)",
+            "optional": true
+          }
+        ],
+        "invariants": [
+          "identical verdict for the same (model_id, reference_count, preset) input regardless of calling composition root (cli or ipc) -- AC-INPUT-2",
+          "valid=false always carries both reason and rule (AC-MODEL-4)",
+          "never silently drops, duplicates, or substitutes references or presets to make valid=true (AC-MODEL-4)"
+        ]
+      },
+      "source": {
+        "story": "S4",
+        "artifact": "textbrush/validation.py public cardinality/preset functions"
+      },
+      "intermediaries": [],
+      "destination": {
+        "story": "S9",
+        "artifact": "textbrush/cli.py argument validation, pre-model-load"
+      }
+    },
+    {
+      "data": "Model/reference-count/preset compatibility verdict shared by both composition roots (architecture.md validation module)",
+      "contract": {
+        "type_name": "ValidationVerdict",
+        "fields": [
+          {
+            "name": "valid",
+            "type": "boolean"
+          },
+          {
+            "name": "reason",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "required_model",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "rule",
+            "type": "string (names the exact cardinality/preset rule evaluated)",
+            "optional": true
+          }
+        ],
+        "invariants": [
+          "identical verdict for the same (model_id, reference_count, preset) input regardless of calling composition root (cli or ipc) -- AC-INPUT-2",
+          "valid=false always carries both reason and rule (AC-MODEL-4)",
+          "never silently drops, duplicates, or substitutes references or presets to make valid=true (AC-MODEL-4)"
+        ]
+      },
+      "source": {
+        "story": "S4",
+        "artifact": "textbrush/validation.py public cardinality/preset functions"
+      },
+      "intermediaries": [],
+      "destination": {
+        "story": "S8",
+        "artifact": "textbrush/ipc/handler.py handle_update_config validation call, pre-model-load"
+      }
+    },
+    {
+      "data": "Backend state reported to the desktop UI: pause/quiescence signal and configuration-acknowledgement outcome, crossing Python/Rust/TypeScript (architecture.md seam candidate 4)",
+      "contract": {
+        "type_name": "BackendStateEvent",
+        "fields": [
+          {
+            "name": "event_type",
+            "type": "string (state_changed | config_ack)"
+          },
+          {
+            "name": "paused",
+            "type": "boolean"
+          },
+          {
+            "name": "settled",
+            "type": "boolean (true only once the generation loop has actually come to rest)"
+          },
+          {
+            "name": "model_id",
+            "type": "string"
+          },
+          {
+            "name": "reference_count",
+            "type": "integer"
+          },
+          {
+            "name": "preset",
+            "type": "string"
+          },
+          {
+            "name": "compatible",
+            "type": "boolean"
+          },
+          {
+            "name": "incompatibility_reason",
+            "type": "string",
+            "optional": true
+          },
+          {
+            "name": "required_model",
+            "type": "string",
+            "optional": true
+          }
+        ],
+        "invariants": [
+          "emitted only after the backend has actually evaluated or applied the update, never optimistically (spec.md sec 5.4)",
+          "settled=true only once the generation loop has come to rest, never merely on a pause request (AC-STATE-1)",
+          "compatible=false always carries both incompatibility_reason and required_model (AC-STATE-4)",
+          "the wire shape is identical across textbrush/ipc/protocol.py, the Rust json! payload, and types.ts (boundary rule 4)"
+        ]
+      },
+      "source": {
+        "story": "S8",
+        "artifact": "textbrush/ipc/protocol.py + handler.py acknowledgement/state_changed events, mirrored in src-tauri/src and types.ts"
+      },
+      "intermediaries": [
+        {
+          "story": "S6",
+          "artifact": "textbrush/worker.py quiescence signal that ipc's state_changed(paused) reporting depends on"
+        }
+      ],
+      "destination": {
+        "story": "S10",
+        "artifact": "src-tauri/ui/config_controls.ts and main.ts acknowledgement/compatibility rendering"
+      }
+    }
+  ],
+  "cross_cutting_acs": [
+    {
+      "ac_id": "AC-STATE-2",
+      "spanned_by": [
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S10",
+        "S11"
+      ]
+    }
+  ],
+  "stories": [
+    {
+      "id": "S1",
+      "name": "config-schema-extension",
+      "title": "Config Schema Extension for Multi-Model Editing",
+      "description": "Extend textbrush/config.py's on-disk TOML schema and file->env->CLI merge with additive fields for per-model selection, reference-set defaults, and the editing-preset default, all with safe defaults so existing config files remain readable unchanged.",
+      "acceptance_criteria": [
+        "AC-COMPAT-1"
+      ],
+      "scope": {
+        "includes": [
+          "New optional TOML fields for selected model id and default editing preset, defaulting to current schnell behavior when absent",
+          "file->env->CLI merge precedence extended to the new fields without breaking existing precedence for current fields",
+          "Backward-compatible load of pre-epic config files with zero new required fields"
+        ],
+        "excludes": [
+          "Per-model checkpoint discovery/registry logic (S2)",
+          "CLI argument parsing for --model/--reference (S9)",
+          "Cardinality/preset validation rules themselves (S4)"
+        ]
+      },
+      "complexity": "medium",
+      "status": "done",
+      "owning_module": "config",
+      "lighter_path": false,
+      "files": [
+        "textbrush/config.py",
+        "tests/test_config.py"
+      ],
+      "notes": "Leaf module (architecture.md: 'leaves that import nothing internal'); implemented first since model, cli, and ipc all read merged config at startup."
+    },
+    {
+      "id": "S2",
+      "name": "model-registry-and-discovery",
+      "title": "Per-Model Registry, Discovery, and Default Resolution",
+      "description": "Replace the single hardcoded FLUX_SCHNELL_ID in textbrush/model/weights.py with a registry keyed by model id covering flux1-schnell, flux1-kontext-dev, and flux2-klein-4b, reporting one of the five enumerated discovery causes, enforcing local-only loading once available, and implementing the launch-time-only default-resolution algorithm of spec.md sec 7.3.",
+      "acceptance_criteria": [
+        "AC-DISCOVERY-1",
+        "AC-MODEL-5",
+        "AC-LOCAL-1"
+      ],
+      "scope": {
+        "includes": [
+          "Per-model registry replacing FLUX_SCHNELL_ID (weights.py:44) and generalizing is_flux_available/ensure_flux_available/download_flux_weights (weights.py:107-247) by model id",
+          "Discovery cause enumeration: absent, credentials missing, license access missing, incomplete, unloadable, with unknown only as a true fallback",
+          "'Required local files' check: top-level index plus every declared component's configuration and weight files -- a single marker file is insufficient",
+          "Launch-time-only default-model resolution per spec.md sec 7.3 (2-4 refs -> FLUX.2 or block; 1 ref -> FLUX.2 then Kontext or block; 0 refs -> schnell), never re-run mid-session",
+          "Local-only load path for a model discovery reports available, with no remote revalidation round trip",
+          "get_cache_info() (weights.py:76-104) reused as-is per exploration.json"
+        ],
+        "excludes": [
+          "Runtime model swap / unload-then-load / reload-on-failure mechanics (S7, backend owns the engine handle)",
+          "CLI --model argument parsing (S9)"
+        ]
+      },
+      "complexity": "high",
+      "status": "in_progress",
+      "owning_module": "model",
+      "lighter_path": false,
+      "files": [
+        "textbrush/model/weights.py",
+        "tests/test_model_weights.py"
+      ],
+      "notes": "AC-MODEL-5's UI-facing 'names and pre-highlights the recommended model' behavior is data this story's resolution function returns; S10 renders it but does not re-derive it. AC-LOCAL-1 covers this module's no-revalidation guarantee specifically; the broader locality regression (decode/generation) is exercised by tests threaded through S3/S5/S7 but owned here as the single story asserting the network-refused integration test end to end. BLOCKING CONDITION S2-BC-1 attached 2026-09-18: S2 cannot close without making the short-slug <-> repo-id mapping a single-owner responsibility. See blocking_conditions.",
+      "blocking_conditions": [
+        {
+          "id": "S2-BC-1",
+          "source": "VQ-S1-010 (S1 verification), accepted with caveats by Decider 2026-09-18",
+          "condition": "The short-slug <-> HuggingFace-repo-id mapping MUST be an explicit, single-owner responsibility of the model registry. textbrush/inference/flux.py's existing hardcoded repo id (black-forest-labs/FLUX.1-schnell) must CONSUME that mapping rather than restating it. Short slugs are flux1-schnell / flux1-kontext-dev / flux2-klein-4b, fixed by the GenerationRequest seam contract and already used by config, its tests, its env-var examples and docs/configuration.md.",
+          "rationale": "Two model-identity vocabularies already coexist with no mapping between them. This project has a demonstrated failure of exactly this shape: aspect ratios duplicated across inference/flux.py, cli.py, config_controls.ts and index.html, with ipc/handler.py validating a narrower set than the CLI and UI expose. A third spelling introduced by the registry is the next instance.",
+          "not_closeable_by": [
+            "S8",
+            "S9",
+            "S10"
+          ],
+          "on_failure": "VQ-S1-010 re-opens as a blocking finding against S2. It must not be re-deferred."
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "reference-normalization",
+      "title": "Reference Image Decode and Normalization",
+      "description": "Create the new textbrush/references/ module: read-only decode, EXIF-orientation application, RGB conversion, uniform (equal-axis) scaling, deterministic centered padding with a documented neutral fill, alpha compositing, and the full per-file failure taxonomy (unsupported extension, missing, unreadable, corrupt, decode-resource-constrained), matched case-insensitively.",
+      "acceptance_criteria": [
+        "AC-PROCESS-1",
+        "AC-PROCESS-2",
+        "AC-INPUT-3"
+      ],
+      "scope": {
+        "includes": [
+          "normalize(path) -> NormalizedReference producing the seam contract consumed by S5/S7",
+          "Deterministic behavior for identical source bytes + model id + app version, independent of available system resources",
+          "Case-insensitive extension matching (.png/.jpg/.jpeg, including IMG_1234.JPG)",
+          "New image fixtures and corrupt/truncated/unreadable-file test patterns (none exist in the repo today per exploration.json)",
+          "No facial analysis, no app-level cropping of visible content"
+        ],
+        "excludes": [
+          "Decode-once-at-acknowledgement timing and release-on-config-change/abort/shutdown lifecycle (S7, backend owns when normalize() is called and how long results are held)",
+          "Cardinality/reference-count rules (S4)"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "references",
+      "lighter_path": false,
+      "creates_seam": true,
+      "files": [
+        "textbrush/references/__init__.py",
+        "textbrush/references/normalize.py",
+        "tests/test_references.py",
+        "tests/fixtures/images/"
+      ],
+      "notes": "Leaf module (architecture.md boundary rule 2: must not import backend/worker/ipc). This is the most heavily property-tested logic in the epic per architecture.md; build fixtures here since no other story needs them earlier."
+    },
+    {
+      "id": "S4",
+      "name": "shared-cardinality-preset-validation",
+      "title": "Shared Cardinality and Preset Validation Module",
+      "description": "Create the new textbrush/validation.py leaf module holding model/reference-cardinality rules and the six-preset (landscape/portrait x small/medium/large) bidirectional compatibility rules, called identically from cli and ipc so the aspect-ratio triplication resistance point (exploration.json #7) is not joined by a fifth uncoordinated copy.",
+      "acceptance_criteria": [
+        "AC-MODEL-4",
+        "AC-PRESET-1",
+        "AC-INPUT-4"
+      ],
+      "scope": {
+        "includes": [
+          "Cardinality rules: 0 refs for flux1-schnell, exactly 1 for flux1-kontext-dev, 1-4 for flux2-klein-4b; every invalid pairing names both the selected model and its exact rule",
+          "Cardinality counts occurrences, not distinct paths (duplicate references accepted, forwarded once per occurrence, never deduplicated)",
+          "Six editing presets (4:3 and 3:4, small/medium/large) with dimension mapping; bidirectional validation (editing preset invalid for text model, text-only ratio invalid for editing model)",
+          "Single documented default editing preset, identical across desktop/CLI/headless, used only when no editing preset is explicitly chosen",
+          "ValidationVerdict seam contract definition consumed by S8 and S9"
+        ],
+        "excludes": [
+          "Atomicity of the model+reference+preset update as applied by the backend/ipc state machine (S7/S8 own applying the verdict, not computing it)",
+          "File-level decode/corruption checks (S3)"
+        ]
+      },
+      "complexity": "medium",
+      "status": "pending",
+      "owning_module": "validation",
+      "lighter_path": false,
+      "creates_seam": true,
+      "files": [
+        "textbrush/validation.py",
+        "tests/test_validation.py"
+      ],
+      "notes": "Leaf module per architecture.md ('validation' and 'references' must not import backend/worker/ipc). Existing three-way aspect-ratio drift (flux.py:25-32, cli.py:17-24, config_controls.ts:20-48, handler.py:464-479) is a boy-scout candidate but is out of this epic's scope unless the lead wants it folded in here."
+    },
+    {
+      "id": "S5",
+      "name": "inference-engine-reference-contract",
+      "title": "InferenceEngine Reference Contract, Kontext and FLUX.2 Engines",
+      "description": "Extend the InferenceEngine ABC and GenerationOptions (inference/base.py) with a references field and per-model documented sampling-default settings, then implement the FLUX.1 Kontext [dev] and FLUX.2 [klein] 4B engines in inference/flux.py, disabling or bypassing each pipeline's internal reference resizing, while proving the existing FLUX.1 schnell text-to-image path is unaffected.",
+      "acceptance_criteria": [
+        "AC-MODEL-1",
+        "AC-MODEL-2",
+        "AC-MODEL-3",
+        "AC-MODEL-6"
+      ],
+      "scope": {
+        "includes": [
+          "GenerationOptions gains a references: list[NormalizedReference] field (empty for schnell) and per-model sampling_settings, freezing the GenerationRequest seam contract",
+          "InferenceEngine.generate(prompt, options) signature extended across the ABC, flux.py, and tests/mocks.py's MockInferenceEngine together (exploration.json: 'must move with it')",
+          "New Kontext engine (exactly 1 reference) and FLUX.2 engine (1-4 references, stable selection order, exact-once delivery)",
+          "Each pipeline invoked with its internal reference resizing disabled, or handed references at dimensions it accepts unchanged",
+          "Each model's own documented default sampling settings (step count, guidance), never another model's defaults reused",
+          "Regression proof that FLUX.1 schnell's existing aspect-ratio options and behavior are unchanged"
+        ],
+        "excludes": [
+          "Reference decode/normalization itself (S3, consumed here as NormalizedReference)",
+          "Runtime model swap / unload-load-reload orchestration (S7)",
+          "Cardinality validation (S4) -- this story assumes a valid cardinality has already been enforced upstream"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "inference",
+      "lighter_path": false,
+      "creates_seam": true,
+      "consumes_seams": [
+        "NormalizedReference"
+      ],
+      "test_fixtures": [
+        {
+          "fixture_id": "FIXTURE-05-001",
+          "description": "MockInferenceEngine test double implementing the widened InferenceEngine ABC (with the new references parameter), standing in for gated real model weights across the fast unit suite",
+          "interface": "InferenceEngine",
+          "reason": "Real FLUX weights are gated and only loaded under tests/conftest.py:64-88 with --run-slow; every other test must stub engine._pipeline",
+          "permanent": true
+        }
+      ],
+      "files": [
+        "textbrush/inference/base.py",
+        "textbrush/inference/flux.py",
+        "textbrush/inference/factory.py",
+        "tests/mocks.py",
+        "tests/test_flux_inference.py"
+      ],
+      "notes": "Exploration.json resistance point #1: widest-reaching single change in the epic. This is the contract every downstream story (worker, backend, cli, ipc) must conform to; it is deliberately sequenced early despite high complexity so nothing downstream is built against a moving target."
+    },
+    {
+      "id": "S6",
+      "name": "worker-quiescence-and-discard",
+      "title": "Worker Quiescence Signal and Stale-Result Discard",
+      "description": "Fix the live race in textbrush/worker.py where the generation loop's actual settled state is not observable and an in-flight result can be buffer.put() after a configuration change has cleared the buffer: introduce a quiescence/settled signal and mark or drop results whose generation began under a superseded configuration, and extend BufferedImage (buffer.py) with the model identity and session-local reference identity needed to attribute each result.",
+      "acceptance_criteria": [
+        "AC-STATE-1"
+      ],
+      "scope": {
+        "includes": [
+          "A settled/quiescence signal distinct from 'pause requested', reflecting that the generation loop has actually come to rest",
+          "Marking each in-flight generation with the configuration snapshot (S5's GenerationRequest) it began under, so a config change during generation can be detected on completion",
+          "Discarding (never enqueuing) a result whose generation began before an acknowledged model/reference change",
+          "BufferedImage (textbrush/buffer.py) extended with model identity + session-local reference identity fields needed for per-result attribution (AC-STATE-2)",
+          "Forwarding the extended GenerationRequest through to InferenceEngine.generate() unchanged"
+        ],
+        "excludes": [
+          "The pause gate and acknowledgement event themselves, and command serialization for resume-during-update (S8, ipc)",
+          "buffer.clear() timing / config application (S7, backend)"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "worker",
+      "lighter_path": false,
+      "consumes_seams": [
+        "GenerationRequest"
+      ],
+      "files": [
+        "textbrush/worker.py",
+        "textbrush/buffer.py",
+        "tests/test_worker.py",
+        "tests/test_buffer.py"
+      ],
+      "notes": "Exploration.json resistance point #5, the live hazard architecture.md's Order-Sensitive Composition section calls out by name. buffer.py's schema extension is scoped here (see top-level dependency_notes item 1) rather than as its own story, since worker.py:359-367 is where BufferedImage instances are constructed."
+    },
+    {
+      "id": "S7",
+      "name": "backend-config-lifecycle-and-metadata",
+      "title": "Backend Config Application, Engine-Swap Recovery, Decode Lifetime, and Metadata",
+      "description": "Give textbrush/backend.py a runtime model-swap path (it currently constructs self.engine once at __init__), construct the immutable per-request GenerationRequest snapshot, decode references exactly once at acknowledgement via S3's normalize() and hold them for the acknowledged configuration's lifetime, release them on change/abort/fatal-error/shutdown, and extend PNG/JPEG metadata writing to record the actual selected model without ever persisting reference identity.",
+      "acceptance_criteria": [
+        "AC-PROCESS-3",
+        "AC-STORAGE-1",
+        "AC-META-1",
+        "AC-RECOVERY-1"
+      ],
+      "scope": {
+        "includes": [
+          "Runtime engine swap: unload current engine, load the newly selected one; on failure, attempt to reload the previous engine; fatal only if that reload also fails (spec.md sec 8/11)",
+          "GenerationRequest snapshot construction at start_generation, populated from the acknowledged model/reference/preset state (freezes S5's contract into concrete instances)",
+          "Decode-once-at-acknowledgement: call S3's normalize() only when a configuration is acknowledged, hold results for that configuration's lifetime, release on change/abort/fatal error/shutdown -- never re-read from disk mid-configuration",
+          "Source files opened read-only, never copied/renamed/relocated; byte-for-byte unchanged after a generation cycle",
+          "PNG metadata continues to record prompt/actual selected model/seed/aspect-ratio/dimensions with the same closed text-chunk key set; JPEG remains without custom metadata; neither format embeds reference paths, filenames, hashes, or source bytes",
+          "Any recoverable reference/compatibility/normalization/configuration error preserves history and allows correction while paused"
+        ],
+        "excludes": [
+          "The pause gate / acknowledgement event wire format and command serialization (S8, ipc)",
+          "Discovery cause reporting itself (S2, model) -- this story only reacts to it during swap"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "backend",
+      "lighter_path": false,
+      "creates_seam": false,
+      "consumes_seams": [
+        "NormalizedReference"
+      ],
+      "files": [
+        "textbrush/backend.py",
+        "tests/test_backend.py"
+      ],
+      "notes": "Runtime engine swap is exploration.json resistance point #2; provenance-via-file-not-IPC is resistance point #8, which is why reference identity must stay session-local and never reach _save_with_metadata (backend.py:224-286)."
+    },
+    {
+      "id": "S8",
+      "name": "ipc-pause-gate-and-acknowledgement",
+      "title": "IPC Pause Gate and Configuration Acknowledgement",
+      "description": "Make textbrush/ipc/handler.py's handle_update_config (currently unconditional, handler.py:394-555) pause-gated, add the CONFIG_ACK message type (absent from protocol.py's MessageType today), acknowledge model/reference updates independently of their combined compatibility, refuse resume while incompatible with the required-model reason, serialize commands so a resume mid-update takes effect only after acknowledgement, and roll back to the last acknowledged configuration on any rejection or failure -- mirrored across the Python wire schema, the Rust IpcMessage payload, and types.ts per boundary rule 4.",
+      "acceptance_criteria": [
+        "AC-STATE-3",
+        "AC-STATE-4"
+      ],
+      "scope": {
+        "includes": [
+          "Pause-gating model/reference changes: reject with the existing not-paused error outside the settled state",
+          "New CONFIG_ACK event carrying compatible/incompatibility_reason/required_model, generalizing the existing _pending_startup_config queue-and-replay shape (handler.py:511-533, :142-159)",
+          "Acknowledged-and-incompatible path: an individually valid update (readable reference, loadable model) is acknowledged even when the resulting combination can't generate; resume is refused with the reason while incompatible",
+          "Rejected-update rollback: unreadable/corrupt/unnormalizable reference, missing/gated/incomplete/unloadable model weights, or an off-paused attempt leaves the last acknowledged configuration active in both backend and (via the acknowledgement event) the UI",
+          "Command serialization: a resume arriving mid-update takes effect only after that update's acknowledgement",
+          "The three-language wire-schema mirror mandated by boundary rule 4: textbrush/ipc/protocol.py, src-tauri/src/commands_update_config.rs's json! builder, and src-tauri/ui/types.ts, made together in this story"
+        ],
+        "excludes": [
+          "The underlying quiescence signal itself (S6, worker) -- this story reports it, does not produce it",
+          "Compatibility rule computation (S4, validation) -- this story applies the ValidationVerdict, does not compute it"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "ipc",
+      "lighter_path": false,
+      "creates_seam": true,
+      "consumes_seams": [
+        "ValidationVerdict"
+      ],
+      "files": [
+        "textbrush/ipc/protocol.py",
+        "textbrush/ipc/handler.py",
+        "textbrush/ipc/server.py",
+        "src-tauri/src/commands_update_config.rs",
+        "src-tauri/ui/types.ts",
+        "tests/test_ipc_handler.py",
+        "tests/test_ipc_integration.py"
+      ],
+      "notes": "Exploration.json resistance point #4. IPC validation errors remain ErrorEvent(message, fatal=False) per architecture.md's implementation constraints, not raised exceptions. Also stale/misleading doc comment at src-tauri/src/commands_update_config.rs:1-4 ('stub awaiting integration') should be corrected as a boy-scout fix while this file is touched."
+    },
+    {
+      "id": "S9",
+      "name": "cli-model-and-reference-arguments",
+      "title": "CLI Model Selection and Reference Arguments",
+      "description": "Add --model and repeatable --reference to textbrush/cli.py, wire them through S4's validation before any model load or generation start, and keep every existing text-only invocation valid with its current defaults and exit codes -- cli.py is a second composition root that never imports ipc/, so these rules must be re-applied here, not assumed from the IPC path.",
+      "acceptance_criteria": [
+        "AC-INPUT-2"
+      ],
+      "scope": {
+        "includes": [
+          "--model <flux1-schnell|flux1-kontext-dev|flux2-klein-4b> and repeatable --reference <path>, preserving command-line order",
+          "Editing-preset selection extending the current dimension controls to express all six landscape/portrait presets",
+          "Validation (via S4's ValidationVerdict) before model load or generation start; reference/cardinality/preset failures exit with the same status code as the existing empty-prompt failure, not a new third convention",
+          "Headless operation follows the same model selection, validation, inference, metadata, output, and cleanup rules as interactive operation, with no graphical file chooser or UI acknowledgement required",
+          "Existing text-only invocations without --model/--reference remain valid unchanged"
+        ],
+        "excludes": [
+          "Cardinality/preset rule computation itself (S4)",
+          "Desktop file selection (S10)"
+        ]
+      },
+      "complexity": "medium",
+      "status": "pending",
+      "owning_module": "cli",
+      "lighter_path": false,
+      "consumes_seams": [
+        "ValidationVerdict"
+      ],
+      "files": [
+        "textbrush/cli.py",
+        "tests/test_cli.py",
+        "tests/e2e/test_full_workflow.py"
+      ],
+      "notes": "Exploration.json resistance point #10: cli.py drives backend directly via a deferred import and never touches ipc/, so this story cannot rely on S8's IPC-side pause-gate/acknowledgement machinery at all."
+    },
+    {
+      "id": "S10",
+      "name": "desktop-reference-picker-ui",
+      "title": "Desktop Reference Picker UI",
+      "description": "Add reference-image selection to the desktop interface: a new Tauri file-dialog command/plugin (src-tauri/src) that yields a path list only, and TypeScript selection logic (src-tauri/ui) that consumes that path list for cardinality checks, per-file validation, preview construction with filename, individual removal/replacement, and compatibility/preset messaging -- keeping the dialog and the selection logic separable per spec.md sec 5.2's path-injection seam.",
+      "acceptance_criteria": [
+        "AC-INPUT-1"
+      ],
+      "scope": {
+        "includes": [
+          "New Tauri file-dialog plugin dependency and command (none exists in src-tauri today per exploration.json) whose sole responsibility is returning a path list",
+          "Selection logic operating on a supplied path list: accepts .png/.jpg/.jpeg case-insensitively, rejects more than four, displays previews with filenames, supports individual removal and replacement, preserves selection order internally",
+          "Per-file error surfacing for unsupported/unreadable/corrupt/resource-constrained files without starting generation",
+          "Rendering the BackendStateEvent acknowledgement/compatibility contract (recommended model naming/pre-highlighting per AC-MODEL-5, incompatibility reason/required-model per AC-STATE-4) -- the frontend never presents a configuration as active before acknowledgement",
+          "Disabling model/reference controls until the backend's settled signal, never on mere pause request",
+          "Upload control availability gated on an editing-capable model being active; FLUX.1 schnell cannot generate while references are active"
+        ],
+        "excludes": [
+          "The six editing-preset dimension table/compatibility rules themselves (S4, validation) -- this story only renders and forwards choices",
+          "Keyboard/ARIA/rendered-layout verification (S11)"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "desktop-ui",
+      "lighter_path": false,
+      "consumes_seams": [
+        "BackendStateEvent"
+      ],
+      "files": [
+        "src-tauri/src/commands_reference_dialog.rs",
+        "src-tauri/src/main.rs",
+        "src-tauri/Cargo.toml",
+        "src-tauri/ui/config_controls.ts",
+        "src-tauri/ui/main.ts",
+        "src-tauri/ui/types.ts",
+        "src-tauri/ui/index.html",
+        "src-tauri/ui/integration.test.js"
+      ],
+      "notes": "Exploration.json resistance point #6 (zero prior UI precedent for file selection). The Tauri command is scoped here rather than as a separate desktop-shell story per top-level dependency_notes item 2 -- it has no independently verifiable AC of its own."
+    },
+    {
+      "id": "S11",
+      "name": "desktop-accessibility-harness",
+      "title": "Desktop Accessibility Verification Harness",
+      "description": "Adopt a headless-browser test harness (none exists today; the project's UI tests run via node --test over compiled *.test.js with jsdom, not a real renderer) with the desktop bridge stubbed, and use it to verify keyboard reachability, accessible labels, text-form error presentation, and the four-preview layout at supported window sizes for the controls S10 built -- static source inspection/pattern-matching does not satisfy this requirement.",
+      "acceptance_criteria": [
+        "AC-ACCESS-1"
+      ],
+      "scope": {
+        "includes": [
+          "New headless-browser test harness adoption (e.g. Playwright) as real scope, per exploration.json's explicit call-out, with the desktop/Tauri bridge stubbed so no backend or native dialog is required",
+          "Keyboard operability and programmatic labels for selecting/previewing/replacing/removing reference files, asserted against the rendered interface",
+          "Errors available as text, not relying on color alone; preview accessible names derived from filename+position without claiming inferred image content",
+          "Four-preview layout at supported desktop window sizes: no control loses keyboard/pointer reachability, no preview is clipped by overflow",
+          "Existing focus/theme/font-size/disabled-state conventions preserved for the new controls"
+        ],
+        "excludes": [
+          "Building the controls themselves (S10) -- this story verifies what S10 already implemented and may return small accessibility fixes to S10's files where a gap is found"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "owning_module": "desktop-ui",
+      "lighter_path": false,
+      "files": [
+        "src-tauri/ui/a11y/",
+        "package.json",
+        "src-tauri/ui/config_controls.ts",
+        "src-tauri/ui/main.ts"
+      ],
+      "notes": "Exploration.json resistance point #8 and the aria_gap testing note: ARIA attributes already exist in source (main.ts:926,959-988; config_controls.ts:372) but no test asserts them today. Deliberately sequenced after S10 (cannot verify keyboard reachability of controls that do not yet exist) and shares owning_module 'desktop-ui' with S10 -- see top-level dependency_notes item 2's sibling reasoning; flagged as a judgment call in the top-level notes rather than repeated per-story."
+    },
+    {
+      "id": "S12",
+      "name": "cross-cutting-config-change-integration",
+      "title": "Cross-Cutting Configuration-Change Integration Verification",
+      "description": "Verify, across real (already-implemented) desktop UI, IPC, backend, worker, inference, and metadata code -- no mocked producers -- the whole-flow guarantee that every displayed or persisted result's provenance is correct across arbitrary pause/update/resume/generate/navigate/delete sequences, per architecture.md's Order-Sensitive Composition section and AC-STATE-2.",
+      "acceptance_criteria": [
+        "AC-STATE-2"
+      ],
+      "scope": {
+        "includes": [
+          "End-to-end sequences of pause, valid configuration update, resume, generation completion, navigation, and deletion exercised against the real S5/S6/S7/S8/S10/S11 implementations",
+          "Assertion that every displayed result's session record retains the prompt, model, seed, and dimensions from the single snapshot that generated it",
+          "Assertion that no reference identity is persisted in session records beyond what AC-META-1 already permits in output files",
+          "Adversarial falsification pass over interleavings named in architecture.md's Order-Sensitive Composition section (stale-result visibility, control-enablement window, snapshot attribution, partial reference application, decode-lifetime, resume-during-update)"
+        ],
+        "excludes": [
+          "Any new production behavior -- this story is verification-only against the assembled whole; a real gap found here is fixed in the owning story's files, not re-implemented here"
+        ]
+      },
+      "complexity": "high",
+      "status": "pending",
+      "is_integration_story": true,
+      "lighter_path": false,
+      "files": [
+        "tests/test_state_provenance_integration.py",
+        "tests/e2e/test_config_change_flow.py"
+      ],
+      "notes": "FR-A7 integration story. Depends on the union of AC-STATE-2's spanned_by set: S5, S6, S7, S8, S10, S11 (translated from architecture.md's 'desktop UI, IPC, backend state, worker, inference, metadata' -- see top-level dependency_notes item 5). Runs last in story_order for exactly this reason. Omits owning_module by design (it spans modules rather than owning one) and is exempt from the one-module-per-story rule per Module Ownership principle 5's explicit FR-A7 carve-out."
+    },
+    {
+      "id": "S13",
+      "name": "user-documentation",
+      "title": "Desktop and CLI Documentation for Reference Editing",
+      "description": "Document the reference-editing workflow for desktop and CLI users per spec.md section 16, and write the release notes describing this as an additive editing workflow that requires FLUX.2 for two to four references.",
+      "acceptance_criteria": [
+        "AC-DOC-1"
+      ],
+      "scope": {
+        "includes": [
+          "Capability differences among FLUX.1 schnell, FLUX.1 Kontext [dev] and FLUX.2 [klein] 4B",
+          "Supported reference counts and file formats, and the six editing output presets",
+          "Worked examples for one-reference Kontext and multi-reference FLUX.2 usage, desktop and CLI",
+          "Local model storage, gated-license, credential, hardware and memory expectations",
+          "That prompt wording controls identity and reference use, with no guaranteed identity fidelity",
+          "Local-only processing and the metadata privacy policy",
+          "First-release limitations and the later face-aware-cropping direction",
+          "Release notes per spec.md section 16"
+        ],
+        "excludes": [
+          "docs/configuration.md's [editing]/[model].selected_id reference, folded into S1 where the change originated",
+          "Any behavioral code change"
+        ]
+      },
+      "complexity": "low",
+      "status": "pending",
+      "owning_module": "docs",
+      "lighter_path": false,
+      "files": [
+        "README.md",
+        "docs/",
+        "CHANGELOG.md"
+      ],
+      "notes": "Added mid-epic. The original 12-story split left spec.md section 16 (Release and Documentation Requirements) unowned, and section 16 carried no acceptance criterion, so the end-of-epic AC-closure gate would not have caught the omission either. Surfaced by the S1 round-2 review noticing docs/configuration.md drift. Placed last so it documents the shipped behavior."
+    }
+  ],
+  "story_order": [
+    "S1",
+    "S2",
+    "S3",
+    "S4",
+    "S5",
+    "S6",
+    "S7",
+    "S8",
+    "S9",
+    "S10",
+    "S11",
+    "S12",
+    "S13"
+  ]
+}

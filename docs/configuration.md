@@ -49,6 +49,11 @@ directories = [
 # Higher = smoother UI experience but more memory
 buffer_size = 8
 
+# Pin a specific model by id (e.g. "flux1-schnell", "flux1-kontext-dev",
+# "flux2-klein-4b"). Commented out and unset by default -- see the
+# `selected_id` section details below for what "unset" means.
+# selected_id = "flux1-schnell"
+
 [huggingface]
 # HuggingFace API token for model downloads
 # Alternative: set HUGGINGFACE_HUB_TOKEN environment variable
@@ -64,6 +69,12 @@ backend = "flux"
 # Default: info
 # Override with --verbose CLI flag (sets to debug)
 verbosity = "info"
+
+[editing]
+# Fallback editing preset, applied only when an editing-capable model is
+# active and no preset has been explicitly selected.
+# Default: "landscape-medium"
+default_preset = "landscape-medium"
 ```
 
 ### Section Details
@@ -98,6 +109,23 @@ verbosity = "info"
 - Default: `8`
 - Memory impact: ~2GB per image @ 1024x1024
 
+**`selected_id`** (string, optional)
+- Pins the active model by id, e.g. `"flux1-schnell"`, `"flux1-kontext-dev"`,
+  `"flux2-klein-4b"`
+- **Default: unset (absent from the file).** Unset does *not* mean "defaults
+  to schnell" or any other concrete model — it means the model is resolved
+  automatically from the number of active references at launch (spec.md
+  §7.3): zero references resolves to a text-to-image model, one to four
+  references resolves to an editing-capable model.
+- Only set this key if you want to override that automatic resolution and
+  always launch with one specific model regardless of the reference count.
+- A freshly created config file never writes this key with a concrete
+  value — at most a commented-out example is present, precisely so that
+  running textbrush for the first time never silently pins a model you
+  didn't choose.
+- Override: `TEXTBRUSH_MODEL_SELECTED_ID` environment variable, or
+  `--model <id>` on the CLI
+
 #### `[huggingface]`
 
 **`token`** (string)
@@ -125,6 +153,19 @@ verbosity = "info"
 - Override: `--verbose` (sets to `debug`)
 - Debug mode shows: model loading, hardware detection, IPC messages
 
+#### `[editing]`
+
+**`default_preset`** (string)
+- Fallback editing preset. It applies only when an editing-capable model is
+  active and no editing preset has been explicitly selected; it is never
+  used as the fallback for a text-to-image model (the text-only
+  aspect-ratio default applies there instead).
+- Choices (canonical identifiers, `<orientation>-<tier>`):
+  `"landscape-small"`, `"landscape-medium"`, `"landscape-large"`,
+  `"portrait-small"`, `"portrait-medium"`, `"portrait-large"`
+- Default: `"landscape-medium"`
+- Override: `TEXTBRUSH_EDITING_DEFAULT_PRESET` environment variable
+
 ## Environment Variables
 
 All config file options can be overridden with environment variables.
@@ -142,6 +183,11 @@ export TEXTBRUSH_OUTPUT_FORMAT="jpg"
 export TEXTBRUSH_MODEL_BUFFER_SIZE=12
 export TEXTBRUSH_MODEL_DIRECTORIES="/models/flux"
 
+# Pin a specific model, overriding automatic resolution from reference
+# count (spec.md §7.3). Leave unset to let textbrush resolve the model
+# from how many references are active.
+export TEXTBRUSH_MODEL_SELECTED_ID="flux1-kontext-dev"
+
 # HuggingFace token
 export TEXTBRUSH_HUGGINGFACE_TOKEN="hf_xxxxxxxxxxxx"
 # Or use standard HF env var
@@ -152,6 +198,10 @@ export TEXTBRUSH_INFERENCE_BACKEND="flux"
 
 # Logging
 export TEXTBRUSH_LOGGING_VERBOSITY="debug"
+
+# Editing: fallback preset used only when an editing-capable model is
+# active and no preset has been explicitly selected
+export TEXTBRUSH_EDITING_DEFAULT_PRESET="portrait-medium"
 
 # Run with overrides
 uv run textbrush --prompt "test"
