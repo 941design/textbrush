@@ -68,6 +68,10 @@ class GenerationWorker:
             self._pause_event.set()  # Set = running state
         # If start_paused=True, leave _pause_event cleared (paused state)
         self._error_queue: queue.Queue[Exception] = queue.Queue(maxsize=1)
+        self._settled_event = threading.Event()
+        if start_paused:
+            self._settled_event.set()
+        self._generation_epoch = 0
 
     def start(self) -> None:
         """Start background generation thread.
@@ -145,6 +149,7 @@ class GenerationWorker:
         """
         logger.info("Pausing generation")
         self._pause_event.clear()
+        self._settled_event.clear()
 
     def resume(self) -> None:
         """Resume paused generation.
@@ -167,6 +172,10 @@ class GenerationWorker:
         """
         logger.info("Resuming generation")
         self._pause_event.set()
+        self._settled_event.clear()
+
+    def is_settled(self) -> bool:
+        return self.is_paused() and self._settled_event.is_set()
 
     def update_config(
         self,
@@ -201,6 +210,7 @@ class GenerationWorker:
         """
         self.prompt = prompt
         self.options = options
+        self._generation_epoch += 1
         if on_generation_start is not None:
             self._on_generation_start = on_generation_start
 
@@ -334,12 +344,14 @@ class GenerationWorker:
             while not self._stop_event.is_set():
                 # Wait while paused (blocks until resumed or stopped)
                 while not self._pause_event.is_set():
+                    self._settled_event.set()
                     if self._stop_event.is_set():
                         break
                     self._pause_event.wait(timeout=0.5)
 
                 if self._stop_event.is_set():
                     break
+                self._settled_event.clear()
 
                 try:
                     # Capture prompt and options before generation starts.
@@ -347,6 +359,7 @@ class GenerationWorker:
                     # so we need to use the values that were active at generation start.
                     generation_prompt = self.prompt
                     generation_options = self.options
+                    generation_epoch = self._generation_epoch
 
                     # Notify callback before starting generation
                     if self._on_generation_start:
@@ -355,6 +368,11 @@ class GenerationWorker:
                         self._on_generation_start(current_seed, queue_position)
 
                     result = self.engine.generate(generation_prompt, generation_options)
+
+                    # A result from the configuration that was active before an
+                    # acknowledged update must never enter the cleared buffer.
+                    if generation_epoch != self._generation_epoch:
+                        continue
 
                     buffered_image = BufferedImage(
                         image=result.image,

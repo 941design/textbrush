@@ -43,6 +43,7 @@ class MessageType(str, Enum):
     STATE_CHANGED = "state_changed"
     IMAGE_LIST = "image_list"
     GET_IMAGE_LIST = "get_image_list"
+    CONFIG_ACK = "config_ack"
 
 
 @dataclass
@@ -70,6 +71,18 @@ class UpdateConfigCommand:
     aspect_ratio: str = "1:1"
     width: int | None = None
     height: int | None = None
+    model_id: str | None = None
+    references: list[str] | None = None
+    preset: str | None = None
+
+@dataclass
+class ConfigAckEvent:
+    model_id: str
+    reference_count: int
+    preset: str | None
+    compatible: bool
+    incompatibility_reason: str | None = None
+    required_model: str | None = None
 
 
 @dataclass

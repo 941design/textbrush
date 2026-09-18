@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added local multi-reference FLUX editing. It is additive to the existing
+  FLUX.1 schnell text-to-image workflow; FLUX.2 [klein] 4B is required for
+  two to four references.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

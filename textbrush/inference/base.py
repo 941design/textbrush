@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PIL import Image
 
@@ -59,6 +59,9 @@ class GenerationOptions:
     height: int = 512
     steps: int = 4
     aspect_ratio: str = "1:1"
+    references: tuple[object, ...] = ()
+    model_id: str = "flux1-schnell"
+    sampling_settings: dict[str, float | int] = field(default_factory=dict)
 
 
 class InferenceEngine(ABC):

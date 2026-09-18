@@ -6,12 +6,15 @@ Orchestrates model loading, generation workflow, and image buffer management.
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 from textbrush.buffer import BufferedImage, ImageBuffer
 from textbrush.config import Config
 from textbrush.inference.base import GenerationOptions
 from textbrush.inference.factory import create_engine
 from textbrush.worker import GenerationWorker, OnGenerationStartCallback
+from textbrush.references import normalize
+from textbrush.validation import DEFAULT_EDITING_PRESET, editing_preset_dimensions, validate_selection
 
 
 class TextbrushBackend:
@@ -39,7 +42,10 @@ class TextbrushBackend:
             - Configuration immutable: config is stored, not modified
         """
         self.config = config
-        self.engine = create_engine(config.inference.backend)
+        self.model_id = config.model.selected_id or "flux1-schnell"
+        self.engine = create_engine(config.inference.backend, self.model_id)
+        self.references: tuple = ()
+        self.preset: str | None = None
         self.buffer = ImageBuffer(max_size=config.model.buffer_size)
         self._worker: GenerationWorker | None = None
 
@@ -74,6 +80,9 @@ class TextbrushBackend:
         height: int | None = None,
         on_generation_start: OnGenerationStartCallback | None = None,
         start_paused: bool = False,
+        references: tuple | list | None = None,
+        model_id: str | None = None,
+        preset: str | None = None,
     ) -> None:
         """Begin background image generation.
 
@@ -116,12 +125,22 @@ class TextbrushBackend:
 
         self.buffer.reset_shutdown()
 
+        active_model = model_id or self.model_id
+        active_references = tuple(references) if references is not None else self.references
+        active_preset = preset or self.preset
+        verdict = validate_selection(active_model, len(active_references), active_preset)
+        if not verdict.valid:
+            raise ValueError(verdict.reason)
+        if active_preset in ("landscape-small", "landscape-medium", "landscape-large", "portrait-small", "portrait-medium", "portrait-large"):
+            width, height = editing_preset_dimensions(active_preset)
         options = GenerationOptions(
             seed=seed,
             steps=4,
             aspect_ratio=aspect_ratio,
             width=width if width is not None else 512,
             height=height if height is not None else 512,
+            references=active_references,
+            model_id=active_model,
         )
         self._worker = GenerationWorker(
             engine=self.engine,
@@ -132,6 +151,37 @@ class TextbrushBackend:
             start_paused=start_paused,
         )
         self._worker.start()
+
+    def update_editing_config(self, *, model_id: str | None = None, reference_paths: list[str] | None = None,
+                              preset: str | None = None) -> dict:
+        """Acknowledge a paused editing configuration; source files are decoded once here."""
+        if self._worker and not self._worker.is_settled():
+            raise RuntimeError("model and reference changes require a settled paused worker")
+        candidate_model = model_id or self.model_id
+        candidate_refs = self.references if reference_paths is None else tuple(normalize(Path(path)) for path in reference_paths)
+        candidate_preset = preset if preset is not None else self.preset
+        verdict = validate_selection(candidate_model, len(candidate_refs), candidate_preset)
+        # An incompatible combination is acknowledged and held intact; resume blocks it.
+        if candidate_model != getattr(self.engine, "model_id", self.model_id) and verdict.valid:
+            previous_engine = self.engine
+            try:
+                next_engine = create_engine(self.config.inference.backend, candidate_model)
+                next_engine.load()
+            except Exception:
+                # Existing loaded engine/configuration remains active on failed swap.
+                raise
+            self.engine = next_engine
+            previous_engine.unload()
+        self.model_id, self.references, self.preset = candidate_model, candidate_refs, candidate_preset
+        if self._worker and verdict.valid:
+            self._worker.engine = self.engine
+            self._worker.update_config(self._worker.prompt, replace(
+                self._worker.options, references=candidate_refs, model_id=candidate_model
+            ))
+            self.buffer.clear()
+        return {"model_id": candidate_model, "reference_count": len(candidate_refs), "preset": candidate_preset,
+                "compatible": verdict.valid, "incompatibility_reason": verdict.reason,
+                "required_model": verdict.required_model}
 
     def get_next_image(self, timeout: float | None = 30.0) -> BufferedImage | None:
         """Get next generated image (blocks if buffer empty).

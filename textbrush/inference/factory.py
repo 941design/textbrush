@@ -5,7 +5,7 @@ from __future__ import annotations
 from textbrush.inference.base import InferenceEngine
 
 
-def create_engine(backend: str) -> InferenceEngine:
+def create_engine(backend: str, model_id: str = "flux1-schnell") -> InferenceEngine:
     """Create inference engine by backend name.
 
     CONTRACT:
@@ -30,9 +30,14 @@ def create_engine(backend: str) -> InferenceEngine:
         3. If unknown: raise ValueError with helpful message
     """
     if backend == "flux":
-        from textbrush.inference.flux import FluxInferenceEngine
+        from textbrush.inference.flux import Flux2KleinInferenceEngine, FluxInferenceEngine, FluxKontextInferenceEngine
+        from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX2_KLEIN_4B
 
-        return FluxInferenceEngine()
+        if model_id == FLUX1_KONTEXT_DEV:
+            return FluxKontextInferenceEngine()
+        if model_id == FLUX2_KLEIN_4B:
+            return Flux2KleinInferenceEngine()
+        return FluxInferenceEngine(model_id=model_id)
     else:
         msg = f"Unknown inference backend: {backend}"
         raise ValueError(msg)

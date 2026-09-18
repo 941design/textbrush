@@ -11,6 +11,9 @@ from typing import List
 
 from .config import Config, load_config
 from .paths import CONFIG_PATH
+from .model.registry import FLUX1_SCHNELL, iter_model_slugs
+from .references import ReferenceImageError, normalize
+from .validation import DEFAULT_EDITING_PRESET, EDITING_PRESETS, editing_preset_dimensions, validate_selection
 
 # Supported aspect ratios with their available resolutions (smallest to largest)
 # Each ratio maps to a list of (width, height) tuples
@@ -128,6 +131,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=f"Image aspect ratio (choices: {', '.join(SUPPORTED_RATIOS.keys())})",
     )
+    parser.add_argument("--model", choices=list(iter_model_slugs()), default=None,
+                        help="Local model: flux1-schnell, flux1-kontext-dev, or flux2-klein-4b")
+    parser.add_argument("--reference", action="append", type=Path, default=[], metavar="PATH",
+                        help="Reference image (repeat up to four times; order is preserved)")
+    parser.add_argument("--preset", choices=list(EDITING_PRESETS), default=None,
+                        help="Editing output preset")
 
     parser.add_argument(
         "--format",
@@ -267,6 +276,20 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if args.seed is not None and args.seed < 0:
         raise ValueError("--seed must be non-negative")
+
+    model_id = getattr(args, "model", None) or FLUX1_SCHNELL
+    references = getattr(args, "reference", [])
+    preset = getattr(args, "preset", None)
+    verdict = validate_selection(model_id, len(references), preset)
+    if not verdict.valid:
+        raise ValueError(verdict.reason)
+    # Decode before loading any model. This also validates readability, corruption,
+    # case-insensitive extensions, and resource guards with the desktop's taxonomy.
+    for path in references:
+        try:
+            normalize(path)
+        except ReferenceImageError as exc:
+            raise ValueError(str(exc)) from exc
 
     if args.out is not None:
         # Normalize path to prevent traversal attacks
@@ -412,7 +435,7 @@ def main(argv: List[str] | None = None) -> None:
 
         # Download model dispatch — early exit before normal generation flow
         if args.download_model:
-            from .model.registry import FLUX1_SCHNELL, get_model_spec
+            from .model.registry import get_model_spec
             from .model.weights import TokenRequiredError, download_flux_weights
 
             schnell_spec = get_model_spec(FLUX1_SCHNELL)
@@ -462,6 +485,13 @@ def main(argv: List[str] | None = None) -> None:
         config_path = args.config if args.config is not None else CONFIG_PATH
         config = load_config(config_path)
         config = merge_cli_args_with_config(args, config)
+        selected_model = args.model or config.model.selected_id or FLUX1_SCHNELL
+        config.model.selected_id = selected_model
+        references = tuple(normalize(path) for path in args.reference)
+        preset = args.preset or (DEFAULT_EDITING_PRESET if references else None)
+        width = height = None
+        if preset:
+            width, height = editing_preset_dimensions(preset)
 
         # Dispatch to headless mode if flag is set
         if args.headless:
@@ -473,6 +503,11 @@ def main(argv: List[str] | None = None) -> None:
                 aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
                 auto_accept=args.auto_accept,
                 auto_abort=args.auto_abort,
+                references=references,
+                model_id=selected_model,
+                preset=preset,
+                width=width,
+                height=height,
             )
             # run_headless() calls sys.exit(), so this line is unreachable
             return
@@ -487,6 +522,7 @@ def main(argv: List[str] | None = None) -> None:
             prompt=args.prompt,
             seed=args.seed,
             aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
+            width=width, height=height, references=references, model_id=selected_model, preset=preset,
         )
 
         import time
@@ -530,6 +566,11 @@ def run_headless(
     aspect_ratio: str,
     auto_accept: bool,
     auto_abort: bool,
+    references: tuple = (),
+    model_id: str = FLUX1_SCHNELL,
+    preset: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> None:
     """Run textbrush in headless mode without GUI (for CI/testing).
 
@@ -608,6 +649,7 @@ def run_headless(
             prompt=prompt,
             seed=seed,
             aspect_ratio=aspect_ratio,
+            width=width, height=height, references=references, model_id=model_id, preset=preset,
         )
 
         if auto_abort:

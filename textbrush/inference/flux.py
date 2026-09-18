@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
-from textbrush.model.registry import FLUX1_SCHNELL, get_repo_id
+from textbrush.model.registry import FLUX1_SCHNELL, FLUX1_KONTEXT_DEV, FLUX2_KLEIN_4B, get_repo_id
 from textbrush.model.weights import load_local_only
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class FluxInferenceEngine(InferenceEngine):
         """
         return FluxInferenceEngine.ASPECT_RATIOS[aspect_ratio]
 
-    def __init__(self):
+    def __init__(self, model_id: str = FLUX1_SCHNELL):
         """Initialize FLUX engine in unloaded state.
 
         CONTRACT:
@@ -81,9 +81,23 @@ class FluxInferenceEngine(InferenceEngine):
             - Thread-safe: includes lock for serializing generate() calls
         """
         self._pipeline = None
+        self.model_id = model_id
         self._device = None
         self._dtype = None
         self._generate_lock = threading.Lock()
+
+    @property
+    def reference_input_size(self) -> tuple[int, int] | None:
+        """None means this pipeline receives the normalized image unchanged."""
+        return None
+
+    @property
+    def default_sampling_settings(self) -> dict[str, float | int]:
+        if self.model_id == FLUX1_SCHNELL:
+            return {"num_inference_steps": 4, "guidance_scale": 0.0}
+        if self.model_id == FLUX1_KONTEXT_DEV:
+            return {"num_inference_steps": 28, "guidance_scale": 2.5}
+        return {"num_inference_steps": 4, "guidance_scale": 1.0}
 
     def load(self, *, root: Path | None = None) -> None:
         """Load FLUX model into memory.
@@ -147,9 +161,14 @@ class FluxInferenceEngine(InferenceEngine):
         # local_files_only=True (AC-LOCAL-1): a model that discovery has
         # already reported as available must not trigger a remote
         # revalidation round trip on every load.
-        self._pipeline = load_local_only(
-            FluxPipeline.from_pretrained, FLUX1_SCHNELL, root=root, torch_dtype=self._dtype
-        )
+        pipeline_class = FluxPipeline
+        if self.model_id == FLUX1_KONTEXT_DEV:
+            from diffusers import FluxKontextPipeline
+            pipeline_class = FluxKontextPipeline
+        elif self.model_id == FLUX2_KLEIN_4B:
+            from diffusers import Flux2KleinPipeline
+            pipeline_class = Flux2KleinPipeline
+        self._pipeline = load_local_only(pipeline_class.from_pretrained, self.model_id, root=root, torch_dtype=self._dtype)
 
         if self._device == "cuda":
             self._pipeline.enable_model_cpu_offload()
@@ -253,13 +272,15 @@ class FluxInferenceEngine(InferenceEngine):
                 self._pipeline.scheduler._step_index = None
 
             start_time = time.perf_counter()
-            result = self._pipeline(
-                prompt=prompt,
-                width=generated_width,
-                height=generated_height,
-                num_inference_steps=options.steps,
-                generator=generator,
-            )
+            settings = self.default_sampling_settings | options.sampling_settings
+            steps = int(settings.pop("num_inference_steps", options.steps))
+            kwargs = dict(prompt=prompt, width=generated_width, height=generated_height,
+                          num_inference_steps=steps, generator=generator, **settings)
+            if options.references:
+                # Pipelines receive copies so held acknowledgement-time data remains immutable.
+                images = [reference.pixel_data.copy() for reference in options.references]
+                kwargs["image"] = images[0] if self.model_id == FLUX1_KONTEXT_DEV else images
+            result = self._pipeline(**kwargs)
             generation_time = time.perf_counter() - start_time
 
         # Apply center cropping if dimensions were rounded
@@ -275,7 +296,7 @@ class FluxInferenceEngine(InferenceEngine):
             image=image,
             seed=seed,
             generation_time=generation_time,
-            model_name=self.MODEL_ID,
+            model_name=self.model_id,
             generated_width=generated_width,
             generated_height=generated_height,
         )
@@ -346,3 +367,15 @@ class FluxInferenceEngine(InferenceEngine):
             - Reflects actual hardware in use
         """
         return self._device or ""
+
+
+class FluxKontextInferenceEngine(FluxInferenceEngine):
+    """FLUX.1 Kontext [dev] single-reference editing engine."""
+    def __init__(self) -> None:
+        super().__init__(FLUX1_KONTEXT_DEV)
+
+
+class Flux2KleinInferenceEngine(FluxInferenceEngine):
+    """FLUX.2 [klein] 4B ordered multi-reference editing engine."""
+    def __init__(self) -> None:
+        super().__init__(FLUX2_KLEIN_4B)

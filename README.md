@@ -1,5 +1,35 @@
 # Textbrush
 
+## Reference editing
+
+Textbrush can edit local images with locally installed FLUX models. `flux1-schnell`
+is text-to-image only and accepts no references. `flux1-kontext-dev` requires exactly
+one reference. `flux2-klein-4b` accepts one to four references and is required when
+you use two or more. References are local PNG, JPG, or JPEG files (including `.JPG`).
+
+Use prompt wording to say how each image should influence the result; Textbrush does
+not assign roles, crop faces, or guarantee identity fidelity. It reads and normalizes
+the files locally and does not put paths, filenames, hashes, or image bytes in output
+metadata. PNG retains the existing prompt/model/seed metadata; JPEG has no custom
+metadata.
+
+```bash
+# One reference with Kontext
+textbrush --model flux1-kontext-dev --reference portrait.jpg \
+  --preset portrait-medium --prompt "paint this person as a 1920s poster"
+
+# Ordered, equal references with FLUX.2
+textbrush --model flux2-klein-4b --reference person.png --reference palette.jpg \
+  --preset landscape-large --prompt "combine the subject and colour language"
+```
+
+Editing presets are `landscape-small` (512×384), `landscape-medium` (768×576),
+`landscape-large` (1024×768), `portrait-small` (384×512), `portrait-medium`
+(576×768), and `portrait-large` (768×1024). The editing default is
+`landscape-medium`. Models stay in local Hugging Face storage; gated FLUX.1 models
+need an accepted license and credentials, while FLUX.2 is ungated. Editing models
+need substantial GPU memory. Face-aware cropping is deliberately deferred.
+
 Text-to-image generation tool with customizable workflows and local model inference.
 
 ## Features
