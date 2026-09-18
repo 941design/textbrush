@@ -59,6 +59,30 @@
       "category": "SPEC",
       "question": "Is the 'refuse all outbound connections' fixture applied at a layer that would actually fail a real network call (e.g. a socket-level block or fake DNS/connect refusal), rather than a mock of the specific HF Hub client method the current implementation happens to call -- such that the test would fail, not silently pass, if a new code path introduced an additional real network call, and is there a specific assertion that a model discovery reports as available is loaded local-only with no remote revalidation round trip?",
       "ac_id": "AC-LOCAL-1"
+    },
+    {
+      "question_id": "VQ-S2-010",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "textbrush/model/weights.py preserves `download_flux_weights()` as a standalone, non-delegating implementation alongside the new generic `download_model_weights(model_id, ...)`, specifically so tests/test_weights.py's existing `patch(\"textbrush.model.weights.is_flux_available\", ...)`/`patch(\"...snapshot_download\", ...)` calls keep intercepting it (see the docstring on download_flux_weights for the stated rationale). Is this justified as a deliberate, documented, minimal-diff exception for one legacy caller, or does it constitute exactly the 'near-duplicate copy' VQ-S2-003 was meant to rule out -- and should a follow-up story (when handler.py/cli.py are next touched) retire download_flux_weights in favor of download_model_weights(FLUX1_SCHNELL, ...) once nothing depends on the legacy patch target?"
+    },
+    {
+      "question_id": "VQ-S2-011",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "question": "check_model_availability() classifies 'credentials_missing' vs 'license_access_missing' using ModelSpec.gated -- a static, hand-authored fact per model (schnell=False, kontext-dev=True, klein-4b=True) -- combined with whether HF_TOKEN is set, entirely without a network round trip (by design, to keep discovery local-only). Is this heuristic's accuracy (i.e., that the registry's `gated` flag genuinely matches each repo's real HuggingFace gating status) something a later story should verify against the actual Hub state at least once, and where should that verification live given `model`'s discovery path is deliberately network-free?"
+    },
+    {
+      "question_id": "VQ-S2-012",
+      "phase": "post-impl",
+      "category": "TEST",
+      "question": "The DiscoveryCause.UNKNOWN test (test_unknown_is_a_true_fallback_reached_only_when_inspection_itself_fails) reaches that branch by monkeypatching pathlib.Path.glob to raise OSError -- a simulated fault, not a naturally-occurring one (e.g. a real permission-denied directory). Is a monkeypatch-induced fault sufficient evidence that the UNKNOWN branch is reachable in practice, or should a future hardening pass add a real-filesystem-fault variant (e.g. an unreadable directory via chmod, skipped where the test runner lacks permission to construct one) to rule out the monkeypatch masking a code path that a real OSError wouldn't actually take?"
+    },
+    {
+      "question_id": "VQ-S2-013",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "question": "MODEL_REGISTRY's repo_id for flux2-klein-4b (\"black-forest-labs/FLUX.2-klein-4B\") and its full component layout are this story's best-effort, internally-consistent placeholders (no real HuggingFace repository was queried; the model is a hypothetical target of this project's spec, not a verifiable public checkpoint at implementation time). Should S5 (inference engine) or S9 (CLI) revalidate this exact repo id string against BFL's actual published identifier before the FLUX.2 download/load path ships, given a mismatch here would silently make every flux2-klein-4b availability check report 'absent' against a real cache populated under the true repo id?"
     }
   ]
 }

@@ -55,10 +55,19 @@
       "name": "Per-model checkpoint identity, discovery of required local files, and the download/gating flow",
       "owning_module": "model",
       "type": "public_contract",
-      "added_by_story": null,
+      "added_by_story": "S2",
       "reviewer_findings": [
         "TWO MODEL-IDENTITY VOCABULARIES COEXIST and S2 must own the mapping explicitly rather than letting each consumer spell its own: (a) the short slugs fixed by stories.json#seams and used by config and the CLI - flux1-schnell / flux1-kontext-dev / flux2-klein-4b; (b) the HuggingFace repo id already hardcoded in the inference layer - black-forest-labs/FLUX.1-schnell. A third spelling introduced by the registry is the next duplicated_invariant, of the same shape as the already-triplicated aspect-ratio tables. The short-slug <-> repo-id mapping needs exactly one owner, and model-registry is it.",
-        "BINDING as of 2026-09-18 (Decider ACCEPT on S1, caveats 1-3): this is now blocking condition S2-BC-1 in stories.json, not an advisory note. The S1 waiver is BOUNDED BY STORY ORDER - it holds only while S2 is the next story implemented. If any story touching model identity (S8 IPC, S9 CLI) starts before S2 lands the registry, the waiver lapses and the mapping must be settled first."
+        "BINDING as of 2026-09-18 (Decider ACCEPT on S1, caveats 1-3): this is now blocking condition S2-BC-1 in stories.json, not an advisory note. The S1 waiver is BOUNDED BY STORY ORDER - it holds only while S2 is the next story implemented. If any story touching model identity (S8 IPC, S9 CLI) starts before S2 lands the registry, the waiver lapses and the mapping must be settled first.",
+        "S2 landed the registry. S2-BC-1 PARTIALLY satisfied: slug<->repo-id has a single owner and inference/flux.py consumes it, but the repo id is still restated as an embedded license URL in 6 production sites and ModelSpec has no license_url field. CONDITION REMAINS OPEN.",
+        "A THIRD identity vocabulary exists and is correctly owned here: ModelSpec.display_name. Two legacy sites restate it with different casing ('FLUX.1 Schnell' vs the registry's 'FLUX.1 schnell'). Consumers must call get_model_spec(slug).display_name.",
+        "COMPONENT LAYOUT WAS ASSERTED, NOT DISCOVERED, AND WAS WRONG. _STANDARD_FLUX_COMPONENTS is one static 7-entry list applied to all three models; model_index.json is never parsed. VERIFIED AGAINST THE HUB 2026-09-18: flux2-klein-4b has only FIVE components (scheduler, text_encoder, tokenizer, transformer, vae) - it has NO text_encoder_2 and NO tokenizer_2. FLUX.2 would therefore have reported INCOMPLETE permanently, making the epic's headline feature unusable, and no test could detect it because tests/model_fixtures.py builds snapshots FROM spec.components.",
+        "GATED FLAGS WERE WRONG FOR TWO OF THREE MODELS. Verified against the Hub 2026-09-18: flux1-schnell is gated ('auto' = gated with automatic approval, still requires an accepted licence and an authenticated request) but the registry marked it gated=False; flux2-klein-4b is NOT gated but the registry marked it gated=True. flux1-kontext-dev (gated auto -> True) was correct.",
+        "REPO IDS VERIFIED CORRECT against the Hub 2026-09-18: all three return HTTP 200 on the public metadata endpoint. The reviewer's severity-4 inference that a typo would be indistinguishable from a licence problem is CLOSED as not-a-defect, though the diagnostic dead end it described is real and is fixed by the ABSENT/LICENSE_ACCESS_MISSING correction.",
+        "CROSS-VENDOR (Codex) FOUND FOUR DEFECTS OPUS MISSED across 3 rounds, all lead-verified: (1) custom_dirs never identity-checks the checkpoint - every model uses model_index.json, so a Schnell directory is accepted as FLUX.2 and default selection can pick a model that is not installed; (2) _find_available_root returns the FIRST directory containing an index regardless of completeness, so an incomplete custom dir masks a complete HF cache and a working install reports unavailable; (3) weight-shard checking accepts ANY single .safetensors, so an interrupted download leaving 1 of N shards reports available and the downloader skips repair; (4) download_model_weights demands HF_TOKEN unconditionally although the registry marks flux2-klein-4b ungated, so the one model needing no licence cannot be downloaded anonymously.",
+        "ModelSpec.components HAS TWO ROLES as of round 4 and the round-3 'vestigial' comment is NOW FALSE: (a) per-name config-filename/weight-glob override for completeness (still redundant with inference); (b) AUTHORITATIVE component-name set for directory IDENTITY matching. Emptying it FAILS OPEN. S5: do not delete or trim these tuples.",
+        "IDENTITY RESOLUTION IS INCOMPLETE between models sharing a component set: schnell and Kontext both declare the same seven, so a directory of either satisfies an availability query for the other, in both directions.",
+        "DECISION (lead, 2026-09-18): custom_dirs must be honoured by the LOADER, not only by discovery. load_local_only currently passes repo_id so from_pretrained consults only the HF cache, making discovery's validation of a custom root a guarantee about files nothing opens. Routed to round 5 as a fix, not documented as a limitation: config.model.directories is a documented user-facing feature and an available-then-UNLOADABLE model is exactly the cause-precision failure AC-DISCOVERY-1 exists to prevent."
       ]
     },
     {
@@ -99,7 +108,8 @@
       "type": "validation_rule",
       "added_by_story": null,
       "reviewer_findings": [
-        "PARTIALLY ENCODED ELSEWHERE as of S1: the preset identifier vocabulary was first spelled in textbrush/config.py before the owning module existed. Multi-owner risk. S4 must adopt the canonical spelling now declared in architecture.md."
+        "PARTIALLY ENCODED ELSEWHERE as of S1: the preset identifier vocabulary was first spelled in textbrush/config.py before the owning module existed. Multi-owner risk. S4 must adopt the canonical spelling now declared in architecture.md.",
+        "The cardinality NUMBERS moved into `model` (ModelSpec.min_references/max_references) ahead of `validation` existing - the mirror image of S1 spelling the preset lexicon early. Numbers in `model`, rules in `validation`. S4 reads; S4 does not restate."
       ]
     },
     {
@@ -130,11 +140,15 @@
     {
       "id": "default-model-resolution",
       "name": "When no model is chosen, the selected model is resolved from the reference count at launch only (spec 7.3), never persisted as a static default",
-      "owning_module": "validation",
+      "owning_module": "model",
       "type": "validation_rule",
       "added_by_story": "S1",
       "reviewer_findings": [
-        "Schema half satisfied by S1 (nullable selected_id, no materialized default). Re-owned from `cli` to `validation` after round 2: spec 7.3 resolution runs at launch on BOTH composition roots, so an owner of `cli` alone invites S7/S8 to write a second resolver - the duplicated_invariant class this epic already demonstrates with the aspect-ratio tables. S4 must expose the resolver; cli and ipc call it, neither reimplements it."
+        "Schema half satisfied by S1 (nullable selected_id, no materialized default). Re-owned from `cli` to `validation` after round 2: spec 7.3 resolution runs at launch on BOTH composition roots, so an owner of `cli` alone invites S7/S8 to write a second resolver - the duplicated_invariant class this epic already demonstrates with the aspect-ratio tables. S4 must expose the resolver; cli and ipc call it, neither reimplements it.",
+        "RE-OWNED validation -> model on 2026-09-18, on S2's architecture recommendation and lead agreement. resolve_model_selection() lives in textbrush/model/registry.py. Rationale: both composition roots already depend on `model`; its input (availability) is data `model` already computes; and it reads cardinality bounds from ModelSpec rather than restating them, so it does not pre-build S4. Single owner, both roots call it.",
+        "RE-OWNING TO `model` ENDORSED on review. BINDING: ModelSpec.min_references/max_references are now the ONLY cardinality numbers in the epic. S4 MUST read them; restating 0/1/1-4 in validation.py is the duplicated-invariant this epic keeps reproducing.",
+        "OPEN ASYMMETRY for S8/S9: explicit flux1-schnell blocks when uncached while implicit 0-reference resolution to schnell does not. Settle before either composition root consumes ModelResolution.",
+        "AC-MODEL-5's 'runs only at launch' half is a call-site property S2 cannot discharge - resolve_model_selection has zero production callers. Carried forward as an S8/S9 obligation, NOT discharged by S2's unit tests."
       ]
     }
   ],
@@ -195,12 +209,95 @@
         }
       ],
       "verdict": "examiner_ready_after_round_3"
+    },
+    {
+      "story_id": "S2",
+      "surfaces_touched": [
+        "textbrush/model/registry.py :: MODEL_REGISTRY, ModelSpec, ModelComponent - single owner of slug<->repo-id AND slug<->display-name; pure data, no IO",
+        "textbrush/model/registry.py :: ModelSpec.min_references/max_references - the ONLY cardinality numbers; S4 must read, not restate",
+        "textbrush/model/registry.py :: DiscoveryCause, AvailabilityReport (invariant enforced in __post_init__), AvailabilityLookup",
+        "textbrush/model/registry.py :: resolve_model_selection(), ModelResolution - spec 7.3 + 5.1, IO-free, availability injected",
+        "textbrush/model/weights.py :: check_model_availability / is_model_available / ensure_model_available / download_model_weights / load_local_only",
+        "textbrush/model/weights.py :: is_flux_available BEHAVIOR CHANGED - now requires full component completeness",
+        "textbrush/inference/flux.py :: MODEL_ID consumes get_repo_id(); load() always local_files_only=True",
+        "tests/model_fixtures.py :: snapshot builders DERIVED FROM spec.components - structurally cannot detect a wrong component list"
+      ],
+      "findings": [
+        {
+          "category": "wrong_constant",
+          "caught_via": "direct",
+          "severity": 8,
+          "ref": "registry flux2-klein-4b components - VERIFIED WRONG against the Hub: FLUX.2 has 5 components, not 7 (no text_encoder_2, no tokenizer_2). Would have reported INCOMPLETE forever, making multi-reference editing permanently unusable. Undetectable by any test because fixtures derive from spec.components."
+        },
+        {
+          "category": "wrong_constant",
+          "caught_via": "direct",
+          "severity": 6,
+          "ref": "registry gated flags - VERIFIED WRONG for 2 of 3: schnell is gated(auto) but marked False; flux2-klein-4b is NOT gated but marked True."
+        },
+        {
+          "category": "guarantee_violated",
+          "caught_via": "direct",
+          "severity": 7,
+          "ref": "DiscoveryCause.ABSENT unreachable for gated models; fresh-install-with-valid-token misreported as license_access_missing and routed away from the download flow spec 8 requires. LICENSE_ACCESS_MISSING as spec defines it (401/403) is emitted nowhere."
+        },
+        {
+          "category": "contract_mismatch",
+          "caught_via": "direct",
+          "severity": 7,
+          "ref": "completeness read from a static list, not from model_index.json, contrary to spec 8's 'each component the index declares'. Index contents never parsed."
+        },
+        {
+          "category": "test_shaped_production",
+          "caught_via": "direct",
+          "severity": 6,
+          "ref": "download_flux_weights preserved standalone so a test patch target keeps working - direct CLAUDE.md violation, ~70 duplicated lines, ALREADY diverged in error text and licence-URL derivation."
+        },
+        {
+          "category": "duplicated_invariant",
+          "caught_via": "ledger",
+          "severity": 6,
+          "ref": "S2-BC-1 NOT SATISFIED - repo id restated as an embedded licence URL in 6 production sites; ModelSpec has no license_url."
+        },
+        {
+          "category": "contract_mismatch",
+          "caught_via": "direct",
+          "severity": 5,
+          "ref": "explicit flux1-schnell blocks where implicit resolution to the same model with the same availability does not."
+        },
+        {
+          "category": "guarantee_violated",
+          "caught_via": "direct",
+          "severity": 5,
+          "ref": "is_flux_available strengthening can invalidate documented config.model.directories installs, triggering a 23GB re-download; no compatibility test."
+        },
+        {
+          "category": "comment_rot",
+          "caught_via": "direct",
+          "severity": 5,
+          "ref": "load_local_only claims 'was reported available' without checking; bare except Exception collapses the memory/hardware error class spec 11 separates."
+        },
+        {
+          "category": "weak_guard",
+          "caught_via": "direct",
+          "severity": 4,
+          "ref": "AC-LOCAL-1 socket test routes past try_to_load_from_cache and past FluxPipeline.from_pretrained - the two paths that could reach the network."
+        },
+        {
+          "category": "multi_owner",
+          "caught_via": "ledger",
+          "severity": 0,
+          "ref": "CLEARED - S2 fixed S1's prefix-blind forbidden-set guard unprompted while reusing _internal_imports."
+        }
+      ],
+      "verdict": "needs_work"
     }
   ],
   "reviewer_state": {
-    "last_story_reviewed": "S1",
-    "model_at": "2026-09-18T10:02:51Z",
+    "last_story_reviewed": "S2",
+    "model_at": "2026-09-18T11:31:54Z",
     "cross_story_model_snapshot": "S1 complete through round 3. Ledger refs are intentionally described rather than line-anchored from here on: the round-1 line anchors all went stale when remediation moved the code, which is the wrong failure mode for the artifact later stories rehydrate from.",
-    "s1_disposition": "ACCEPTED with caveats 1-3 and 5 standing. Caveat 4 (Stage-2 cross-vendor review) DISCHARGED: Codex re-authenticated, stale broker restarted, review clean. S1 carries both Opus and Codex review."
+    "s2_rounds": 4,
+    "review_frame_note": "Rounds 1-3 ran a contract-conformance frame and missed four adversarial-input/partial-state defects found by the cross-vendor pass. FROM S3 ONWARD: enumerate trust boundaries and externally-supplied inputs FIRST and report the list before reviewing; add partial-state enumeration for anything built incrementally, precedence analysis wherever there is a search order, and consumer-tracing for every computed value. Highest leverage on S3 (adversarial input) and S6/S7/S8 (partial state, precedence, contention)."
   }
 }

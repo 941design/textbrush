@@ -1,5 +1,6 @@
 """Property-based tests for FluxInferenceEngine.load() method."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -186,7 +187,7 @@ class TestDtypeSelection:
 
         assert engine._dtype is torch.bfloat16
         mock_pipeline_class.from_pretrained.assert_called_once_with(
-            FluxInferenceEngine.MODEL_ID, torch_dtype=torch.bfloat16
+            FluxInferenceEngine.MODEL_ID, local_files_only=True, torch_dtype=torch.bfloat16
         )
 
     @patch("textbrush.inference.flux.FluxPipeline")
@@ -204,7 +205,7 @@ class TestDtypeSelection:
 
         assert engine._dtype is torch.float32
         mock_pipeline_class.from_pretrained.assert_called_once_with(
-            FluxInferenceEngine.MODEL_ID, torch_dtype=torch.float32
+            FluxInferenceEngine.MODEL_ID, local_files_only=True, torch_dtype=torch.float32
         )
 
     @patch("textbrush.inference.flux.FluxPipeline")
@@ -222,7 +223,7 @@ class TestDtypeSelection:
 
         assert engine._dtype is torch.float32
         mock_pipeline_class.from_pretrained.assert_called_once_with(
-            FluxInferenceEngine.MODEL_ID, torch_dtype=torch.float32
+            FluxInferenceEngine.MODEL_ID, local_files_only=True, torch_dtype=torch.float32
         )
 
 
@@ -332,6 +333,49 @@ class TestCpuWarningLog:
         engine.load()
 
         mock_logger.warning.assert_not_called()
+
+
+class TestLoadWithExplicitRoot:
+    """Gate-remediation round 5, finding 3: `load()` accepts an optional
+    `root` kwarg and threads it to `load_local_only`, so a caller that
+    resolved a custom-directory root via `check_model_availability` can
+    load from that exact directory instead of `from_pretrained` resolving
+    only the HF cache by repo id."""
+
+    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("torch.cuda.is_available")
+    @patch("torch.backends.mps.is_available")
+    def test_root_is_passed_in_place_of_repo_id(self, mock_mps, mock_cuda, mock_pipeline_class):
+        mock_cuda.return_value = False
+        mock_mps.return_value = False
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.from_pretrained.return_value = mock_pipeline
+
+        engine = FluxInferenceEngine()
+        custom_root = Path("/tmp/example-custom-flux-install")
+        engine.load(root=custom_root)
+
+        mock_pipeline_class.from_pretrained.assert_called_once()
+        call_args = mock_pipeline_class.from_pretrained.call_args
+        assert call_args[0][0] == str(custom_root)
+        assert call_args[1]["local_files_only"] is True
+
+    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("torch.cuda.is_available")
+    @patch("torch.backends.mps.is_available")
+    def test_omitting_root_is_unchanged_from_prior_behavior(
+        self, mock_mps, mock_cuda, mock_pipeline_class
+    ):
+        mock_cuda.return_value = False
+        mock_mps.return_value = False
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.from_pretrained.return_value = mock_pipeline
+
+        engine = FluxInferenceEngine()
+        engine.load()
+
+        call_args = mock_pipeline_class.from_pretrained.call_args
+        assert call_args[0][0] == FluxInferenceEngine.MODEL_ID
 
 
 class TestModelIdInvariant:

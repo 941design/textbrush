@@ -1,7 +1,7 @@
 {
   "epic_name": "multi-reference-flux-image-editing",
   "created_at": "2026-09-18T09:20:00Z",
-  "updated_at": "2026-09-18T10:47:55Z",
+  "updated_at": "2026-09-18T14:04:31Z",
   "total_stories": 13,
   "dependency_notes": "Story order follows dependency correctness only (per explicit run instruction), overriding Story Design Principle 4's 'simpler first' default -- several early stories (model, references, inference) are high-complexity precisely because everything downstream gates on them. Judgment calls made in this split, for the lead to override: (1) buffer.py's BufferedImage extension (carrying model identity + session-local reference identity) has no acceptance criterion of its own -- it is plumbing for AC-STATE-1/AC-STATE-2 -- so it is scoped into S6 (worker), which is where BufferedImage instances are constructed (worker.py:359-367), rather than spun out as its own story against the `buffer` module. (2) The new Tauri file-dialog command/plugin (desktop-shell) likewise has no AC of its own: AC-INPUT-1's verification explicitly targets the path-injection seam, not the native dialog, and AC-ACCESS-1 explicitly stubs the desktop bridge. It is scoped into S10 (desktop-ui) as thin, non-independently-tested glue -- the one deliberate exception to one-module-per-story outside the FR-A7 integration story. Split it into its own `desktop-shell` story if stricter module hygiene is wanted; it would then need a placeholder AC or an explicit AC-ownership exception. (3) Per architecture.md boundary rule 4, any wire-schema shape change is a mandatory three-language coordinated edit (protocol.py + the Rust json! builder + types.ts) done by ONE story, not split three ways -- S8 (ipc) therefore also touches src-tauri/src/commands_update_config.rs and src-tauri/ui/types.ts; this is architecture-sanctioned, not a one-module-ownership violation. (4) Several ACs describe behavior implemented across more than one module but carry no 'Spans modules:' line in acceptance-criteria.md (only AC-STATE-2 does) -- meaning Mode 1 judged them single-story-ownable. AC-STATE-1/3/4, AC-RECOVERY-1, AC-MODEL-5, AC-LOCAL-1, and AC-MODEL-6 were each assigned to the module whose code is most load-bearing for the AC's core mechanism; rebalance freely without touching acceptance-criteria.md. (5) AC-STATE-2's 'Spans modules:' line names desktop UI, IPC, backend state, worker, inference, metadata -- 'metadata' and 'backend state' both map to the `backend` module (architecture.md's module map has no separate `metadata` module), and 'desktop UI' maps to both S10 and S11 since both own `desktop-ui`. cross_cutting_acs[0].spanned_by is therefore [S5, S6, S7, S8, S10, S11], and S12 depends on that full set. (6) Seam source/destination endpoints describe runtime data-flow direction (producer -> consumer); the per-story `creates_seam` flag instead marks which story is accountable for freezing the contract's shape first in build order, and the two do not always point the same way -- e.g. GenerationRequest's shape is authored in inference/base.py by S5, even though S7 (backend) is the runtime producer of concrete request instances passed through S6 (worker) to S5's engines. (7) lighter_path is false on all twelve stories: every story's file targets include at least one non-markdown/JSON/YAML/TOML/txt file (.py, .rs, or .ts), so files_code is non-empty everywhere, which alone forces lighter_path=false under the AC-STORY-2 conjunction; S12 is additionally false by the mandatory is_integration_story exclusion.",
   "mock_resolution_plan": "No temporary mocks are introduced by this split. tests/mocks.py's MockInferenceEngine (exploration.json resistance point #1) is a permanent test fixture standing in for gated model weights, not an epic-temporary mock -- it is tracked as FIXTURE-05-001 on S5 and must be widened (not replaced) to keep implementing the extended InferenceEngine ABC. mocks-registry.json remains empty with all_resolved:true for this epic; Mode 2 introduces no entries requiring resolution.",
@@ -278,6 +278,14 @@
         "S10",
         "S11"
       ]
+    },
+    {
+      "ac_id": "AC-MODEL-5b",
+      "spanned_by": [
+        "S8",
+        "S9",
+        "S10"
+      ]
     }
   ],
   "stories": [
@@ -318,7 +326,7 @@
       "description": "Replace the single hardcoded FLUX_SCHNELL_ID in textbrush/model/weights.py with a registry keyed by model id covering flux1-schnell, flux1-kontext-dev, and flux2-klein-4b, reporting one of the five enumerated discovery causes, enforcing local-only loading once available, and implementing the launch-time-only default-resolution algorithm of spec.md sec 7.3.",
       "acceptance_criteria": [
         "AC-DISCOVERY-1",
-        "AC-MODEL-5",
+        "AC-MODEL-5a",
         "AC-LOCAL-1"
       ],
       "scope": {
@@ -336,7 +344,7 @@
         ]
       },
       "complexity": "high",
-      "status": "in_progress",
+      "status": "done",
       "owning_module": "model",
       "lighter_path": false,
       "files": [
@@ -596,7 +604,21 @@
         "tests/test_ipc_handler.py",
         "tests/test_ipc_integration.py"
       ],
-      "notes": "Exploration.json resistance point #4. IPC validation errors remain ErrorEvent(message, fatal=False) per architecture.md's implementation constraints, not raised exceptions. Also stale/misleading doc comment at src-tauri/src/commands_update_config.rs:1-4 ('stub awaiting integration') should be corrected as a boy-scout fix while this file is touched."
+      "notes": "Exploration.json resistance point #4. IPC validation errors remain ErrorEvent(message, fatal=False) per architecture.md's implementation constraints, not raised exceptions. Also stale/misleading doc comment at src-tauri/src/commands_update_config.rs:1-4 ('stub awaiting integration') should be corrected as a boy-scout fix while this file is touched.",
+      "blocking_conditions": [
+        {
+          "id": "BC-MODEL-5b",
+          "source": "VQ-S2-005 (S2 verification), split from AC-MODEL-5 and bound by Decider ruling 2026-09-18",
+          "condition": "AC-MODEL-5b: default-model resolution is invoked exactly ONCE per session, at launch, and never re-run in response to a reference-set change. resolve_model_selection is pure and cannot enforce this itself - only its callers can.",
+          "evidence_required": {
+            "S8": "A live IPC session driven across at least two reference-count changes crossing the cardinality boundary that would flip the resolver's answer, with a call counter on resolve_model_selection asserting exactly one invocation during initialization and zero thereafter, and the resolved model id unchanged throughout. ALSO owns the cross-cutting structural test (AST or equivalent, in the family of the mutation-tested model-leaf-boundary detector) asserting the function has exactly the enumerated set of production call sites and failing when a new caller appears - S8 is the first story to introduce a production caller.",
+            "S9": "The same assertion at the CLI startup path. If the CLI is one-shot-per-process and cannot re-resolve by construction, S9 must state that explicitly and point at the single call site. An architectural argument is acceptable evidence; an unstated assumption is not.",
+            "S10": "The user-facing half: adding or removing a reference never auto-switches the selected model, and an explicit user selection survives a reference-count change that would otherwise flip FLUX.1 to FLUX.2 or back."
+          },
+          "enforcement": "Lead-enforced: read from stories.json and injected into each story's architect brief and reviewer brief, as was done for S2-BC-1. There is no automated gate.",
+          "on_failure": "AC-MODEL-5b re-opens as a blocking finding against the story that closed without it. It must not be re-deferred."
+        }
+      ]
     },
     {
       "id": "S9",
@@ -631,7 +653,21 @@
         "tests/test_cli.py",
         "tests/e2e/test_full_workflow.py"
       ],
-      "notes": "Exploration.json resistance point #10: cli.py drives backend directly via a deferred import and never touches ipc/, so this story cannot rely on S8's IPC-side pause-gate/acknowledgement machinery at all."
+      "notes": "Exploration.json resistance point #10: cli.py drives backend directly via a deferred import and never touches ipc/, so this story cannot rely on S8's IPC-side pause-gate/acknowledgement machinery at all.",
+      "blocking_conditions": [
+        {
+          "id": "BC-MODEL-5b",
+          "source": "VQ-S2-005 (S2 verification), split from AC-MODEL-5 and bound by Decider ruling 2026-09-18",
+          "condition": "AC-MODEL-5b: default-model resolution is invoked exactly ONCE per session, at launch, and never re-run in response to a reference-set change. resolve_model_selection is pure and cannot enforce this itself - only its callers can.",
+          "evidence_required": {
+            "S8": "A live IPC session driven across at least two reference-count changes crossing the cardinality boundary that would flip the resolver's answer, with a call counter on resolve_model_selection asserting exactly one invocation during initialization and zero thereafter, and the resolved model id unchanged throughout. ALSO owns the cross-cutting structural test (AST or equivalent, in the family of the mutation-tested model-leaf-boundary detector) asserting the function has exactly the enumerated set of production call sites and failing when a new caller appears - S8 is the first story to introduce a production caller.",
+            "S9": "The same assertion at the CLI startup path. If the CLI is one-shot-per-process and cannot re-resolve by construction, S9 must state that explicitly and point at the single call site. An architectural argument is acceptable evidence; an unstated assumption is not.",
+            "S10": "The user-facing half: adding or removing a reference never auto-switches the selected model, and an explicit user selection survives a reference-count change that would otherwise flip FLUX.1 to FLUX.2 or back."
+          },
+          "enforcement": "Lead-enforced: read from stories.json and injected into each story's architect brief and reviewer brief, as was done for S2-BC-1. There is no automated gate.",
+          "on_failure": "AC-MODEL-5b re-opens as a blocking finding against the story that closed without it. It must not be re-deferred."
+        }
+      ]
     },
     {
       "id": "S10",
@@ -672,7 +708,21 @@
         "src-tauri/ui/index.html",
         "src-tauri/ui/integration.test.js"
       ],
-      "notes": "Exploration.json resistance point #6 (zero prior UI precedent for file selection). The Tauri command is scoped here rather than as a separate desktop-shell story per top-level dependency_notes item 2 -- it has no independently verifiable AC of its own."
+      "notes": "Exploration.json resistance point #6 (zero prior UI precedent for file selection). The Tauri command is scoped here rather than as a separate desktop-shell story per top-level dependency_notes item 2 -- it has no independently verifiable AC of its own.",
+      "blocking_conditions": [
+        {
+          "id": "BC-MODEL-5b",
+          "source": "VQ-S2-005 (S2 verification), split from AC-MODEL-5 and bound by Decider ruling 2026-09-18",
+          "condition": "AC-MODEL-5b: default-model resolution is invoked exactly ONCE per session, at launch, and never re-run in response to a reference-set change. resolve_model_selection is pure and cannot enforce this itself - only its callers can.",
+          "evidence_required": {
+            "S8": "A live IPC session driven across at least two reference-count changes crossing the cardinality boundary that would flip the resolver's answer, with a call counter on resolve_model_selection asserting exactly one invocation during initialization and zero thereafter, and the resolved model id unchanged throughout. ALSO owns the cross-cutting structural test (AST or equivalent, in the family of the mutation-tested model-leaf-boundary detector) asserting the function has exactly the enumerated set of production call sites and failing when a new caller appears - S8 is the first story to introduce a production caller.",
+            "S9": "The same assertion at the CLI startup path. If the CLI is one-shot-per-process and cannot re-resolve by construction, S9 must state that explicitly and point at the single call site. An architectural argument is acceptable evidence; an unstated assumption is not.",
+            "S10": "The user-facing half: adding or removing a reference never auto-switches the selected model, and an explicit user selection survives a reference-count change that would otherwise flip FLUX.1 to FLUX.2 or back."
+          },
+          "enforcement": "Lead-enforced: read from stories.json and injected into each story's architect brief and reviewer brief, as was done for S2-BC-1. There is no automated gate.",
+          "on_failure": "AC-MODEL-5b re-opens as a blocking finding against the story that closed without it. It must not be re-deferred."
+        }
+      ]
     },
     {
       "id": "S11",

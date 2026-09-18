@@ -38,10 +38,19 @@ Source: spec.md
 - **Type**: unit
 - **Note**: The prohibition on "duplicating" here constrains the *application* — Textbrush must never pad a reference set to satisfy a cardinality rule. It does not constrain the *user*, who may deliberately select the same file more than once (see AC-INPUT-4).
 
-### AC-MODEL-5
-- **Description**: Default model resolution runs only at launch. When FLUX.2 [klein] 4B is locally available it is preferred for reference editing at that point; an explicit model selection is never silently replaced, and two-to-four-reference requests never fall back to FLUX.1. Adding a reference during a desktop session never auto-switches the active model — the app names and pre-highlights the required model, and the switch awaits the user's action and backend acknowledgement.
-- **Verification**: Default-resolution tests across availability permutations (spec.md §7.3), plus a test asserting an explicitly requested unavailable model blocks rather than substitutes.
+### AC-MODEL-5a
+- **Description**: Resolver honesty. The default-model resolution function is pure: no module-level state, no memoization, availability supplied by injection rather than read internally, and cardinality bounds read from the model registry rather than restated as literals. Re-invoking it with a changed reference count returns a correspondingly different answer, so it can never report a stale resolution as current. Default resolution prefers FLUX.2 [klein] 4B for reference editing when locally available; an explicit model selection is never silently replaced; and two-to-four-reference requests never fall back to FLUX.1.
+- **Verification**: Purity assertions (no module state, no caching, availability injected), a permutation table over spec.md §7.3 covering 0 / 1 / 2-4 references against each availability combination with the exact expected resolution per cell, and a test that an explicitly requested unavailable model blocks rather than substituting an available alternative.
 - **Type**: unit
+- **Owner**: S2 (`model`). **Status: satisfied.**
+
+### AC-MODEL-5b
+- **Description**: Call-site cardinality. Default-model resolution is invoked exactly once per session, at launch, and is never re-run in response to a reference-set change. Adding or removing a reference during a desktop session never auto-switches the active model — the app names and pre-highlights the required model and awaits the user's action and backend acknowledgement — and an explicit user selection survives a reference-count change that would otherwise flip the resolved model.
+- **Verification**: A live session driven across at least two reference-count changes that cross the cardinality boundary which would flip the resolver's answer, with a call counter asserting exactly one invocation at initialization and zero thereafter, and the resolved model id unchanged throughout. Plus a structural test asserting the resolution function has exactly the enumerated set of production call sites, failing if a new caller appears.
+- **Type**: integration
+- **Owner**: S8, S9, S10. **Status: open — blocking those stories.**
+- **Note**: Split from AC-MODEL-5 by amendment 2026-09-18 on a Decider ruling. The original bundled two guarantees with different owners into one criterion, so a fully-satisfied S2 scored PARTIAL against it. `resolve_model_selection` cannot prevent its own re-invocation; only its callers can. Making it self-defending (a once-flag or cached state) would destroy the purity AC-MODEL-5a requires.
+
 
 ### AC-INPUT-1
 - **Description**: The desktop interface accepts valid readable PNG and JPEG references through file selection, displays up to four previews and filenames, and supports individual removal and replacement.

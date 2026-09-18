@@ -17,14 +17,17 @@ from textbrush.ipc.protocol import (
     MessageType,
     dataclass_to_dict,
 )
+from textbrush.model.registry import FLUX1_SCHNELL, get_model_spec
 from textbrush.model.weights import download_flux_weights, is_flux_available
 from textbrush.paths import display_path
 
-_MISSING_MODEL_MESSAGE = """\
-FLUX.1 schnell model not found. To set up the model:
+_SCHNELL_SPEC = get_model_spec(FLUX1_SCHNELL)
+
+_MISSING_MODEL_MESSAGE = f"""\
+{_SCHNELL_SPEC.display_name} model not found. To set up the model:
 
 1. Get a HuggingFace token from https://huggingface.co/settings/tokens
-2. Accept the license at https://huggingface.co/black-forest-labs/FLUX.1-schnell
+2. Accept the license at {_SCHNELL_SPEC.license_url}
 3. Run: HUGGINGFACE_HUB_TOKEN=hf_xxx textbrush --download-model
 
 Or manually place model files in the HuggingFace cache directory."""

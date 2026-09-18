@@ -1,0 +1,58 @@
+{
+  "module_name": "model",
+  "purpose": "Per-model checkpoint identity (short slug <-> HuggingFace repo id, the single-owner mapping required by S2-BC-1), cardinality metadata, local-only discovery with a cause enumeration (AC-DISCOVERY-1), download, local-only pipeline loading (AC-LOCAL-1), and launch-time-only default-model resolution (AC-MODEL-5).",
+  "public_api": [
+    { "name": "FLUX1_SCHNELL / FLUX1_KONTEXT_DEV / FLUX2_KLEIN_4B", "signature": "str constants in textbrush.model.registry", "description": "Canonical short-slug identity vocabulary, matching the GenerationRequest seam contract in stories.json and textbrush/config.py's ModelConfig.selected_id." },
+    { "name": "ModelSpec / ModelComponent", "signature": "frozen dataclasses in textbrush.model.registry", "description": "Per-model identity (slug, repo_id, display_name, gated), cardinality bounds (min_references, max_references), and the declared sub-component layout (name, config_filename, weight_glob) used for the AC-DISCOVERY-1 completeness check." },
+    { "name": "MODEL_REGISTRY", "signature": "dict[str, ModelSpec] in textbrush.model.registry", "description": "The registry table for flux1-schnell, flux1-kontext-dev, flux2-klein-4b." },
+    { "name": "get_model_spec", "signature": "get_model_spec(model_id: str) -> ModelSpec", "description": "Raises ValueError for an unknown slug." },
+    { "name": "get_repo_id", "signature": "get_repo_id(model_id: str) -> str", "description": "The single-owner slug->repo-id lookup (S2-BC-1). textbrush.inference.flux.FluxInferenceEngine.MODEL_ID is sourced from this rather than a separately hardcoded literal." },
+    { "name": "iter_model_slugs", "signature": "iter_model_slugs() -> tuple[str, ...]", "description": "Every known short slug." },
+    { "name": "DiscoveryCause", "signature": "str Enum {ABSENT, CREDENTIALS_MISSING, LICENSE_ACCESS_MISSING, INCOMPLETE, UNLOADABLE, UNKNOWN}", "description": "spec.md sec 8 enumeration. UNKNOWN is a true fallback, reached only when the other four do not describe the failure." },
+    { "name": "AvailabilityReport", "signature": "frozen dataclass AvailabilityReport(available: bool, cause: DiscoveryCause | None, detail: str = '')", "description": "available iff cause is None (enforced by __post_init__)." },
+    { "name": "ModelResolution", "signature": "frozen dataclass ModelResolution(model_id: str | None, blocked: bool, reason: str | None, required_model: str | None, cause: DiscoveryCause | None)", "description": "Outcome of resolve_model_selection." },
+    { "name": "resolve_model_selection", "signature": "resolve_model_selection(*, selected_id: str | None, reference_count: int, availability: Callable[[str], AvailabilityReport]) -> ModelResolution", "description": "Single authored implementation of spec.md sec 5.1 + 7.3, intended to be called once, at launch, by both composition roots (S8's ipc/handler.py, S9's cli.py). Pure/IO-free; callers bind `availability` to real discovery." },
+    { "name": "check_model_availability", "signature": "check_model_availability(model_id: str, *, custom_dirs: list[Path] | None = None) -> AvailabilityReport", "description": "textbrush.model.weights. Local-only discovery: top-level index AND every declared component's config+weight files (AC-DISCOVERY-1's strengthening over the old model_index.json-only probe)." },
+    { "name": "is_model_available", "signature": "is_model_available(model_id: str, *, custom_dirs=None) -> bool", "description": "Boolean convenience wrapper over check_model_availability." },
+    { "name": "ensure_model_available / download_model_weights", "signature": "(model_id: str, ...) -> None / Path", "description": "Generic per-model counterparts to the legacy ensure_flux_available/download_flux_weights, for flux1-kontext-dev, flux2-klein-4b, and any future registry entry." },
+    { "name": "load_local_only", "signature": "load_local_only(pipeline_factory: Callable[..., object], model_id: str, **kwargs) -> object", "description": "AC-LOCAL-1: always passes local_files_only=True to pipeline_factory; wraps any raised exception as RuntimeError classified DiscoveryCause.UNLOADABLE. textbrush.inference.flux.FluxInferenceEngine.load() calls this instead of FluxPipeline.from_pretrained directly." },
+    { "name": "is_flux_available / ensure_flux_available / download_flux_weights", "signature": "(unchanged signatures)", "description": "Preserved legacy entry points for flux1-schnell, consumed unchanged by textbrush/ipc/handler.py and textbrush/cli.py. is_flux_available now delegates to check_model_availability (a real behavior strengthening); download_flux_weights remains a separate implementation (not delegating to download_model_weights) specifically so tests/test_weights.py's direct patches of is_flux_available/snapshot_download/try_to_load_from_cache keep intercepting it -- see the docstring on download_flux_weights for the full rationale." },
+    { "name": "get_cache_info", "signature": "get_cache_info() -> CacheInfo", "description": "Reused unmodified per the story's scope note." }
+  ],
+  "private_files": [
+    "textbrush/model/registry.py",
+    "textbrush/model/weights.py"
+  ],
+  "owned_data": [
+    "The short-slug <-> HuggingFace-repo-id mapping (S2-BC-1's single-owner responsibility)",
+    "Per-model cardinality bounds (min_references/max_references)",
+    "The discovery-cause enumeration and its classification rules",
+    "The launch-time-only default-model-resolution algorithm (spec.md sec 5.1/7.3)"
+  ],
+  "dependencies_allowed": [],
+  "dependencies_forbidden": ["backend", "worker", "ipc", "inference"],
+  "external_ports": ["huggingface_hub (snapshot_download, try_to_load_from_cache, error types) -- unchanged from pre-story usage"],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "tests/test_model_weights.py",
+    "tests/test_weights.py",
+    "tests/model_fixtures.py"
+  ],
+  "seam": {
+    "cross_story": true,
+    "consumed_by": ["S5", "S7", "S8", "S9"],
+    "note": "S5 (inference engines) consumes get_repo_id/load_local_only for the two new engines; S7 (backend lifecycle) and S8 (IPC pause gate) consume check_model_availability/DiscoveryCause for runtime model-swap messaging; S8 and S9 (CLI) are the two composition roots that must call resolve_model_selection exactly once, at launch, per the architecture decision below."
+  },
+  "architecture_decision": {
+    "question": "Where does spec.md sec 5.1/7.3's default-model-resolution algorithm live, given both cli.py (S9) and ipc/handler.py (S8) need it and neither may reimplement it?",
+    "decision": "resolve_model_selection lives in textbrush.model.registry (this story), not in the not-yet-existing textbrush.validation (S4).",
+    "rationale": [
+      "Both composition roots already depend on `model` today with no new edge required: textbrush/cli.py:415 already does `from .model.weights import TokenRequiredError, download_flux_weights`, and textbrush/ipc/handler.py:20 already does `from textbrush.model.weights import download_flux_weights, is_flux_available` (exploration.json's dependency_graph confirms both edges pre-exist). Placing the resolver in `validation` instead would require BOTH composition roots to gain a second new leaf dependency for a function that already needs `model`'s own availability data as an input -- strictly more coupling for no benefit.",
+      "The algorithm's core input is availability (an AvailabilityReport per model), which `model` owns and computes locally; a resolver living anywhere else would need to reach back into `model` for that data anyway, making `model` the natural single point of authorship.",
+      "Constraint 3 (cardinality rules are S4's to own; inject rather than hardcode a second copy): resolve_model_selection reads each model's min_references/max_references directly from MODEL_REGISTRY (ModelSpec) instead of restating the 0/1/2-4 reference-count bands as separate literals. This makes MODEL_REGISTRY the single source both `model`'s own resolver and a future `validation` module's compatibility-check function can read, rather than two modules each hardcoding the same bounds. S4 is not built speculatively -- only the data field it will eventually need already exists as identity metadata `model` was already going to own.",
+      "Boundary compliance (constraint 2): `model` remains a leaf (no imports of backend/worker/ipc/inference added). resolve_model_selection is itself pure and IO-free, so it introduces no new dependency at all -- callers inject an `availability` callback bound to `check_model_availability`."
+    ],
+    "ledger_update_recommendation": "The ownership-ledger.json concept `default-model-resolution` (currently owning_module: validation, added_by_story: S1) should be re-owned to `model`, added_by_story S2. This mirrors the ledger's own precedent for `default-model-resolution` being re-owned once during S1 (from `cli` to `validation`) when the cross-composition-root duplication risk was identified; the same reasoning now points at `model` specifically because the concrete implementation landed there, backed by data `model` already owns. The architect does not update the ledger directly per instructions -- this is a recommendation for the lead/Decider to apply."
+  }
+}

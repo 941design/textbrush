@@ -6,8 +6,11 @@ import logging
 import random
 import threading
 import time
+from pathlib import Path
 
 from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
+from textbrush.model.registry import FLUX1_SCHNELL, get_repo_id
+from textbrush.model.weights import load_local_only
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +18,15 @@ logger = logging.getLogger(__name__)
 class FluxInferenceEngine(InferenceEngine):
     """FLUX.1 Schnell implementation of InferenceEngine.
 
-    Uses black-forest-labs/FLUX.1-schnell model from HuggingFace.
+    Uses the model registered under the "flux1-schnell" short slug
+    (`textbrush.model.registry`) on HuggingFace.
     """
 
-    MODEL_ID = "black-forest-labs/FLUX.1-schnell"
+    # Sourced from the registry rather than hardcoded (S2-BC-1): the
+    # short-slug <-> HuggingFace-repo-id mapping has exactly one owner,
+    # `textbrush.model.registry`, and this class consumes it rather than
+    # restating it.
+    MODEL_ID = get_repo_id(FLUX1_SCHNELL)
 
     # Aspect ratio to dimensions mapping (default resolutions for each ratio)
     # Values must be divisible by 16 (FLUX model requirement)
@@ -77,11 +85,21 @@ class FluxInferenceEngine(InferenceEngine):
         self._dtype = None
         self._generate_lock = threading.Lock()
 
-    def load(self) -> None:
+    def load(self, *, root: Path | None = None) -> None:
         """Load FLUX model into memory.
 
         CONTRACT:
-          Inputs: none
+          Inputs:
+            - root: optional resolved local snapshot directory (typically
+              `AvailabilityReport.root` from
+              `textbrush.model.weights.check_model_availability`), threaded
+              through to `load_local_only` (gate-remediation round 5,
+              finding 3). When omitted, behavior is unchanged: the pipeline
+              loads by repo id from the ordinary HuggingFace cache only.
+              Wiring a caller's `config.model.directories` root into this
+              parameter is out of scope here -- `model` (S2) only owns
+              making the plumbing available; the composition roots that own
+              custom-directory wiring end to end are S7/S8/S9.
 
           Outputs: none (modifies internal state)
 
@@ -101,7 +119,9 @@ class FluxInferenceEngine(InferenceEngine):
                - If torch.cuda.is_available(): device = "cuda", dtype = torch.bfloat16
                - Else if torch.backends.mps.is_available(): device = "mps", dtype = torch.float32
                - Else: device = "cpu", dtype = torch.float32, log warning
-            3. Load pipeline from MODEL_ID with torch_dtype
+            3. Load pipeline from MODEL_ID with torch_dtype, local files only
+               (AC-LOCAL-1: a model discovery reports as available must load
+               with no remote revalidation round trip)
             4. Apply device-specific optimization:
                - If CUDA: enable_model_cpu_offload()
                - Else: to(device)
@@ -124,7 +144,12 @@ class FluxInferenceEngine(InferenceEngine):
             self._dtype = torch.float32
             logger.warning("Running on CPU - inference will be slow")
 
-        self._pipeline = FluxPipeline.from_pretrained(self.MODEL_ID, torch_dtype=self._dtype)
+        # local_files_only=True (AC-LOCAL-1): a model that discovery has
+        # already reported as available must not trigger a remote
+        # revalidation round trip on every load.
+        self._pipeline = load_local_only(
+            FluxPipeline.from_pretrained, FLUX1_SCHNELL, root=root, torch_dtype=self._dtype
+        )
 
         if self._device == "cuda":
             self._pipeline.enable_model_cpu_offload()

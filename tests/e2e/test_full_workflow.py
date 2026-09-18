@@ -78,11 +78,24 @@ class TestModelNotFoundMessage:
 
     @pytest.mark.e2e_smoke
     def test_model_not_found_references_download_model_flag(self):
-        """ensure_flux_available error message references --download-model, not make/scripts."""
+        """ensure_flux_available error message references --download-model, not make/scripts.
+
+        ensure_flux_available now delegates to the generic
+        ensure_model_available, which checks availability via
+        check_model_availability rather than is_flux_available directly
+        (gate-remediation finding D) -- the patch target is repointed to
+        match, following production structure rather than pinning the test
+        to the old internal call graph.
+        """
         from unittest.mock import patch
 
+        from textbrush.model.registry import AvailabilityReport, DiscoveryCause
+
         # Import ensure_flux_available to test its error message directly
-        with patch("textbrush.model.weights.is_flux_available", return_value=False):
+        with patch(
+            "textbrush.model.weights.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ):
             import textbrush.model.weights as w
 
             try:

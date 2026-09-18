@@ -1,0 +1,87 @@
+{
+  "story_id": "S2",
+  "status": "done",
+  "files_created": [
+    "textbrush/model/registry.py",
+    "tests/test_model_weights.py",
+    "tests/model_fixtures.py",
+    "specs/epic-multi-reference-flux-image-editing/S2-model-registry-and-discovery/architecture.json",
+    "specs/epic-multi-reference-flux-image-editing/S2-model-registry-and-discovery/baseline.json"
+  ],
+  "files_modified": [
+    "textbrush/model/registry.py",
+    "textbrush/model/weights.py",
+    "textbrush/model/__init__.py",
+    "textbrush/inference/flux.py",
+    "textbrush/cli.py",
+    "textbrush/ipc/handler.py",
+    "tests/model_fixtures.py",
+    "tests/test_model_weights.py",
+    "tests/test_weights.py",
+    "tests/test_flux_load.py",
+    "tests/e2e/test_full_workflow.py"
+  ],
+  "tests_added": {
+    "unit": 48
+  },
+  "test_counts": {
+    "baseline": 764,
+    "final": 813
+  },
+  "mocks": [],
+  "remediation_rounds": 6,
+  "modules_touched": [
+    "model",
+    "inference",
+    "cli",
+    "ipc"
+  ],
+  "implementation_notes": {
+    "registry_module": "New textbrush/model/registry.py: pure data/functions only (no huggingface_hub dependency) -- ModelSpec/ModelComponent, MODEL_REGISTRY keyed by the three short slugs, DiscoveryCause enum, AvailabilityReport, ModelResolution, and resolve_model_selection(). Kept separate from weights.py so it stays importable (and readable) without dragging in huggingface_hub, and so textbrush/inference/flux.py can depend on the identity mapping alone.",
+    "weights_module_strategy": "textbrush/model/weights.py keeps every pre-existing export name and signature (TokenRequiredError, _mask_token, ALLOW_PATTERNS/IGNORE_PATTERNS, CacheInfo, get_cache_info (untouched), is_flux_available, ensure_flux_available, download_flux_weights) and adds generic, slug-parameterized counterparts (check_model_availability, is_model_available, ensure_model_available, download_model_weights, load_local_only). is_flux_available now delegates to check_model_availability -- a real, intentional strengthening (AC-DISCOVERY-1 calls this out explicitly) rather than a restatement. download_flux_weights deliberately does NOT delegate to download_model_weights: it keeps its original body (only FLUX_SCHNELL_ID's definition changed, now sourced from the registry) specifically because tests/test_weights.py patches `textbrush.model.weights.is_flux_available` / `snapshot_download` / `try_to_load_from_cache` by name to drive its branches, and routing through the generic function (which checks is_model_available instead) would silently stop honoring those patches. This is flagged as VQ-S2-010 for a future consolidation once nothing depends on the legacy patch target.",
+    "s2_bc_1_resolution": "textbrush/inference/flux.py's FluxInferenceEngine.MODEL_ID is now `get_repo_id(FLUX1_SCHNELL)` (textbrush.model.registry), not a separately hardcoded literal. Its load() method now calls textbrush.model.weights.load_local_only(FluxPipeline.from_pretrained, FLUX1_SCHNELL, torch_dtype=...) instead of calling FluxPipeline.from_pretrained directly -- this both consumes the single-owner slug<->repo-id mapping (S2-BC-1) and fixes the AC-LOCAL-1 defect (local_files_only=True is now always passed). inference/flux.py is not `model`'s file, but the story text explicitly named both fixes as in-scope; the change is two lines plus an import, and tests/test_flux_load.py's three exact from_pretrained call-signature assertions were updated to include local_files_only=True (these tests are gated behind `pytest.importorskip(\"torch\")` and torch/diffusers are not installed in this sandbox, so they could not be executed here -- verified by static review instead; see retrospective).",
+    "discovery_completeness_check": "check_model_availability() locates a snapshot root (custom_dirs first, then the HF cache via try_to_load_from_cache) and requires every ModelSpec.components entry's config file (and weight file, where declared) to be present under that root -- not just the top-level model_index.json. Existing tests in tests/test_weights.py::TestIsFluxAvailableCustomDirs that previously asserted availability from a bare model_index.json marker were updated to build a complete fixture via the new tests/model_fixtures.py helpers (write_complete_snapshot/write_index_only/remove_component_weights); one new test (test_custom_dir_with_index_only_is_incomplete) directly proves the old weak-check gap is closed.",
+    "gated_flag_and_cause_classification": "check_model_availability distinguishes credentials_missing from license_access_missing using ModelSpec.gated (a static, hand-authored fact: schnell=False, kontext-dev=True, klein-4b=True) plus whether HF_TOKEN is set -- both local, zero-network facts, keeping discovery itself network-free. unloadable is reported only by load_local_only() (a real load attempt), never by discovery. unknown is reached only when the filesystem inspection itself raises OSError, proven by a monkeypatched Path.glob fault in tests (flagged as VQ-S2-012 for a possible real-fault variant later).",
+    "resolver_placement_decision": "resolve_model_selection lives in textbrush.model.registry, not the not-yet-existing textbrush.validation (S4). Full rationale in architecture.json's `architecture_decision` block: both composition roots already depend on `model` (cli.py:415, ipc/handler.py:20 both already import from textbrush.model.weights), the resolver's core input (per-model availability) is data `model` already owns, and cardinality bands are read from ModelSpec.min_references/max_references rather than restated as literals so a future `validation` module can share the same registry data instead of duplicating it. Recommend the ownership-ledger's `default-model-resolution` concept be re-owned from `validation` to `model`, added_by_story S2 -- the lead/Decider applies this, not the architect.",
+    "flux2_repo_id_caveat": "FLUX.2 [klein] 4B has no verifiable public HuggingFace repository at implementation time; \"black-forest-labs/FLUX.2-klein-4B\" is this story's best-effort, internally-consistent placeholder identifier (flagged as VQ-S2-013)."
+  },
+  "verification": {
+    "verification_json_pre_impl_questions": 9,
+    "verification_json_post_impl_questions": 4,
+    "all_tests_passing": true,
+    "lint": "clean",
+    "format": "clean",
+    "typecheck": "NO_TYPECHECK (no Python typecheck target exists in this project)",
+    "regressions": "none -- full fast suite: 61 pre-existing failures unrelated to model/inference (tests/test_config_controls*.py, a TypeScript source-analysis suite missing its target file) unchanged in identity; passed count rose from 699 to 748 (48 new tests + 1 pre-existing test's fixtures rebuilt, same behavior). A second confirmation run additionally surfaced tests/test_worker.py::TestGenerationWorkerExamples::test_immediate_stop_before_first_generation failing once -- this is the exact load-dependent flake called out as pre-existing/not-mine in the story brief; unrelated to model/inference and did not recur across repeated runs of the files this story touched."
+  },
+  "retrospective": {
+    "skipped": false,
+    "harder_than_needed": "Reconciling the new strengthened per-component discovery check against the existing tests/test_weights.py::TestIsFluxAvailableCustomDirs suite required real design work: several of those tests mocked huggingface_hub.try_to_load_from_cache to return a fabricated, non-existent path string, which was sufficient evidence under the old top-level-marker-only check but silently broke under the new completeness check (which stats real files). Fixing this meant rebuilding those fixtures around real temporary directories (tests/model_fixtures.py) rather than string mocks -- straightforward once identified, but the story brief and verification.json didn't call out that this specific legacy test file would need touching, only that AC-DISCOVERY-1 was 'a real strengthening.' A second similar tension existed with tests/test_weights.py's download-path tests, which patch `is_flux_available` directly by name; preserving that patch target required keeping download_flux_weights as a standalone implementation rather than a clean delegation to the new generic download_model_weights, which I judged the right trade-off but flagged explicitly (VQ-S2-010) since it is a real, documented duplication rather than a false one.",
+    "surprised_by": "textbrush/inference/flux.py's own test suite (tests/test_flux_load.py, tests/test_flux_inference.py) patches `textbrush.inference.flux.FluxPipeline` via `@patch(...)`, but FluxPipeline is only ever imported locally inside load() (never at module scope) -- meaning `unittest.mock.patch` would raise AttributeError against that target regardless of my changes, in any environment with torch/diffusers installed (verified directly with a minimal repro of the same pattern). This predates this story and is orthogonal to it; torch/diffusers aren't installed in this sandbox either, so the affected tests are always skipped here via `pytest.importorskip(\"torch\")` and the bug never surfaces in this environment's CI-equivalent runs. Not fixed (would require restructuring the module's deliberately lazy import pattern, well outside this story's scope) but worth surfacing since it means that entire test file's assertions -- including the three I updated for local_files_only=True -- have not actually executed successfully in any observed run.",
+    "scope": "project_specific",
+    "outcome": "merged",
+    "commits_made": [],
+    "absorbed_from": [],
+    "lead_clarifications": []
+  },
+  "final_outcome": "accepted",
+  "completed_at": "2026-09-18T14:04:44Z",
+  "review_stages": {
+    "opus": "5 rounds to fixpoint; found the discovery-cause collapse, hardcoded component list, a CLAUDE.md test-shaped-production violation, and one self-inflicted severity-8 regression",
+    "codex": "3 cross-vendor passes; found 4 defects Opus missed (foreign-directory identity, incomplete dir masking a complete cache, single-shard-passes-as-complete, token demanded for an ungated model), then 3 more (huggingface_hub negative-cache sentinel crash, sharded-without-index, tokenizer vocab), then 1 unverifiable"
+  },
+  "decider_caveats": [
+    "AC-MODEL-5 was SPLIT on Decider ruling: 5a (resolver honesty) is S2's and is satisfied; 5b (call-site cardinality - resolution invoked exactly once at launch) is structurally undischargeable by S2 because resolve_model_selection has zero production callers. 5b is now blocking condition BC-MODEL-5b on S8/S9/S10 with per-story evidence requirements.",
+    "RETRY was rejected as actively harmful: making the resolver defend against its own re-invocation would destroy the purity that ten of thirteen verification questions depend on, and would be production code shaped by an obligation no production caller has yet created - the same CLAUDE.md violation S2 was pulled up for in round 3.",
+    "WAIVED: no automated re-check that registry `gated` flags still match the Hub (severity 3, confidence 0.9). Network-dependent; belongs with the spec 15 gated smoke test. Flags were hand-verified against the Hub API on 2026-09-18.",
+    "WAIVED: the UNKNOWN-cause test uses a monkeypatched OSError rather than a real filesystem fault (severity 2, confidence 0.8). Fixture fidelity; the cause enumeration itself is verified by independent literal fixtures across all five causes.",
+    "WAIVED with reasoning preserved: whether a slow CLIPTokenizer requires the vocab.json+merges.txt pair rather than accepting tokenizer.json. Unverifiable here (transformers not installed, FLUX.1 repos gated 401) and a blind fix risks the inverse defect - reporting a working install as INCOMPLETE and forcing a ~23GB re-download. Queued against the spec 15 gated smoke test. A later round must NOT quietly 'fix' this without real gated verification."
+  ],
+  "verification_summary": {
+    "total": 13,
+    "yes": 10,
+    "partial_fastpath": 2,
+    "partial_escalated": 1
+  },
+  "notable": "The original implementation would have shipped FLUX.2 [klein] 4B permanently unusable: the registry assumed 7 components where FLUX.2 has 5, so a correctly downloaded checkpoint would have reported INCOMPLETE forever. All 48 tests passed, because tests/model_fixtures.py built snapshots from the same constant production read. Caught by querying the HuggingFace API, not by reading code or running tests."
+}

@@ -6,10 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests.model_fixtures import write_complete_snapshot, write_index_only
+from textbrush.model.registry import FLUX2_KLEIN_4B, DiscoveryCause
 from textbrush.model.weights import (
     TokenRequiredError,
     _mask_token,
     download_flux_weights,
+    download_model_weights,
     get_cache_info,
     is_flux_available,
 )
@@ -21,7 +24,7 @@ class TestDownloadFailureHandling:
     def test_network_timeout_error(self):
         """Network timeout raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = TimeoutError("Connection timed out")
 
@@ -29,14 +32,14 @@ class TestDownloadFailureHandling:
                         download_flux_weights(force=False)
 
                     error_msg = str(exc_info.value)
-                    assert "Failed to download FLUX.1 Schnell model" in error_msg
+                    assert "Failed to download FLUX.1 schnell model" in error_msg
                     assert "Network timeout" in error_msg
                     assert "Cache location" in error_msg
 
     def test_authentication_error_generic(self):
         """Generic PermissionError raises RuntimeError (not TokenRequiredError)."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = PermissionError("Permission denied")
 
@@ -44,12 +47,12 @@ class TestDownloadFailureHandling:
                         download_flux_weights(force=False)
 
                     error_msg = str(exc_info.value)
-                    assert "Failed to download FLUX.1 Schnell model" in error_msg
+                    assert "Failed to download FLUX.1 schnell model" in error_msg
 
     def test_disk_space_error(self):
         """Disk space error raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = OSError("No space left on device")
 
@@ -57,13 +60,13 @@ class TestDownloadFailureHandling:
                         download_flux_weights(force=False)
 
                     error_msg = str(exc_info.value)
-                    assert "Failed to download FLUX.1 Schnell model" in error_msg
+                    assert "Failed to download FLUX.1 schnell model" in error_msg
                     assert "Insufficient disk space" in error_msg
 
     def test_generic_download_error(self):
         """Generic download error raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("Unexpected error")
 
@@ -71,13 +74,13 @@ class TestDownloadFailureHandling:
                         download_flux_weights(force=False)
 
                     error_msg = str(exc_info.value)
-                    assert "Failed to download FLUX.1 Schnell model" in error_msg
+                    assert "Failed to download FLUX.1 schnell model" in error_msg
                     assert "Unexpected error" in error_msg
 
     def test_download_success_returns_path(self):
         """Successful download returns Path to snapshot directory."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.return_value = "/tmp/hf_cache/models--test/snapshots/abc123"
 
@@ -90,7 +93,7 @@ class TestDownloadFailureHandling:
     def test_force_download_overrides_cache_check(self):
         """Force download re-downloads even if cached."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=True):
+            with patch("textbrush.model.weights.is_model_available", return_value=True):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.return_value = "/tmp/hf_cache/models--test/snapshots/abc123"
 
@@ -103,7 +106,7 @@ class TestDownloadFailureHandling:
 
     def test_skip_download_if_cached_no_token_needed(self):
         """Skip download if already cached — HF_TOKEN not required for cache reads."""
-        with patch("textbrush.model.weights.is_flux_available", return_value=True):
+        with patch("textbrush.model.weights.is_model_available", return_value=True):
             with patch("textbrush.model.weights.snapshot_download") as mock_download:
                 with patch("textbrush.model.weights.get_cache_info") as mock_cache_info:
                     mock_cache_dir = MagicMock()
@@ -136,23 +139,26 @@ class TestTokenRequiredError:
 
     def test_raises_token_required_when_no_hf_token(self):
         """TokenRequiredError raised when HF_TOKEN not set and download needed."""
-        with patch("textbrush.model.weights.is_flux_available", return_value=False):
+        with patch("textbrush.model.weights.is_model_available", return_value=False):
             env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(TokenRequiredError) as exc_info:
                     download_flux_weights(force=False)
 
                 assert "HF_TOKEN" in str(exc_info.value)
+                assert exc_info.value.cause == DiscoveryCause.CREDENTIALS_MISSING
 
     def test_raises_token_required_on_gated_repo_error(self):
-        """GatedRepoError from HF hub raises TokenRequiredError."""
+        """GatedRepoError from HF hub raises TokenRequiredError classified
+        LICENSE_ACCESS_MISSING -- spec.md sec 8's cause is only observable by
+        attempting a download, and this is the download path that observes it."""
         from huggingface_hub.utils import GatedRepoError
 
         mock_response = MagicMock()
         mock_response.status_code = 403
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = GatedRepoError(
                         "Repository access restricted", response=mock_response
@@ -163,16 +169,18 @@ class TestTokenRequiredError:
 
                     assert "Access denied" in str(exc_info.value)
                     assert "license" in str(exc_info.value)
+                    assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
     def test_raises_token_required_on_hf_http_401(self):
-        """HfHubHTTPError with 401 status raises TokenRequiredError."""
+        """HfHubHTTPError with 401 status raises TokenRequiredError classified
+        LICENSE_ACCESS_MISSING."""
         from huggingface_hub.utils import HfHubHTTPError
 
         mock_response = MagicMock()
         mock_response.status_code = 401
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_invalid_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError(
                         "Unauthorized", response=mock_response
@@ -182,16 +190,18 @@ class TestTokenRequiredError:
                         download_flux_weights(force=False)
 
                     assert "401" in str(exc_info.value)
+                    assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
     def test_raises_token_required_on_hf_http_403(self):
-        """HfHubHTTPError with 403 status raises TokenRequiredError."""
+        """HfHubHTTPError with 403 status raises TokenRequiredError classified
+        LICENSE_ACCESS_MISSING."""
         from huggingface_hub.utils import HfHubHTTPError
 
         mock_response = MagicMock()
         mock_response.status_code = 403
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError("Forbidden", response=mock_response)
 
@@ -199,26 +209,31 @@ class TestTokenRequiredError:
                         download_flux_weights(force=False)
 
                     assert "403" in str(exc_info.value)
+                    assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
     def test_raises_token_required_on_plain_401_exception(self):
-        """Plain Exception with '401' in message raises TokenRequiredError."""
+        """Plain Exception with '401' in message raises TokenRequiredError
+        classified LICENSE_ACCESS_MISSING."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("401 Client Error")
 
-                    with pytest.raises(TokenRequiredError):
+                    with pytest.raises(TokenRequiredError) as exc_info:
                         download_flux_weights(force=False)
+                    assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
     def test_raises_token_required_on_plain_403_exception(self):
-        """Plain Exception with '403' in message raises TokenRequiredError."""
+        """Plain Exception with '403' in message raises TokenRequiredError
+        classified LICENSE_ACCESS_MISSING."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("403 Forbidden")
 
-                    with pytest.raises(TokenRequiredError):
+                    with pytest.raises(TokenRequiredError) as exc_info:
                         download_flux_weights(force=False)
+                    assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
     def test_hf_http_non_auth_error_raises_runtime_error(self):
         """HfHubHTTPError with non-auth status code raises RuntimeError (not TokenRequiredError)."""
@@ -228,7 +243,7 @@ class TestTokenRequiredError:
         mock_response.status_code = 500
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_flux_available", return_value=False):
+            with patch("textbrush.model.weights.is_model_available", return_value=False):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError(
                         "Internal Server Error", response=mock_response
@@ -236,6 +251,67 @@ class TestTokenRequiredError:
 
                     with pytest.raises(RuntimeError):
                         download_flux_weights(force=False)
+
+
+class TestGatedFlagGatesTokenRequirement:
+    """Gate-remediation C4: `download_model_weights` previously required
+    HF_TOKEN for every model regardless of `ModelSpec.gated`, so
+    flux2-klein-4b -- verified ungated against the Hub (registry.py
+    MODEL_REGISTRY comment, 2026-09-18) -- could not be downloaded without a
+    token anyone would need to go get for a repo that doesn't require one.
+    The pre-flight guard must apply only when `spec.gated` is True; the
+    401/403 exception-mapping path (already unconditional on `spec.gated`)
+    is unaffected and still classifies as LICENSE_ACCESS_MISSING regardless.
+    """
+
+    def test_ungated_model_downloads_without_token_or_preflight_error(self):
+        """flux2-klein-4b (gated=False): no HF_TOKEN configured must not
+        raise TokenRequiredError before even attempting the download --
+        snapshot_download must be reached and allowed to proceed anonymously."""
+        with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch("textbrush.model.weights.snapshot_download") as mock_download:
+                mock_download.return_value = "/tmp/hf_cache/models--flux2/snapshots/abc123"
+                env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
+                with patch.dict(os.environ, env, clear=True):
+                    result = download_model_weights(FLUX2_KLEIN_4B, force=False)
+
+        assert isinstance(result, Path)
+        assert mock_download.called
+
+    def test_gated_model_still_requires_token_preflight(self):
+        """The existing gated-model guard (schnell, Kontext-dev, both `auto`)
+        must be unchanged: no token configured still raises TokenRequiredError
+        before any download attempt."""
+        with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch("textbrush.model.weights.snapshot_download") as mock_download:
+                env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
+                with patch.dict(os.environ, env, clear=True):
+                    with pytest.raises(TokenRequiredError) as exc_info:
+                        download_flux_weights(force=False)
+
+        assert exc_info.value.cause == DiscoveryCause.CREDENTIALS_MISSING
+        assert not mock_download.called
+
+    def test_ungated_model_401_from_hub_still_maps_to_license_access_missing(self):
+        """A `gated=False` registry entry that drifts stale (the Hub actually
+        refuses the request) must still degrade gracefully: the exception
+        mapping in the download path is not conditioned on `spec.gated`, so
+        a 401/403 arriving anyway is still TokenRequiredError classified
+        LICENSE_ACCESS_MISSING, not an unclassified RuntimeError."""
+        from huggingface_hub.utils import HfHubHTTPError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch("textbrush.model.weights.snapshot_download") as mock_download:
+                mock_download.side_effect = HfHubHTTPError("Unauthorized", response=mock_response)
+                env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
+                with patch.dict(os.environ, env, clear=True):
+                    with pytest.raises(TokenRequiredError) as exc_info:
+                        download_model_weights(FLUX2_KLEIN_4B, force=False)
+
+        assert exc_info.value.cause == DiscoveryCause.LICENSE_ACCESS_MISSING
 
 
 class TestTokenMasking:
@@ -273,27 +349,48 @@ class TestTokenMasking:
 
 
 class TestIsFluxAvailableCustomDirs:
-    """Tests for custom directory support in is_flux_available."""
+    """Tests for custom directory support in is_flux_available.
+
+    epic: multi-reference-flux-image-editing (S2). is_flux_available now
+    delegates to the strengthened check_model_availability() (AC-DISCOVERY-1):
+    a directory must carry every declared component's config and weight
+    files, not just the top-level model_index.json marker. Fixtures below
+    build a complete snapshot via tests/model_fixtures.py rather than a bare
+    marker file.
+    """
 
     def test_custom_dir_with_model_index_returns_true(self, tmp_path):
-        """Custom directory containing model_index.json reports model available."""
+        """Custom directory with a complete snapshot reports model available."""
         model_dir = tmp_path / "my-flux-model"
-        model_dir.mkdir()
-        (model_dir / "model_index.json").write_text('{"_class_name": "FluxPipeline"}')
+        write_complete_snapshot(model_dir)
 
         with patch("textbrush.model.weights.try_to_load_from_cache", return_value=None):
             result = is_flux_available(custom_dirs=[model_dir])
 
         assert result is True
 
+    def test_custom_dir_with_index_only_is_incomplete(self, tmp_path):
+        """A custom directory with only the top-level marker is NOT available
+        (AC-DISCOVERY-1: a single top-level marker file is insufficient)."""
+        model_dir = tmp_path / "index-only"
+        write_index_only(model_dir)
+
+        with patch("textbrush.model.weights.try_to_load_from_cache", return_value=None):
+            result = is_flux_available(custom_dirs=[model_dir])
+
+        assert result is False
+
     def test_custom_dir_without_model_index_falls_back_to_hf_cache(self, tmp_path):
         """Custom directory without model_index.json falls back to HF cache check."""
         model_dir = tmp_path / "empty-dir"
         model_dir.mkdir()
 
+        hf_root = tmp_path / "hf_cache_snapshot"
+        write_complete_snapshot(hf_root)
+
         with patch(
             "textbrush.model.weights.try_to_load_from_cache",
-            return_value="/some/hf/path",
+            return_value=str(hf_root / "model_index.json"),
         ):
             result = is_flux_available(custom_dirs=[model_dir])
 
@@ -303,9 +400,12 @@ class TestIsFluxAvailableCustomDirs:
         """Non-existent custom directory is silently skipped, falls back to HF cache."""
         nonexistent = tmp_path / "does-not-exist"
 
+        hf_root = tmp_path / "hf_cache_snapshot"
+        write_complete_snapshot(hf_root)
+
         with patch(
             "textbrush.model.weights.try_to_load_from_cache",
-            return_value="/some/hf/path",
+            return_value=str(hf_root / "model_index.json"),
         ):
             result = is_flux_available(custom_dirs=[nonexistent])
 
@@ -314,8 +414,7 @@ class TestIsFluxAvailableCustomDirs:
     def test_custom_dirs_checked_before_hf_cache(self, tmp_path):
         """Custom directories are checked before HF cache (HF cache not called if found)."""
         model_dir = tmp_path / "local-model"
-        model_dir.mkdir()
-        (model_dir / "model_index.json").write_text('{"_class_name": "FluxPipeline"}')
+        write_complete_snapshot(model_dir)
 
         with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[model_dir])
@@ -344,14 +443,12 @@ class TestIsFluxAvailableCustomDirs:
         assert result is False
 
     def test_multiple_custom_dirs_first_match_wins(self, tmp_path):
-        """First custom directory with model wins; subsequent dirs not checked."""
+        """First custom directory with a complete model wins; subsequent dirs not checked."""
         dir1 = tmp_path / "dir1"
-        dir1.mkdir()
-        (dir1 / "model_index.json").write_text("{}")
+        write_complete_snapshot(dir1)
 
         dir2 = tmp_path / "dir2"
-        dir2.mkdir()
-        (dir2 / "model_index.json").write_text("{}")
+        write_complete_snapshot(dir2)
 
         with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[dir1, dir2])
@@ -366,8 +463,7 @@ class TestIsFluxAvailableCustomDirs:
         # No model_index.json in dir1
 
         dir2 = tmp_path / "dir2"
-        dir2.mkdir()
-        (dir2 / "model_index.json").write_text("{}")
+        write_complete_snapshot(dir2)
 
         with patch("textbrush.model.weights.try_to_load_from_cache") as mock_try_load:
             result = is_flux_available(custom_dirs=[dir1, dir2])

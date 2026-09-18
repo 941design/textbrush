@@ -1,0 +1,29 @@
+{
+  "story_id": "S2",
+  "captured_at": "2026-09-18T11:05:00Z",
+  "commit": "360c2af7956a29d82934ef111756d850b2a2969c",
+  "note_on_capture_method": "This baseline was reconstructed from S1's recorded final state (specs/epic-multi-reference-flux-image-editing/S1-config-schema-extension/result.json and baseline.json) rather than a fresh git-stash measurement, because S2 began implementation immediately after reading S1's artifacts with no intervening commits (git log shows S1's commit as HEAD's immediate predecessor in this line of work, and `git status` at session start showed only S1's own uncommitted changes -- no other story touched the tree between S1 and S2). The 61 pre-existing, unrelated failures were independently re-confirmed by name (all in tests/test_config_controls.py / tests/test_config_controls_integration.py) in the full-suite run performed after S2's implementation.",
+  "tests": {
+    "command": "uv run pytest tests --ignore=tests/test_buffer_stress.py -m \"not slow and not integration\" -q",
+    "status": "PRE_EXISTING_FAILURES",
+    "passed": 699,
+    "failed": 61,
+    "skipped": 4,
+    "deselected": 42,
+    "note": "Sourced from S1-config-schema-extension/result.json test_counts.final (764 total = 699 passed + 61 failed + 4 skipped) and baseline.json, which documents the same 61 failures as pre-existing TypeScript source-analysis tests unrelated to any Python module (src-tauri/ui/main.js does not exist in this checkout). Not caused by, and not fixed by, this story."
+  },
+  "lint": {
+    "command": "uv run ruff check textbrush tests",
+    "status": "clean",
+    "note": "S1 recorded clean at its own completion; no commits landed between S1 and the start of S2's implementation."
+  },
+  "format": {
+    "command": "uv run ruff format --check textbrush tests",
+    "status": "clean",
+    "note": "S1 recorded clean at its own completion; no commits landed between S1 and the start of S2's implementation."
+  },
+  "typecheck": {
+    "status": "NO_TYPECHECK",
+    "note": "No mypy/pyright target exists in Makefile or pyproject.toml for the Python codebase; make check-all's typecheck step covers the TypeScript UI only (typecheck-ui), which this story does not touch."
+  }
+}

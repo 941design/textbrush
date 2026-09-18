@@ -412,7 +412,10 @@ def main(argv: List[str] | None = None) -> None:
 
         # Download model dispatch — early exit before normal generation flow
         if args.download_model:
+            from .model.registry import FLUX1_SCHNELL, get_model_spec
             from .model.weights import TokenRequiredError, download_flux_weights
+
+            schnell_spec = get_model_spec(FLUX1_SCHNELL)
 
             config_path = args.config if args.config is not None else CONFIG_PATH
             config = load_config(config_path)
@@ -423,12 +426,12 @@ def main(argv: List[str] | None = None) -> None:
                 os.environ["HF_TOKEN"] = token
 
             print(
-                "FLUX.1 schnell is available under the FLUX.1 [schnell] Non-Commercial License.\n"
-                "Review the license before use: "
-                "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+                f"{schnell_spec.display_name} is available under the FLUX.1 [schnell] "
+                "Non-Commercial License.\n"
+                f"Review the license before use: {schnell_spec.license_url}",
                 file=sys.stderr,
             )
-            print("Downloading FLUX.1 schnell model (~23 GB)...", file=sys.stderr)
+            print(f"Downloading {schnell_spec.display_name} model (~23 GB)...", file=sys.stderr)
 
             try:
                 model_path = download_flux_weights()
@@ -436,7 +439,7 @@ def main(argv: List[str] | None = None) -> None:
                 sys.exit(0)
             except TokenRequiredError:
                 print(
-                    "HuggingFace token required to download FLUX.1 schnell.\n"
+                    f"HuggingFace token required to download {schnell_spec.display_name}.\n"
                     "Set your token with:\n"
                     "  export HF_TOKEN=<your_token>\n"
                     "Or add to config file "
@@ -446,7 +449,7 @@ def main(argv: List[str] | None = None) -> None:
                     "Get a token at: "
                     "https://huggingface.co/settings/tokens\n"
                     "Then accept the model license at: "
-                    "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+                    f"{schnell_spec.license_url}",
                     file=sys.stderr,
                 )
                 sys.exit(1)
