@@ -1,0 +1,28 @@
+{
+  "story_id": "S3",
+  "captured_at": "2026-09-18T16:15:00Z",
+  "commit": "3812c44ddb89c93198b7bc5d3512fc5f9cd2b4da",
+  "tests": {
+    "command": "uv run pytest tests --ignore=tests/test_buffer_stress.py -m \"not slow and not integration\" -q",
+    "status": "PRE_EXISTING_FAILURES",
+    "passed": 791,
+    "failed": 61,
+    "skipped": 4,
+    "deselected": 42,
+    "note": "The 61 failures are the same pre-existing TypeScript source-analysis tests documented in S1's and S2's baseline/result.json (tests/test_config_controls.py and tests/test_config_controls_integration.py, unrelated to any Python module -- src-tauri/ui/main.js does not exist in this checkout). Confirmed by name against S2-model-registry-and-discovery/baseline.json's identical failure set. Passed count (791) is higher than S2's own baseline (699) because this run is taken after S2's commit (3812c44) landed, which added 48 passing tests of its own."
+  },
+  "lint": {
+    "command": "uv run ruff check textbrush tests",
+    "status": "not_yet_run_at_baseline",
+    "note": "Will be run and recorded as part of this story's own verification in result.json; no lint changes exist yet at this baseline snapshot."
+  },
+  "format": {
+    "command": "uv run ruff format --check textbrush tests",
+    "status": "not_yet_run_at_baseline",
+    "note": "Will be run and recorded as part of this story's own verification in result.json."
+  },
+  "typecheck": {
+    "status": "NO_TYPECHECK",
+    "note": "No mypy/pyright target exists in Makefile or pyproject.toml for the Python codebase; make check-all's typecheck step covers the TypeScript UI only, which this story does not touch."
+  }
+}

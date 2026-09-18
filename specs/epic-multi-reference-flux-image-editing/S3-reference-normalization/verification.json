@@ -66,6 +66,203 @@
       "category": "SPEC",
       "question": "Does a test assert the full NormalizedReference contract fields (pixel_data, width, height, content_aspect_ratio, fill_value, decoded_at) are all present and independently checkable on the return value of normalize(path) -- not just that pixel_data exists -- since S5 and S7 both consume this exact shape as the seam contract?",
       "ac_id": "AC-PROCESS-1"
+    },
+    {
+      "question_id": "VQ-S3-001",
+      "phase": "post-impl",
+      "category": "QUALITY",
+      "answer": "YES. scripts/generate_reference_fixtures.py generates every fixture and, before printing success, calls _assert_real_decode_failure() on corrupt_truncated.jpg/corrupt_not_an_image.png/corrupt_empty.jpg -- each opens via the real PIL.Image.open()+.load() path (the exact production decode call) and the generation script itself raises AssertionError if any of them decode successfully. It also calls _assert_real_decode_success() on every 'valid' fixture including unsupported_extension.bmp (proving that one is rejected on extension, not incidental decode failure). The script ran successfully (see result.json), so this was independently confirmed at fixture-generation time, not merely asserted in prose.",
+      "evidence": [
+        "scripts/generate_reference_fixtures.py:23-34,107-119",
+        "tests/test_references.py::TestFailureTaxonomy::test_unsupported_extension_real_decodable_file_rejected_by_extension (re-verifies via Image.open+load at test time too)"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-002",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "answer": "YES. textbrush/references/normalize.py and __init__.py import only `__future__`, stdlib (dataclasses, datetime, pathlib, importlib in tests only), and PIL. Zero textbrush.* internal imports exist in normalize.py; __init__.py's only internal import is its own sibling submodule textbrush.references.normalize. Verified by tests/test_references.py::TestModuleBoundary via AST parsing, not by reading the diff.",
+      "evidence": [
+        "textbrush/references/normalize.py:28-34",
+        "textbrush/references/__init__.py:14-25",
+        "tests/test_references.py::TestModuleBoundary"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-003",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "answer": "YES. tests/test_references.py::TestModuleBoundary reuses tests/test_config.py's _internal_imports() AST helper (the same helper S1 used and explicitly flagged as 'the template for S3's (references) ... leaf-boundary tests') against both textbrush/references/normalize.py and textbrush/references/__init__.py, asserting no import of textbrush.backend/worker/ipc (prefix-matched, not exact-string, per that helper's documented gotcha) and, more strongly, that normalize.py's internal-import set is empty.",
+      "evidence": [
+        "tests/test_references.py::TestModuleBoundary::test_normalize_module_has_no_forbidden_internal_imports",
+        "tests/test_references.py::TestModuleBoundary::test_init_module_has_no_forbidden_internal_imports"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "post-impl",
+      "category": "TEST",
+      "answer": "YES. TestUniformScalingAndPadding::test_property_equal_axis_scale_over_arbitrary_dimensions is a Hypothesis @given property test over source_w/source_h/target_w/target_h in [20,900]x[20,900]x[32,512]x[32,512] (25 examples), asserting the measured content bounding box on the output canvas exactly equals round(source * single_scale_factor) on BOTH axes -- not within a tolerance. It also has 4 explicit non-square parameterized cases (landscape/portrait/square sources against square/portrait/4:3 targets) that assert exact equality, plus a dedicated odd-remainder tie-break test.",
+      "evidence": [
+        "tests/test_references.py::TestUniformScalingAndPadding"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-005",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "answer": "YES. test_content_aspect_ratio_measured_on_content_not_padded_canvas normalizes a 600x400 source onto a 500x500 (1:1) canvas -- a case that forces padding on one axis -- and asserts content_aspect_ratio == 600/400 exactly (pytest.approx for float division only, not a tolerance band on the ratio's correctness) and explicitly asserts it is NOT 1.0 (the padded canvas's ratio). test_all_seam_fields_present_and_correct performs the same exact-equality check on a non-square/non-square combination.",
+      "evidence": [
+        "tests/test_references.py::TestNormalizedReferenceContract::test_content_aspect_ratio_measured_on_content_not_padded_canvas"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-006",
+      "phase": "post-impl",
+      "category": "SECURITY",
+      "answer": "YES. Each failure-class test in TestFailureTaxonomy uses a distinct real fixture engineered to trigger exactly one failure mode (unsupported_extension.bmp is real+decodable, so only the extension check can reject it; corrupt_truncated.jpg/corrupt_not_an_image.png/corrupt_empty.jpg are three independently-caused corrupt-decode fixtures; the resource-constrained test lowers Pillow's real MAX_IMAGE_PIXELS guard against a real, otherwise-valid fixture, isolating that one mechanism). test_uppercase_extension_file_is_accepted uses tests/fixtures/images/IMG_1234.JPG, a real on-disk file whose suffix is literally '.JPG' (asserted via path.suffix == '.JPG' before calling normalize()), not a lowercased string built only in the test.",
+      "evidence": [
+        "tests/test_references.py::TestFailureTaxonomy",
+        "tests/test_references.py::TestCaseInsensitiveExtensionMatching::test_uppercase_extension_file_is_accepted"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-007",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "answer": "YES. TestExifOrientation::test_property_all_orientations_preserve_full_content_and_aspect is a Hypothesis property test over all 8 EXIF orientation tag values and non-square source dimensions in [20,400]x[20,400] (25 examples), writing a real JPEG with a real embedded EXIF Exif() orientation tag via PIL and asserting normalize()'s reported content_aspect_ratio matches PIL's own ImageOps.exif_transpose()-corrected dimensions -- i.e. production code (normalize()'s internal ImageOps.exif_transpose call) performs the actual transform; the test only uses exif_transpose independently to compute the expected value for comparison, not to perform the normalization under test.",
+      "evidence": [
+        "tests/test_references.py::TestExifOrientation::test_property_all_orientations_preserve_full_content_and_aspect",
+        "tests/test_references.py::TestExifOrientation::test_exif_orientation_corrects_stored_dimensions (fixed 300x200-stored/200x300-corrected fixture, non-property sanity check)"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-008",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "answer": "YES, all three. test_repeated_normalization_is_byte_identical calls normalize() twice on the same source+target_size and asserts pixel_data.tobytes() equality (plus width/height/content_aspect_ratio/fill_value equality; decoded_at is deliberately excluded per the documented invariant). test_determinism_independent_of_max_image_pixels_headroom additionally proves the result does not change when more 'resource headroom' (a raised MAX_IMAGE_PIXELS) is available. test_transparent_region_becomes_neutral_fill_not_undefined loads valid_alpha.png (real RGBA fixture, opaque-red left half / fully-transparent right half) and asserts pixel-level equality: opaque pixels keep their color unchanged, transparent pixels become exactly (128,128,128) -- not white, black, or undefined. test_decode_resource_constrained_raises_actionable_error and test_resource_constrained_failure_does_not_return_degraded_result cover the third: a real Pillow decompression-bomb guard trip raises ReferenceResourceConstrainedError and never returns a NormalizedReference (checked via a None-until-exception sentinel).",
+      "evidence": [
+        "tests/test_references.py::TestDeterminism",
+        "tests/test_references.py::TestAlphaCompositing::test_transparent_region_becomes_neutral_fill_not_undefined",
+        "tests/test_references.py::TestFailureTaxonomy::test_decode_resource_constrained_raises_actionable_error",
+        "tests/test_references.py::TestFailureTaxonomy::test_resource_constrained_failure_does_not_return_degraded_result"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-009",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "answer": "YES for all five failure classes using real fixtures (not mocked open()): unsupported extension (unsupported_extension.bmp, a real decodable BMP), missing file (a path that genuinely does not exist, constructed via tmp_path), unreadable file (a real file chmod'd 0o000 on disk, skipped only on non-POSIX or when running as root since root bypasses permission bits), corrupt file (three independently-sourced real corrupt fixtures: truncated JPEG, non-image garbage bytes, zero-byte file), and decode-resource-constrained (a real, valid, otherwise-normal PNG fixture decoded under a real lowered Pillow MAX_IMAGE_PIXELS guard -- the actual production safety mechanism firing, not a simulated failure). Plus the uppercase-extension case in VQ-S3-006's answer. Each asserts the specific matching exception type is raised (which necessarily means no NormalizedReference / no generation-eligible result is produced).",
+      "evidence": [
+        "tests/test_references.py::TestFailureTaxonomy (all methods)"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-010",
+      "phase": "post-impl",
+      "category": "SPEC",
+      "answer": "YES. test_all_seam_fields_present_and_correct independently asserts every field: pixel_data (type, mode=='RGB', size==target_size), width, height, content_aspect_ratio (exact expected value), fill_value (== NEUTRAL_FILL_VALUE), and decoded_at (asserted to be a real parseable ISO-8601 string via datetime.fromisoformat, which raises if malformed).",
+      "evidence": [
+        "tests/test_references.py::TestNormalizedReferenceContract::test_all_seam_fields_present_and_correct"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-011",
+      "phase": "post-impl",
+      "category": "ARCHITECTURE",
+      "question": "normalize()'s literal signature is normalize(path, target_size) rather than the single-argument normalize(path) written in stories.json's seam description. Is this deviation justified and does it preserve the frozen part of the seam contract (the NormalizedReference field list)?",
+      "answer": "SUPERSEDED by the remediation-round-1 VQ-S3-F2 record below: target_size was REQUIRED at the time this answer was written (normalize(path, target_size), no default), but round 1 (Decider ruling 2026-09-18, findings F1/F2) made it optional -- normalize(path, target_size=None). The reasoning about NormalizedReference's field list being preserved unchanged still holds, but this record's premise (target_size as a required argument) is stale; see VQ-S3-F2 for the current, accurate signature and rationale.",
+      "evidence": [
+        "specs/epic-multi-reference-flux-image-editing/S3-reference-normalization/architecture.json:signature_decision",
+        "specs/epic-multi-reference-flux-image-editing/S3-reference-normalization/verification.json:VQ-S3-F2 (remediation-round-1)"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-004",
+      "phase": "remediation-round-1",
+      "category": "TEST",
+      "question": "Re-examination requested by Stage-1 review finding F8: the original post-impl YES answer to VQ-S3-004 rested on a property test (TestUniformScalingAndPadding::test_property_equal_axis_scale_over_arbitrary_dimensions) whose expectation re-derived production's exact clamp formula (`max(1, min(round(source*scale), target))`) verbatim, and whose input ranges (source 20-900, target 32-512) could never reach the degenerate case that formula's `max(1, ...)` was clamping -- so the test could not have caught a bug in that formula, and did not (see F5). Is the answer still YES now that both defects are fixed?",
+      "answer": "YES, now genuinely. The property test no longer restates `_scale_and_pad`'s internal formula: its expectation is an independent oracle checking the invariant the spec actually requires (measured content never exceeds the canvas; the per-axis scale factors implied by the MEASURED output pixels agree with each other within a rounding tolerance; the fit is 'contain'-tight against the bottleneck axis) rather than re-deriving production's pixel-count arithmetic. Its input ranges were also extended to source 1-4000 x 1-4000 against target 1-512 x 1-512, which does reach the degenerate case (verified: e.g. a 4000x3-shaped source against a small target triggers it within the explored space), and the test now branches to assert `NormalizationError` is raised there instead of silently computing an expected content size. A deterministic, non-randomized repro of the exact F5 report (4000x3 source, 512x512 target) is additionally pinned as its own test asserting the specific error and message content, independent of Hypothesis's example selection.",
+      "evidence": [
+        "tests/test_references.py::TestUniformScalingAndPadding::test_extreme_aspect_ratio_rounds_to_zero_raises_normalization_error",
+        "tests/test_references.py::TestUniformScalingAndPadding::test_property_equal_axis_scale_over_arbitrary_dimensions"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F5",
+      "phase": "remediation-round-1",
+      "category": "SPEC",
+      "question": "F5 (sev 4, spec_violation): does `_scale_and_pad`'s `max(1, ...)` clamp silently stretch content for extreme source aspect ratios, contradicting spec.md sec 6.2's prohibition on silent stretching, and is this now fixed with an actionable error?",
+      "answer": "YES it was a real defect, and YES it is fixed. Repro before the fix: a 4000x3 source into a 512x512 canvas rendered content at 512x1 pixels (an actual 512:1 ratio) while `content_aspect_ratio` continued to report 1333.33 (the true 4000/3 ratio) -- a field lying about the pixels it accompanies. `_scale_and_pad` (textbrush/references/normalize.py) now raises `NormalizationError` naming the source and requested dimensions whenever either scaled axis would round below 1 pixel, instead of clamping. Verified live: normalize() on a 4000x3 PNG against target_size=(512, 512) now raises `NormalizationError: reference image 4000x3 cannot be scaled to fit within the requested 512x512 canvas: the extreme aspect ratio would round one axis down to 0 pixels (scale factor 0.128, computed content size 512x0)`.",
+      "evidence": [
+        "textbrush/references/normalize.py:_scale_and_pad",
+        "tests/test_references.py::TestUniformScalingAndPadding::test_extreme_aspect_ratio_rounds_to_zero_raises_normalization_error"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F4",
+      "phase": "remediation-round-1",
+      "category": "SPEC",
+      "question": "F4 (sev 5, incomplete_taxonomy): does `_decode` translate only the ERROR tier of Pillow's decompression-bomb guard, leaving the WARNING tier (roughly 1x-2x MAX_IMAGE_PIXELS) to succeed silently or, under warnings-as-errors, escape as a bare `Warning` outside `ReferenceImageError`?",
+      "answer": "YES it was a real gap, and YES it is fixed. `_decode` now wraps the `Image.open()`/`.load()` call in `warnings.catch_warnings()` with `simplefilter('error', Image.DecompressionBombWarning)`, so both guard tiers raise and are caught, mapping to `ReferenceResourceConstrainedError`. Added a dedicated test using a 1.6x MAX_IMAGE_PIXELS ratio (within Pillow's own warning-only band, confirmed against Pillow's `_decompression_bomb_check` source: error above 2x, warning above 1x) which previously would not have raised anything.",
+      "evidence": [
+        "textbrush/references/normalize.py:_decode",
+        "tests/test_references.py::TestFailureTaxonomy::test_decompression_bomb_warning_tier_also_raises_resource_constrained_error"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F3",
+      "phase": "remediation-round-1",
+      "category": "ARCHITECTURE",
+      "question": "F3 (sev 6, mutable_seam_payload): does `@dataclass(frozen=True)` fail to protect the mutable `PIL.Image.Image` behind `pixel_data`, and does the auto-generated equality/hash mislead callers?",
+      "answer": "YES, confirmed, and addressed by contract statement rather than defensive copying. `frozen=True` only prevents rebinding `NormalizedReference`'s own fields; an external `.paste()`/`.putpixel()` on `pixel_data` still mutates the underlying PIL image in place, which would silently corrupt every later read of the same held instance under S7's decode-once lifetime (spec.md sec 6.3). The class docstring now states this as an explicit CONTRACT line (consumers must copy before mutating). Separately, `eq=False` removes the misleading default equality/hash (byte-identical images compared unequal by object identity; `hash()` raised TypeError on the unhashable `Image.info` dict) rather than leaving both to look like usable value semantics they were not. Deep-copying pixel_data on construction or access was deliberately rejected as the fix: it would add a per-generation memory cost to address a hazard the contract statement fully covers.",
+      "evidence": [
+        "textbrush/references/normalize.py:NormalizedReference"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F6",
+      "phase": "remediation-round-1",
+      "category": "SPEC",
+      "question": "F6 (sev 5, doc_inaccuracy): do normalize.py, architecture.json, and result.json all incorrectly state that spec.md sec 6.2 does not require the alpha-compositing fill and the padding fill to be the same value?",
+      "answer": "YES, all three were wrong and are now corrected. spec.md sec 6.2 states alpha sources are composited onto 'the same documented neutral fill' as padding -- a binding, not merely a permitted simplification. The code was already correct (one constant, NEUTRAL_FILL_VALUE, used for both); only the prose describing it as an optional implementer choice was backwards, and a later story reading the old prose could legitimately have split the constants and violated sec 6.2 without realizing it. All three artifacts now cite the binding directly (ledger concept neutral-fill-binding).",
+      "evidence": [
+        "textbrush/references/normalize.py (NEUTRAL_FILL_VALUE comment)",
+        "specs/epic-multi-reference-flux-image-editing/S3-reference-normalization/architecture.json:public_api[NEUTRAL_FILL_VALUE]",
+        "specs/epic-multi-reference-flux-image-editing/S3-reference-normalization/result.json:implementation_notes.neutral_fill_reuse"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F7",
+      "phase": "remediation-round-1",
+      "category": "TEST",
+      "question": "F7 (sev 4, weak_guard): since every fill-color assertion in tests/test_references.py derives `_FILL_RGB` from the imported `NEUTRAL_FILL_VALUE`, would changing that constant to any other value still pass the whole suite?",
+      "answer": "YES it was a real gap (before this round, no test pinned the constant's actual value), and YES it is now fixed by a dedicated test asserting `NEUTRAL_FILL_VALUE == 128`. Note: 128 does not yet appear in any user-facing documentation, so this test pins the constant against the spec's own requirement of a single *documented* value without yet having a doc artifact to point at -- closing that gap (AC-DOC-1) is S13's responsibility, out of this leaf-module story's scope, and is called out here rather than addressed unilaterally.",
+      "evidence": [
+        "tests/test_references.py::test_neutral_fill_value_pinned_to_documented_constant"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F2",
+      "phase": "remediation-round-1",
+      "category": "ARCHITECTURE",
+      "question": "F2 (sev 5, contract_shape), resolved by Decider ruling 2 (2026-09-18): is `target_size` now optional (`tuple[int, int] | None = None`), with `None` applying only EXIF orientation, RGB conversion, and alpha compositing (no scale, no pad), and is this covered by tests?",
+      "answer": "YES. normalize()'s signature is now `normalize(path, target_size=None)`. The None path is covered for: source dimensions returned unscaled/unpadded, EXIF orientation still applied (verified against the same rotated fixture used for the target_size-given EXIF test), alpha still composited onto NEUTRAL_FILL_VALUE, no fill-colored padding introduced (bounding box spans the full output), target_size being omitted entirely behaving identically to passing None explicitly, and NormalizationError never being raised on the None path (the scale/pad stage does not run at all -- verified by monkeypatching `_scale_and_pad` to assert it is never called).",
+      "evidence": [
+        "textbrush/references/normalize.py:normalize",
+        "tests/test_references.py::TestOptionalTargetSize"
+      ]
+    },
+    {
+      "question_id": "VQ-S3-F1",
+      "phase": "remediation-round-1",
+      "category": "ARCHITECTURE",
+      "question": "F1 (sev 6, unowned_dependency): did architecture.json's signature_decision and normalize()'s docstring incorrectly attribute reference-input-dimension derivation to S2's per-model registry data, when `ModelSpec` (textbrush/model/registry.py) has no dimension field?",
+      "answer": "YES, the prior attribution was factually false and is now corrected in both places. The fact 'model X's pipeline accepts reference inputs at dimensions D' is owned by `inference` (S5), exposed as a `reference_input_size(output_width, output_height) -> tuple[int, int] | None` accessor on the `InferenceEngine` instance per stories.json blocking condition S5-BC-1 (already reflected in stories.json/ownership-ledger.json by the lead; this story's part was correcting the false attribution in architecture.json and the normalize() docstring, both done). S7 is the pass-through conduit: it reads S5's accessor and supplies the resulting tuple to normalize() as a plain value. `references` continues to import neither `model` nor `inference`.",
+      "evidence": [
+        "specs/epic-multi-reference-flux-image-editing/S3-reference-normalization/architecture.json:signature_decision",
+        "textbrush/references/normalize.py:normalize (docstring)"
+      ]
     }
   ]
 }

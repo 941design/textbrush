@@ -150,6 +150,20 @@
         "OPEN ASYMMETRY for S8/S9: explicit flux1-schnell blocks when uncached while implicit 0-reference resolution to schnell does not. Settle before either composition root consumes ModelResolution.",
         "AC-MODEL-5's 'runs only at launch' half is a call-site property S2 cannot discharge - resolve_model_selection has zero production callers. Carried forward as an S8/S9 obligation, NOT discharged by S2's unit tests."
       ]
+    },
+    {
+      "id": "reference-input-size-derivation",
+      "name": "The per-model fact 'this pipeline accepts reference inputs at dimensions D' -- derived once, on the InferenceEngine instance; None means natural dimensions accepted. Never a slug-keyed table, never restated by model/backend/references.",
+      "owning_module": "inference",
+      "type": "public_contract",
+      "added_by_story": "S5"
+    },
+    {
+      "id": "neutral-fill-binding",
+      "name": "One documented neutral fill value serves BOTH alpha compositing and padding -- spec.md sec 6.2 binds them ('composited onto the same documented neutral fill'). They must not be split into two constants by any later story.",
+      "owning_module": "references",
+      "type": "invariant",
+      "added_by_story": "S3"
     }
   ],
   "stories": [

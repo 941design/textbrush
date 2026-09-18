@@ -1,0 +1,70 @@
+{
+  "module_name": "references",
+  "purpose": "Read-only reference-image decode and normalization: EXIF-orientation application, alpha compositing and RGB conversion, uniform (equal-axis) scaling, deterministic centered padding with a documented neutral fill, and the per-file failure taxonomy (unsupported extension, missing, unreadable, corrupt, decode-resource-constrained), matched case-insensitively. Produces the NormalizedReference seam contract consumed by S5 (inference engines) and S7 (backend decode-at-acknowledgement lifecycle).",
+  "public_api": [
+    {
+      "name": "SUPPORTED_EXTENSIONS",
+      "signature": "frozenset[str] = {\".png\", \".jpg\", \".jpeg\"}",
+      "description": "Matched against Path.suffix.lower() -- case-insensitive by construction, so 'IMG_1234.JPG' is accepted (spec.md sec 5.2/6.2, AC-INPUT-3)."
+    },
+    {
+      "name": "NEUTRAL_FILL_VALUE",
+      "signature": "int = 128",
+      "description": "The single documented neutral fill value (mid-gray, applied equally to R/G/B) used for BOTH alpha compositing (spec.md sec 6.2 'sources carrying an alpha channel are composited onto the same documented neutral fill') and centered padding of the remainder after uniform scaling. Spec.md sec 6.2 BINDS these two uses to one value ('the same documented neutral fill'); this is not a simplification available to the implementer, and a later story must not split it into two constants without a spec amendment (ledger concept neutral-fill-binding)."
+    },
+    {
+      "name": "NormalizedReference",
+      "signature": "frozen dataclass NormalizedReference(pixel_data: PIL.Image.Image, width: int, height: int, content_aspect_ratio: float, fill_value: int, decoded_at: str)",
+      "description": "The seam contract authored by this story (stories.json 'seams' array). pixel_data is a PIL.Image.Image in RGB mode at exactly (width, height) -- chosen as the 'opaque RGB buffer' representation because it is what buffer.py, inference/base.py, and the diffusers reference-editing pipelines this epic targets already consume directly, with no new array-library dependency. width/height always equal pixel_data.size: when normalize() was called with a target_size, these are the final padded-canvas dimensions (target_size[0]/target_size[1]); when called with target_size=None, these are instead the EXIF-corrected SOURCE dimensions, since no scaling or padding stage runs. content_aspect_ratio is measured on the EXIF-corrected source content region BEFORE scaling or padding (source_width / source_height as plain float division of the two known integers), never on the padded canvas -- this is what AC-PROCESS-1's 'measured on the content region, not the padded canvas' requires, and it holds identically whether or not target_size is given. decoded_at is an ISO-8601 wall-clock marker for acknowledgement-time provenance (S7) and is explicitly EXCLUDED from the AC-PROCESS-2 determinism invariant, which applies only to pixel_data/width/height/content_aspect_ratio/fill_value."
+    },
+    {
+      "name": "normalize",
+      "signature": "normalize(path: str | pathlib.Path, target_size: tuple[int, int] | None = None) -> NormalizedReference",
+      "description": "Decodes, EXIF-orients, alpha-composites/RGB-converts, and -- only when target_size is given -- uniformly scales (single scalar factor applied to both axes, never independent per-axis ratios) and centers the result on a target_size canvas padded with NEUTRAL_FILL_VALUE. target_size=None (the default) skips scaling and padding entirely, returning the image at its EXIF-corrected source dimensions. See 'signature_decision' below for the optional-parameter rationale and for who supplies target_size."
+    },
+    {
+      "name": "ReferenceImageError",
+      "signature": "class ReferenceImageError(Exception)",
+      "description": "Base class for every failure normalize() raises. Named to avoid shadowing the Python builtin ReferenceError."
+    },
+    {
+      "name": "UnsupportedExtensionError / ReferenceNotFoundError / UnreadableReferenceError / CorruptReferenceError / ReferenceResourceConstrainedError / NormalizationError",
+      "signature": "subclasses of ReferenceImageError",
+      "description": "The full per-file failure taxonomy from spec.md sec 6.2/11 and AC-INPUT-3: unsupported extension, missing file, unreadable file (permission), corrupt/truncated/unidentifiable file, decode-resource-constrained (Pillow decompression-bomb guard / MemoryError during decode), and a residual NormalizationError for a resource failure surfacing during the scale/pad stage rather than decode itself (spec.md sec 6.2's 'if a source image cannot be normalized within the available resources... reject... rather than silently crop, stretch, omit, or substitute')."
+    }
+  ],
+  "private_files": [
+    "textbrush/references/normalization.py"
+  ],
+  "owned_data": [
+    "SUPPORTED_EXTENSIONS -- the case-insensitive extension allowlist",
+    "NEUTRAL_FILL_VALUE -- the documented neutral padding/compositing fill",
+    "The centered-padding tie-break rule for an odd remainder (floor division for left/top; the extra pixel lands on right/bottom), documented so it is deterministic and reproducible rather than implementation-accident"
+  ],
+  "dependencies_allowed": ["Pillow (PIL) -- already a de facto hard dependency via textbrush/buffer.py and textbrush/inference/base.py's unconditional `from PIL import Image`, despite being formally listed only under the [model] optional extra in pyproject.toml; this story does not change that pre-existing inconsistency (boy-scout note recorded in result.json, not fixed here as it is out of scope for a leaf-module story)"],
+  "dependencies_forbidden": ["backend", "worker", "ipc", "inference", "model", "config", "cli"],
+  "external_ports": ["PIL.Image / PIL.ImageOps (Pillow) -- local, in-process image decode only; no network or subprocess IO"],
+  "events_emitted": [],
+  "events_consumed": [],
+  "test_targets": [
+    "tests/test_references.py",
+    "tests/fixtures/images/ (new fixture files, generated by scripts/generate_reference_fixtures.py)"
+  ],
+  "seam": {
+    "cross_story": true,
+    "creates_seam": true,
+    "consumed_by": ["S5", "S7"],
+    "note": "S7 (backend) calls normalize(path, target_size) exactly once per reference at configuration-acknowledgement time and holds the NormalizedReference for the acknowledged configuration's lifetime (AC-PROCESS-3, out of this story's scope by stories.json's explicit exclusion). target_size is not a literal known at the call site: S7 reads it from the active engine's `InferenceEngine.reference_input_size(...)` accessor (stories.json blocking condition S5-BC-1, owned by S5) and passes the resulting tuple -- or `None`, which is a legal value meaning 'no fixed reference-input size for this model/configuration' -- through to normalize() unexamined; S7 does not derive, hardcode, or default this value itself. S5 (inference engines) consumes NormalizedReference.pixel_data directly as the per-reference image handed to the Kontext / FLUX.2 pipelines, and content_aspect_ratio/fill_value are available to callers that need to reason about the pre-padding content region without re-decoding."
+  },
+  "signature_decision": {
+    "question": "stories.json's scope bullet and the seams array both write the source artifact as literally `normalize(path) -> NormalizedReference` (single argument). Spec.md sec 6.2 items 3 and 4 make uniform resizing and centered padding to fixed dimensions each CONDITIONAL ('when required by the selected model', 'when a fixed rectangular tensor is required'), and NormalizedReference carries no model identifier field. Where do the target (padded-canvas) dimensions come from, and should the parameter be required?",
+    "decision": "normalize() takes an optional second parameter, target_size: tuple[int, int] | None = None (Decider ruling, 2026-09-18, S3 Stage-1 review findings F1/F2). None means: apply EXIF orientation, RGB conversion, and alpha compositing only -- no scaling, no padding -- returning the image at its EXIF-corrected source dimensions. When given, target_size is supplied by the caller (S7's backend lifecycle). The fact 'model X's pipeline accepts reference inputs at dimensions D' is owned by `inference` (S5), exposed as a `reference_input_size(...)` accessor on the `InferenceEngine` instance per stories.json blocking condition S5-BC-1 -- NOT by a slug-keyed table, and NOT by S2's `ModelSpec` (S2 is committed and stays closed; `ModelSpec` at textbrush/model/registry.py has no dimension field). `references` does not import `model` or `inference` and holds no per-model dimension table itself; S7 is the pass-through conduit between S5's accessor and this function.",
+    "rationale": [
+      "A fixed rectangular output canvas cannot be produced without knowing its dimensions from somewhere; NormalizedReference's field list (pixel_data, width, height, content_aspect_ratio, fill_value, decoded_at) has no model/target-size field, so when padding is required the dimensions must arrive as an input rather than be looked up internally or stored on the output.",
+      "target_size must be optional, not required: spec.md sec 6.2 items 3 and 4 are both conditional on the selected model, and a required parameter would silently promote both to unconditional steps this leaf module has no standing to decide. `None` is also the safer default -- a forgotten argument yields an unpadded image that S5's model-boundary assertion (sec 6.2, 'the guarantee must hold at the model boundary') catches loudly, rather than a canvas silently padded to a guessed size.",
+      "Keeping `references` free of any per-model dimension table preserves its leaf status cleanly (architecture.md boundary rule 2) and avoids a second, competing source of per-model sizing data alongside the single derivation site S5-BC-1 establishes on the InferenceEngine instance.",
+      "This is a signature detail, not a contested requirement: this story `creates_seam: true` and is 'the authoritative author of the contract shape' per the task brief. The exact field list of NormalizedReference (the part every downstream story literally depends on byte-for-byte) is unchanged from the seam description; only the shape of the constructor function gained a parameter that was always implicitly necessary.",
+      "The AC-PROCESS-2 determinism invariant ('identical for the same source bytes, selected model, and application version') is preserved transitively: normalize() is a pure function of (source bytes, target_size), and target_size is itself a deterministic function of the selected model in the caller. Same model -> same target_size -> same normalize() output, without `references` needing to know the model identity itself."
+    ]
+  }
+}

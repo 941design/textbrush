@@ -1,7 +1,7 @@
 {
   "epic_name": "multi-reference-flux-image-editing",
   "created_at": "2026-09-18T09:20:00Z",
-  "updated_at": "2026-09-18T14:04:31Z",
+  "updated_at": "2026-09-18T14:34:13Z",
   "total_stories": 13,
   "dependency_notes": "Story order follows dependency correctness only (per explicit run instruction), overriding Story Design Principle 4's 'simpler first' default -- several early stories (model, references, inference) are high-complexity precisely because everything downstream gates on them. Judgment calls made in this split, for the lead to override: (1) buffer.py's BufferedImage extension (carrying model identity + session-local reference identity) has no acceptance criterion of its own -- it is plumbing for AC-STATE-1/AC-STATE-2 -- so it is scoped into S6 (worker), which is where BufferedImage instances are constructed (worker.py:359-367), rather than spun out as its own story against the `buffer` module. (2) The new Tauri file-dialog command/plugin (desktop-shell) likewise has no AC of its own: AC-INPUT-1's verification explicitly targets the path-injection seam, not the native dialog, and AC-ACCESS-1 explicitly stubs the desktop bridge. It is scoped into S10 (desktop-ui) as thin, non-independently-tested glue -- the one deliberate exception to one-module-per-story outside the FR-A7 integration story. Split it into its own `desktop-shell` story if stricter module hygiene is wanted; it would then need a placeholder AC or an explicit AC-ownership exception. (3) Per architecture.md boundary rule 4, any wire-schema shape change is a mandatory three-language coordinated edit (protocol.py + the Rust json! builder + types.ts) done by ONE story, not split three ways -- S8 (ipc) therefore also touches src-tauri/src/commands_update_config.rs and src-tauri/ui/types.ts; this is architecture-sanctioned, not a one-module-ownership violation. (4) Several ACs describe behavior implemented across more than one module but carry no 'Spans modules:' line in acceptance-criteria.md (only AC-STATE-2 does) -- meaning Mode 1 judged them single-story-ownable. AC-STATE-1/3/4, AC-RECOVERY-1, AC-MODEL-5, AC-LOCAL-1, and AC-MODEL-6 were each assigned to the module whose code is most load-bearing for the AC's core mechanism; rebalance freely without touching acceptance-criteria.md. (5) AC-STATE-2's 'Spans modules:' line names desktop UI, IPC, backend state, worker, inference, metadata -- 'metadata' and 'backend state' both map to the `backend` module (architecture.md's module map has no separate `metadata` module), and 'desktop UI' maps to both S10 and S11 since both own `desktop-ui`. cross_cutting_acs[0].spanned_by is therefore [S5, S6, S7, S8, S10, S11], and S12 depends on that full set. (6) Seam source/destination endpoints describe runtime data-flow direction (producer -> consumer); the per-story `creates_seam` flag instead marks which story is accountable for freezing the contract's shape first in build order, and the two do not always point the same way -- e.g. GenerationRequest's shape is authored in inference/base.py by S5, even though S7 (backend) is the runtime producer of concrete request instances passed through S6 (worker) to S5's engines. (7) lighter_path is false on all twelve stories: every story's file targets include at least one non-markdown/JSON/YAML/TOML/txt file (.py, .rs, or .ts), so files_code is non-empty everywhere, which alone forces lighter_path=false under the AC-STORY-2 conjunction; S12 is additionally false by the mandatory is_integration_story exclusion.",
   "mock_resolution_plan": "No temporary mocks are introduced by this split. tests/mocks.py's MockInferenceEngine (exploration.json resistance point #1) is a permanent test fixture standing in for gated model weights, not an epic-temporary mock -- it is tracked as FIXTURE-05-001 on S5 and must be widened (not replaced) to keep implementing the extended InferenceEngine ABC. mocks-registry.json remains empty with all_resolved:true for this epic; Mode 2 introduces no entries requiring resolution.",
@@ -391,13 +391,13 @@
         ]
       },
       "complexity": "high",
-      "status": "pending",
+      "status": "in_progress",
       "owning_module": "references",
       "lighter_path": false,
       "creates_seam": true,
       "files": [
         "textbrush/references/__init__.py",
-        "textbrush/references/normalize.py",
+        "textbrush/references/normalization.py",
         "tests/test_references.py",
         "tests/fixtures/images/"
       ],
@@ -455,7 +455,8 @@
           "New Kontext engine (exactly 1 reference) and FLUX.2 engine (1-4 references, stable selection order, exact-once delivery)",
           "Each pipeline invoked with its internal reference resizing disabled, or handed references at dimensions it accepts unchanged",
           "Each model's own documented default sampling settings (step count, guidance), never another model's defaults reused",
-          "Regression proof that FLUX.1 schnell's existing aspect-ratio options and behavior are unchanged"
+          "Regression proof that FLUX.1 schnell's existing aspect-ratio options and behavior are unchanged",
+          "Per-model reference-input sizing: `inference` exposes, per engine, the reference-input canvas that engine's pipeline accepts unchanged -- as an accessor on the `InferenceEngine` instance (e.g. `reference_input_size(output_width, output_height) -> tuple[int, int] | None`), NOT as a slug-keyed table. `None` means the pipeline accepts the reference at its natural dimensions and requires no fixed canvas. This is the single derivation site for the fact 'model X's pipeline accepts reference inputs at dimensions D'; no other module derives, restates, or defaults it. FLUX.1 schnell returns `None` (zero references)."
         ],
         "excludes": [
           "Reference decode/normalization itself (S3, consumed here as NormalizedReference)",
@@ -487,7 +488,20 @@
         "tests/mocks.py",
         "tests/test_flux_inference.py"
       ],
-      "notes": "Exploration.json resistance point #1: widest-reaching single change in the epic. This is the contract every downstream story (worker, backend, cli, ipc) must conform to; it is deliberately sequenced early despite high complexity so nothing downstream is built against a moving target."
+      "notes": "Exploration.json resistance point #1: widest-reaching single change in the epic. This is the contract every downstream story (worker, backend, cli, ipc) must conform to; it is deliberately sequenced early despite high complexity so nothing downstream is built against a moving target.",
+      "blocking_conditions": [
+        {
+          "id": "S5-BC-1",
+          "source": "Decider ruling 2026-09-18, findings F1/F2 from S3 Stage-1 review",
+          "condition": "The fact 'model X's pipeline accepts reference inputs at dimensions D' MUST have exactly one derivation site, on the InferenceEngine instance in textbrush/inference/. S5 cannot close without (a) that accessor existing, (b) evidence from each editing pipeline -- not assumption -- of what it actually accepts, and (c) AC-MODEL-2/AC-MODEL-3 tests asserting the value at the model boundary. No slug-keyed dimension table. ModelSpec is NOT extended with a dimension field; S2 stays closed. S5 must also state which normalization shape each editing pipeline requires: (i) none, (ii) uniform scale to a fixed canvas with centered padding, or (iii) uniform scale to a bound / multiple-of-N without padding. Shapes (i) and (ii) are expressible through S3's target_size: tuple[int, int] | None. If any pipeline requires shape (iii), the S3 seam re-opens as a blocking finding against S5 -- it must NOT be worked around by rounding inside inference or by padding to the next multiple, both of which reintroduce the spec.md sec 6.2 model-boundary defect this condition exists to prevent.",
+          "rationale": "spec.md sec 6.2 states what a pipeline accepts unchanged as a pipeline-runtime property, in the same breath as the duty to disable pipeline-internal resizing; only the code holding the pipeline can verify it. spec.md sec 5.5 explicitly decouples reference-input dimensions from the output presets. AC-MODEL-2/AC-MODEL-3 carry the 'disabled or handed a reference it accepts unchanged' disjunction that S5 must prove, so S5 must also be able to state it.",
+          "not_closeable_by": [
+            "S7"
+          ],
+          "enforcement": "Lead-enforced: read from stories.json and injected into each story's architect brief and reviewer brief, as was done for S2-BC-1. There is no automated gate.",
+          "on_failure": "F1 re-opens as a blocking finding against S5. It must not be re-deferred, and must not be closed by S7 stubbing or defaulting the value."
+        }
+      ]
     },
     {
       "id": "S6",
@@ -543,11 +557,13 @@
           "Decode-once-at-acknowledgement: call S3's normalize() only when a configuration is acknowledged, hold results for that configuration's lifetime, release on change/abort/fatal error/shutdown -- never re-read from disk mid-configuration",
           "Source files opened read-only, never copied/renamed/relocated; byte-for-byte unchanged after a generation cycle",
           "PNG metadata continues to record prompt/actual selected model/seed/aspect-ratio/dimensions with the same closed text-chunk key set; JPEG remains without custom metadata; neither format embeds reference paths, filenames, hashes, or source bytes",
-          "Any recoverable reference/compatibility/normalization/configuration error preserves history and allows correction while paused"
+          "Any recoverable reference/compatibility/normalization/configuration error preserves history and allows correction while paused",
+          "Reads the active engine's `reference_input_size(...)` at acknowledgement time and passes the result through to `references.normalize()` as `target_size`. S7 does not derive, hardcode, or default reference-input dimensions; it is a conduit between the two owning modules."
         ],
         "excludes": [
           "The pause gate / acknowledgement event wire format and command serialization (S8, ipc)",
-          "Discovery cause reporting itself (S2, model) -- this story only reacts to it during swap"
+          "Discovery cause reporting itself (S2, model) -- this story only reacts to it during swap",
+          "Deriving per-model reference-input dimensions (S5, `inference`) -- S7 reads the value, never computes it."
         ]
       },
       "complexity": "high",
