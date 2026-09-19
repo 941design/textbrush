@@ -230,6 +230,7 @@ uv run textbrush --download-model  # Download FLUX.1 schnell (requires HF_TOKEN)
 ```bash
 make test          # Run fast tests (excludes slow/integration)
 make test-all      # Run full test suite including slow/integration tests
+make test-ui-a11y  # Run headless-browser accessibility harness (downloads Chromium on first run)
 make lint          # Check Python code quality (ruff)
 make format        # Format Python code (ruff)
 make clippy        # Check Rust code quality (cargo clippy)

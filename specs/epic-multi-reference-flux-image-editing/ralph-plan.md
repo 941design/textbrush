@@ -873,7 +873,7 @@ native dialog.
 
 ---
 
-- [ ] **11.1 Headless-browser accessibility harness (S11) (T11)**
+- [x] **11.1 Headless-browser accessibility harness (S11) (T11)**
 
 **Goal.** Keyboard reachability, accessible names, text-form errors, and the four-preview
 layout are asserted against the rendered interface in a real browser with the Tauri bridge

@@ -444,6 +444,25 @@ make build
 # See Installation Issues above for system deps
 ```
 
+### Headless-browser accessibility tests fail
+
+The accessibility harness (`make test-ui-a11y`, which runs `npm run test:a11y` in
+`src-tauri/ui/`) launches a real Chromium via Playwright. On a fresh checkout the
+browser binary must be downloaded first:
+
+```bash
+# Install Chromium for Playwright (only needed once per machine; ~150 MB)
+npx playwright install chromium
+# Then run the harness
+make test-ui-a11y
+```
+
+If the harness reports `browserType.launch: Executable doesn't exist`, the
+download was skipped or interrupted; rerun `npx playwright install chromium`.
+The harness is intentionally not part of `make test` because the browser
+download is heavy; run it on demand before merging changes that touch the
+desktop UI.
+
 ## Getting Help
 
 If issue persists:

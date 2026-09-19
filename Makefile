@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui test-ui-a11y lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug
 
 # Use a user-writable Cargo home (the system CARGO_HOME may be read-only)
 override CARGO_HOME := $(HOME)/.cargo
@@ -63,6 +63,9 @@ test-rust:  ## Run Rust test suite
 
 test-ui:  ## Run UI TypeScript tests
 	cd src-tauri/ui && npm run test
+
+test-ui-a11y:  ## Run headless-browser accessibility harness (downloads Chromium on first run; not part of make test)
+	cd src-tauri/ui && npx playwright install chromium && npm run test:a11y
 
 lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests

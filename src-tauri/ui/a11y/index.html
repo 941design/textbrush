@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Textbrush (a11y harness)</title>
+    <link rel="stylesheet" href="/styles/variables.css" />
+    <link rel="stylesheet" href="/styles/animations.css" />
+    <link rel="stylesheet" href="/styles/main.css" />
+</head>
+<body>
+    <main id="app">
+        <!-- Header Section with Config Controls -->
+        <header class="header-bar">
+            <div class="config-controls">
+                <!-- Row 1: Prompt -->
+                <div class="header-row header-row-1">
+                    <div class="prompt-control">
+                        <input
+                            type="text"
+                            class="prompt-input"
+                            id="prompt-input"
+                            placeholder="Enter generation prompt"
+                            aria-label="Generation prompt"
+                            autocorrect="off"
+                            autocapitalize="off"
+                            spellcheck="false"
+                        />
+                    </div>
+                </div>
+                <!-- Row 2: Aspect Ratio + Dimensions -->
+                <div class="header-row header-row-2">
+                    <div class="aspect-ratio-control">
+                        <div class="aspect-ratio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="1:1" checked />
+                                <span>1:1</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="16:9" />
+                                <span>16:9</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="3:1" />
+                                <span>3:1</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="4:1" />
+                                <span>4:1</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="4:5" />
+                                <span>4:5</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="aspect-ratio" value="9:16" />
+                                <span>9:16</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="resolution-control">
+                        <div class="resolution-group">
+                            <button
+                                type="button"
+                                class="resolution-btn"
+                                id="resolution-decrease"
+                                aria-label="Decrease resolution"
+                            >−</button>
+                            <span class="dimension-display" id="dimension-display">256×256</span>
+                            <button
+                                type="button"
+                                class="resolution-btn"
+                                id="resolution-increase"
+                                aria-label="Increase resolution"
+                            >+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="editing-controls">
+                    <fieldset id="model-selector" class="model-selector">
+                        <legend>Model</legend>
+                        <label><input type="radio" name="model" value="flux1-schnell" disabled /> FLUX.1 [schnell] <small>text to image</small></label>
+                        <label><input type="radio" name="model" value="flux1-kontext-dev" disabled /> FLUX.1 Kontext [dev] <small>1 reference</small></label>
+                        <label><input type="radio" name="model" value="flux2-klein-4b" disabled /> FLUX.2 [klein] 4B <small>1 to 4 references</small></label>
+                    </fieldset>
+                    <div id="reference-picker" class="reference-picker">
+                        <button id="reference-add" type="button" disabled>Add reference images</button>
+                        <ul id="reference-list" aria-live="polite"></ul>
+                        <div id="reference-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <fieldset id="editing-presets" class="editing-presets hidden">
+                        <legend>Output size</legend>
+                        <label><input type="radio" name="editing-preset" value="landscape-small" disabled /> Landscape small</label>
+                        <label><input type="radio" name="editing-preset" value="landscape-medium" disabled /> Landscape medium</label>
+                        <label><input type="radio" name="editing-preset" value="landscape-large" disabled /> Landscape large</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-small" disabled /> Portrait small</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-medium" disabled /> Portrait medium</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-large" disabled /> Portrait large</label>
+                    </fieldset>
+                </div>
+            </div>
+            <div class="validation-error hidden" id="validation-error" role="alert" aria-live="polite"></div>
+        </header>
+
+        <!-- Image Viewer Section -->
+        <section class="viewer">
+            <div class="image-panel">
+                <div class="image-container">
+                    <img
+                        class="current-image"
+                        id="current-image"
+                        src=""
+                        alt="Generated image"
+                        draggable="false"
+                    />
+                    <div class="magnifier-lens hidden" id="magnifier-lens"></div>
+                    <div class="loading-overlay" id="loading-overlay" aria-live="polite">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <div class="loading-caption" id="loading-caption">
+                            <span class="loading-label">waiting for backend</span>
+                            <span class="loading-prompt" id="loading-prompt"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-indicator" id="nav-indicator" role="status" aria-label="Image navigation">
+                    <div class="nav-dots" id="nav-dots"></div>
+                </div>
+            </div>
+            <aside class="metadata-panel" id="metadata-panel">
+                <h2 class="metadata-title">Image Details</h2>
+                <dl class="metadata-fields">
+                    <dt class="metadata-label">Prompt:</dt>
+                    <dd class="metadata-value" id="metadata-prompt">—</dd>
+
+                    <dt class="metadata-label">Model:</dt>
+                    <dd class="metadata-value" id="metadata-model">—</dd>
+
+                    <dt class="metadata-label">Seed:</dt>
+                    <dd class="metadata-value" id="metadata-seed">—</dd>
+
+                    <dt class="metadata-label">Generated Size:</dt>
+                    <dd class="metadata-value" id="metadata-generated-size">—</dd>
+
+                    <dt class="metadata-label">Final Size:</dt>
+                    <dd class="metadata-value" id="metadata-final-size">—</dd>
+                </dl>
+            </aside>
+        </section>
+
+        <!-- Status Bar -->
+        <section class="status-bar">
+            <div class="status-left">
+                <div class="image-path-display" id="image-path-display">
+                    <span class="path-text" id="path-text">—</span>
+                    <button class="copy-path-btn" id="copy-path-btn" type="button" aria-label="Copy path">
+                        <svg class="copy-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="prompt-display" id="prompt-display" style="display: none;">
+                    Ready for generation
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls Section -->
+        <section class="controls">
+            <button
+                class="control-btn btn-prev"
+                id="prev-btn"
+                type="button"
+                aria-label="Previous image"
+            >
+                <span class="btn-icon" aria-hidden="true">◀</span>
+                <span class="btn-label">Prev</span>
+                <span class="btn-shortcut">←</span>
+            </button>
+            <button
+                class="control-btn btn-pause"
+                id="pause-btn"
+                type="button"
+                aria-label="Pause or resume generation"
+            >
+                <span class="btn-icon" id="pause-icon" aria-hidden="true">⏸</span>
+                <span class="btn-label" id="pause-label">Pause</span>
+                <span class="btn-shortcut">Space</span>
+            </button>
+            <button
+                class="control-btn btn-next"
+                id="next-btn"
+                type="button"
+                aria-label="Next image"
+            >
+                <span class="btn-icon" aria-hidden="true">▶</span>
+                <span class="btn-label">Next</span>
+                <span class="btn-shortcut">→</span>
+            </button>
+            <button
+                class="control-btn btn-delete"
+                id="delete-btn"
+                type="button"
+                aria-label="Delete current image"
+            >
+                <span class="btn-icon" aria-hidden="true">✗</span>
+                <span class="btn-label">Delete</span>
+                <span class="btn-shortcut">⌘⌫</span>
+            </button>
+            <button
+                class="control-btn btn-accept"
+                id="accept-btn"
+                type="button"
+                aria-label="Done and save current image"
+            >
+                <span class="btn-icon" aria-hidden="true">✓</span>
+                <span class="btn-label">Done</span>
+                <span class="btn-shortcut">Enter</span>
+            </button>
+            <button
+                class="control-btn btn-abort"
+                id="abort-btn"
+                type="button"
+                aria-label="Abort generation"
+            >
+                <span class="btn-icon" aria-hidden="true">⊘</span>
+                <span class="btn-label">Abort</span>
+                <span class="btn-shortcut">Esc</span>
+            </button>
+            <button
+                class="theme-toggle"
+                id="theme-toggle"
+                type="button"
+                aria-label="Toggle theme"
+            >
+                <span class="theme-icon" aria-hidden="true">◐</span>
+            </button>
+            <div class="font-size-control">
+                <div class="font-size-group" id="font-size-group" role="radiogroup" aria-label="Font size">
+                    <label class="radio-label font-size-option font-size-small">
+                        <input type="radio" name="font-size" value="small" />
+                        <span>small</span>
+                    </label>
+                    <label class="radio-label font-size-option font-size-medium">
+                        <input type="radio" name="font-size" value="medium" checked />
+                        <span>medium</span>
+                    </label>
+                    <label class="radio-label font-size-option font-size-large">
+                        <input type="radio" name="font-size" value="large" />
+                        <span>large</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="/a11y/bundle.a11y.js"></script>
+</body>
+</html>

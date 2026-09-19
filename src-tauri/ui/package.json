@@ -9,13 +9,16 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint *.ts",
     "check": "npm run typecheck && npm run lint",
-    "test": "npm run build:modules && node --test *.test.js"
+    "test": "npm run build:modules && node --test *.test.js",
+    "build:a11y": "esbuild main.ts --bundle --outfile=a11y/bundle.a11y.js --format=esm --target=es2022 --alias:@tauri-apps/api/core=./a11y/tauri-stub.ts --alias:@tauri-apps/api/event=./a11y/tauri-stub.ts --alias:@tauri-apps/api/window=./a11y/tauri-stub.ts",
+    "test:a11y": "npm run build:a11y && playwright test -c a11y/playwright.config.ts"
   },
   "dependencies": {
     "exifreader": "^4.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.50.0",
     "@tauri-apps/api": "^2.10.1",
     "esbuild": "^0.24.0",
     "eslint": "^9.17.0",
