@@ -259,6 +259,14 @@ class TestInitCommand:
             if call[0][0].type == MessageType.STATE_CHANGED
         ]
         assert state_changed_calls[-1].payload["state"] == "paused"
+        startup_acks = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.CONFIG_ACK
+        ]
+        assert len(startup_acks) == 1
+        assert startup_acks[0].payload["model_id"] == "flux1-schnell"
+        assert startup_acks[0].payload["reference_paths"] == []
 
 
 class TestSkipCommand:

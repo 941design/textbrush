@@ -1,0 +1,340 @@
+// UI Configuration Controls - Frontend Implementation
+//
+// Responsibilities:
+// 1. Replace read-only prompt display with editable text input
+// 2. Add radio button group for aspect ratio selection
+// 3. Add width/height input fields for custom dimensions
+// 4. Handle blur/Enter events to trigger configuration update
+// 5. Manage local state synchronization
+import { invoke } from '@tauri-apps/api/core';
+import { EDITING_PRESETS, isEditingModel } from './reference_picker';
+// Supported aspect ratios with their available resolutions (smallest to largest)
+// Must match SUPPORTED_RATIOS in textbrush/cli.py
+const ASPECT_RATIO_RESOLUTIONS = {
+    '1:1': [
+        { width: 256, height: 256 },
+        { width: 512, height: 512 },
+        { width: 1024, height: 1024 },
+    ],
+    '16:9': [
+        { width: 640, height: 360 },
+        { width: 1280, height: 720 },
+        { width: 1920, height: 1080 },
+    ],
+    '3:1': [
+        { width: 900, height: 300 },
+        { width: 1500, height: 500 },
+        { width: 1800, height: 600 },
+    ],
+    '4:1': [
+        { width: 1200, height: 300 },
+        { width: 1600, height: 400 },
+    ],
+    '4:5': [
+        { width: 540, height: 675 },
+        { width: 1080, height: 1350 },
+    ],
+    '9:16': [
+        { width: 360, height: 640 },
+        { width: 1080, height: 1920 },
+    ],
+};
+// Get list of supported aspect ratios
+export const SUPPORTED_RATIOS = Object.keys(ASPECT_RATIO_RESOLUTIONS);
+// Get default (first) resolution for an aspect ratio
+function getDefaultResolution(ratio) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions || resolutions.length === 0) {
+        return { width: 256, height: 256 };
+    }
+    const first = resolutions[0];
+    return first ?? { width: 256, height: 256 };
+}
+// Get resolution index for current dimensions
+function getResolutionIndex(ratio, width, height) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions)
+        return 0;
+    const index = resolutions.findIndex(r => r.width === width && r.height === height);
+    return index >= 0 ? index : 0;
+}
+// Check if we can increase resolution
+export function canIncreaseResolution(ratio, width, height) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions || resolutions.length <= 1)
+        return false;
+    const index = getResolutionIndex(ratio, width, height);
+    return index < resolutions.length - 1;
+}
+// Check if we can decrease resolution
+export function canDecreaseResolution(ratio, width, height) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions || resolutions.length <= 1)
+        return false;
+    const index = getResolutionIndex(ratio, width, height);
+    return index > 0;
+}
+// Get next higher resolution
+export function getNextResolution(ratio, width, height) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions)
+        return null;
+    const index = getResolutionIndex(ratio, width, height);
+    if (index < resolutions.length - 1) {
+        const next = resolutions[index + 1];
+        return next ?? null;
+    }
+    return null;
+}
+// Get next lower resolution
+export function getPreviousResolution(ratio, width, height) {
+    const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
+    if (!resolutions)
+        return null;
+    const index = getResolutionIndex(ratio, width, height);
+    if (index > 0) {
+        const prev = resolutions[index - 1];
+        return prev ?? null;
+    }
+    return null;
+}
+// Serialize backend config updates to preserve call order under rapid UI interactions.
+let configUpdateQueue = Promise.resolve();
+// Update resolution button states based on current dimensions
+function updateResolutionButtons(ratio, width, height) {
+    const decreaseBtn = document.getElementById('resolution-decrease');
+    const increaseBtn = document.getElementById('resolution-increase');
+    if (decreaseBtn) {
+        decreaseBtn.disabled = !canDecreaseResolution(ratio, width, height);
+    }
+    if (increaseBtn) {
+        increaseBtn.disabled = !canIncreaseResolution(ratio, width, height);
+    }
+}
+function syncControlsFromState(state) {
+    const dimensionDisplay = document.getElementById('dimension-display');
+    if (dimensionDisplay) {
+        dimensionDisplay.textContent = `${state.width}×${state.height}`;
+    }
+    const aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+    Array.from(aspectRatioRadios).forEach((radio) => {
+        radio.checked = radio.value === state.aspectRatio;
+    });
+    updateResolutionButtons(state.aspectRatio, state.width, state.height);
+}
+/**
+ * Initialize configuration controls in the UI.
+ */
+export function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, initialHeight, state, elements) {
+    // Validate and set aspect ratio
+    state.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : '1:1';
+    // Use dimensions from launch args (already resolved by Rust backend)
+    state.width = initialWidth;
+    state.height = initialHeight;
+    // Get existing HTML elements (they're already in the DOM from index.html)
+    const promptInput = document.getElementById('prompt-input');
+    const dimensionDisplay = document.getElementById('dimension-display');
+    const aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
+    const decreaseBtn = document.getElementById('resolution-decrease');
+    const increaseBtn = document.getElementById('resolution-increase');
+    // Set initial values
+    if (promptInput) {
+        promptInput.value = initialPrompt;
+        elements.promptInput = promptInput;
+    }
+    // Update dimension display
+    syncControlsFromState(state);
+    // Convert NodeList to array and set initial checked state
+    const radios = Array.from(aspectRatioRadios);
+    radios.forEach(radio => {
+        radio.checked = radio.value === state.aspectRatio;
+    });
+    elements.aspectRatioRadios = aspectRatioRadios;
+    // Initial button state update
+    updateResolutionButtons(state.aspectRatio, state.width, state.height);
+    // Prompt input event listeners
+    if (promptInput) {
+        promptInput.addEventListener('blur', () => {
+            const config = getCurrentConfig(elements, state);
+            void handleConfigUpdate(config.prompt, config.aspectRatio, config.width, config.height, state);
+        });
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                promptInput.blur();
+            }
+        });
+    }
+    // Aspect ratio radio event listeners
+    radios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            const ratio = radio.value;
+            const dims = getDefaultResolution(ratio);
+            // Optimistically update control display while handleConfigUpdate owns state mutation.
+            if (dimensionDisplay) {
+                dimensionDisplay.textContent = `${dims.width}×${dims.height}`;
+            }
+            // Update button states
+            updateResolutionButtons(ratio, dims.width, dims.height);
+            const config = getCurrentConfig(elements, state);
+            void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state);
+        });
+    });
+    // Resolution decrease button
+    if (decreaseBtn) {
+        decreaseBtn.addEventListener('click', () => {
+            const prevRes = getPreviousResolution(state.aspectRatio, state.width, state.height);
+            if (prevRes) {
+                // Update UI immediately with new resolution
+                if (dimensionDisplay) {
+                    dimensionDisplay.textContent = `${prevRes.width}×${prevRes.height}`;
+                }
+                updateResolutionButtons(state.aspectRatio, prevRes.width, prevRes.height);
+                // Get current prompt and aspect ratio
+                const config = getCurrentConfig(elements, state);
+                // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
+                // (Don't update state.width/height here, as handleConfigUpdate compares against state)
+                void handleConfigUpdate(config.prompt, config.aspectRatio, prevRes.width, prevRes.height, state);
+            }
+        });
+    }
+    // Resolution increase button
+    if (increaseBtn) {
+        increaseBtn.addEventListener('click', () => {
+            const nextRes = getNextResolution(state.aspectRatio, state.width, state.height);
+            if (nextRes) {
+                // Update UI immediately with new resolution
+                if (dimensionDisplay) {
+                    dimensionDisplay.textContent = `${nextRes.width}×${nextRes.height}`;
+                }
+                updateResolutionButtons(state.aspectRatio, nextRes.width, nextRes.height);
+                // Get current prompt and aspect ratio
+                const config = getCurrentConfig(elements, state);
+                // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
+                // (Don't update state.width/height here, as handleConfigUpdate compares against state)
+                void handleConfigUpdate(config.prompt, config.aspectRatio, nextRes.width, nextRes.height, state);
+            }
+        });
+    }
+}
+/**
+ * Handle configuration update (prompt, aspect ratio, or dimensions changed).
+ */
+export async function handleConfigUpdate(promptValue, aspectRatioValue, widthValue, heightValue, state) {
+    const trimmedPrompt = promptValue.trim();
+    if (trimmedPrompt === '') {
+        const promptInput = document.getElementById('prompt-input');
+        if (promptInput) {
+            showValidationError('Prompt cannot be empty', promptInput);
+        }
+        return;
+    }
+    // Dimensions are now controlled via predefined resolutions, no validation needed
+    const width = widthValue;
+    const height = heightValue;
+    // Check if config actually changed
+    if (trimmedPrompt === state.prompt &&
+        aspectRatioValue === state.aspectRatio &&
+        width === state.width &&
+        height === state.height) {
+        return;
+    }
+    const previousPrompt = state.prompt;
+    const previousAspectRatio = state.aspectRatio;
+    const previousWidth = state.width;
+    const previousHeight = state.height;
+    state.prompt = trimmedPrompt;
+    state.aspectRatio = aspectRatioValue;
+    state.width = width;
+    state.height = height;
+    const attemptedPrompt = trimmedPrompt;
+    const attemptedAspectRatio = aspectRatioValue;
+    const attemptedWidth = width;
+    const attemptedHeight = height;
+    configUpdateQueue = configUpdateQueue
+        .then(async () => {
+        try {
+            await invoke('update_generation_config', {
+                prompt: attemptedPrompt,
+                aspectRatio: attemptedAspectRatio,
+                width: attemptedWidth,
+                height: attemptedHeight,
+            });
+            console.log('Configuration updated successfully');
+            // generationPrompt will be updated by state_changed event from backend (FR9: No optimistic updates)
+        }
+        catch (error) {
+            console.error('Configuration update failed:', error);
+            // Only roll back if this failed update still matches current UI state.
+            // If user has already made a newer change, keep that newer state.
+            const isStillCurrent = state.prompt === attemptedPrompt &&
+                state.aspectRatio === attemptedAspectRatio &&
+                state.width === attemptedWidth &&
+                state.height === attemptedHeight;
+            if (isStillCurrent) {
+                state.prompt = previousPrompt;
+                state.aspectRatio = previousAspectRatio;
+                state.width = previousWidth;
+                state.height = previousHeight;
+                syncControlsFromState(state);
+            }
+            const promptInput = document.getElementById('prompt-input');
+            if (promptInput) {
+                showValidationError(`Update failed: ${String(error)}`, promptInput);
+            }
+        }
+    })
+        .catch((queueError) => {
+        // Prevent queue poisoning from unexpected errors.
+        console.error('Configuration update queue error:', queueError);
+    });
+    await configUpdateQueue;
+}
+/**
+ * Show validation error message to user.
+ */
+export function showValidationError(message, inputElement) {
+    const existingErrors = document.querySelectorAll('.validation-error');
+    existingErrors.forEach(error => error.remove());
+    const errorElement = document.createElement('div');
+    errorElement.className = 'validation-error';
+    errorElement.textContent = message;
+    errorElement.setAttribute('role', 'alert');
+    errorElement.setAttribute('aria-live', 'polite');
+    if (inputElement.parentNode) {
+        inputElement.parentNode.insertBefore(errorElement, inputElement.nextSibling);
+    }
+    setTimeout(() => {
+        errorElement.remove();
+    }, 3000);
+}
+/**
+ * Get current configuration from UI inputs and state.
+ */
+export function getCurrentConfig(elements, state) {
+    const promptValue = elements.promptInput ? elements.promptInput.value : '';
+    if (isEditingModel(state.modelId)) {
+        const preset = EDITING_PRESETS.find(entry => entry.id === (state.preset ?? 'landscape-medium'));
+        return {
+            prompt: promptValue,
+            aspectRatio: 'custom',
+            width: preset.width,
+            height: preset.height,
+        };
+    }
+    let aspectRatioValue = '1:1';
+    if (elements.aspectRatioRadios) {
+        const radios = Array.from(elements.aspectRatioRadios);
+        const checked = radios.find(radio => radio.checked);
+        if (checked) {
+            aspectRatioValue = checked.value;
+        }
+    }
+    // Width and height now come from state (controlled by +/- buttons)
+    return {
+        prompt: promptValue,
+        aspectRatio: aspectRatioValue,
+        width: state.width,
+        height: state.height,
+    };
+}

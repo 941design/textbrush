@@ -212,6 +212,13 @@ export interface AppState {
   currentBlobUrl: string | null;
   imageList: ImageRecord[];
   currentIndex: number;
+  modelId: string | null;
+  references: string[];
+  pendingReferences: string[] | null;
+  preset: string | null;
+  settled: boolean;
+  compatibility: { compatible: boolean; reason: string | null; requiredModel: string | null } | null;
+  configUpdateInFlight: boolean;
 }
 
 // DOM element cache
@@ -252,4 +259,12 @@ export interface Elements {
   pauseLabel: HTMLElement | null;
   themeToggle: HTMLButtonElement | null;
   magnifierLens: HTMLElement | null;
+  modelSelector: HTMLFieldSetElement | null;
+  modelRadios: NodeListOf<HTMLInputElement> | null;
+  referencePicker: HTMLElement | null;
+  referenceAdd: HTMLButtonElement | null;
+  referenceList: HTMLUListElement | null;
+  referenceError: HTMLElement | null;
+  editingPresets: HTMLFieldSetElement | null;
+  presetRadios: NodeListOf<HTMLInputElement> | null;
 }

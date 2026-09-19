@@ -99,6 +99,72 @@ var Resource = class {
 };
 _Resource_rid = /* @__PURE__ */ new WeakMap();
 
+// reference_picker.ts
+var MAX_REFERENCES = 4;
+var SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg"];
+var EDITING_PRESETS = [
+  { id: "landscape-small", width: 512, height: 384 },
+  { id: "landscape-medium", width: 768, height: 576 },
+  { id: "landscape-large", width: 1024, height: 768 },
+  { id: "portrait-small", width: 384, height: 512 },
+  { id: "portrait-medium", width: 576, height: 768 },
+  { id: "portrait-large", width: 768, height: 1024 }
+];
+var MODELS = [
+  { id: "flux1-schnell", displayName: "FLUX.1 [schnell]", minReferences: 0, maxReferences: 0 },
+  { id: "flux1-kontext-dev", displayName: "FLUX.1 Kontext [dev]", minReferences: 1, maxReferences: 1 },
+  { id: "flux2-klein-4b", displayName: "FLUX.2 [klein] 4B", minReferences: 1, maxReferences: 4 }
+];
+function basename(path) {
+  return path.split(/[\\/]/).at(-1) || path;
+}
+function supported(path) {
+  const lower = path.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+function applyPickedPaths(current, picked) {
+  const references = [...current];
+  const errors = [];
+  for (const path of picked) {
+    if (!supported(path)) {
+      errors.push(`${basename(path)}: supported formats are PNG, JPG, and JPEG`);
+    } else if (references.length >= MAX_REFERENCES) {
+      errors.push(`${basename(path)}: limit of ${MAX_REFERENCES} reference images`);
+    } else {
+      references.push(path);
+    }
+  }
+  return { references, errors };
+}
+function removeReference(current, index) {
+  return current.filter((_, position) => position !== index);
+}
+function replaceReference(current, index, path) {
+  if (index < 0 || index >= current.length) {
+    return { references: [...current], errors: [`Reference ${index + 1} does not exist`] };
+  }
+  if (!supported(path)) {
+    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, and JPEG`] };
+  }
+  const references = [...current];
+  references[index] = path;
+  return { references, errors: [] };
+}
+function previewLabel(path, position, total = MAX_REFERENCES) {
+  return `Reference ${position + 1} of ${total}: ${basename(path)}`;
+}
+function isEditingModel(modelId) {
+  return (MODELS.find((model) => model.id === modelId)?.maxReferences ?? 0) > 0;
+}
+function compatibilityMessage(modelId, referenceCount) {
+  const model = MODELS.find((entry) => entry.id === modelId);
+  if (!model) return modelId ? `unknown model: ${modelId}` : null;
+  if (referenceCount >= model.minReferences && referenceCount <= model.maxReferences) return null;
+  const rule = model.minReferences === model.maxReferences ? model.minReferences === 0 ? "accepts no reference images" : `requires exactly ${model.minReferences} reference image` : `requires between ${model.minReferences} and ${model.maxReferences} reference images`;
+  const noModel = referenceCount > MAX_REFERENCES ? `; no supported model accepts more than ${MAX_REFERENCES}` : "";
+  return `${model.id} (${model.displayName}) ${rule}; got ${referenceCount}${noModel}`;
+}
+
 // config_controls.ts
 var ASPECT_RATIO_RESOLUTIONS = {
   "1:1": [
@@ -341,6 +407,15 @@ function showValidationError(message, inputElement) {
 }
 function getCurrentConfig(elements2, state2) {
   const promptValue = elements2.promptInput ? elements2.promptInput.value : "";
+  if (isEditingModel(state2.modelId)) {
+    const preset = EDITING_PRESETS.find((entry) => entry.id === (state2.preset ?? "landscape-medium"));
+    return {
+      prompt: promptValue,
+      aspectRatio: "custom",
+      width: preset.width,
+      height: preset.height
+    };
+  }
   let aspectRatioValue = "1:1";
   if (elements2.aspectRatioRadios) {
     const radios = Array.from(elements2.aspectRatioRadios);
@@ -8977,7 +9052,14 @@ var state = {
   actionQueue: Promise.resolve(),
   currentBlobUrl: null,
   imageList: [],
-  currentIndex: -1
+  currentIndex: -1,
+  modelId: null,
+  references: [],
+  pendingReferences: null,
+  preset: null,
+  settled: false,
+  compatibility: null,
+  configUpdateInFlight: false
 };
 var elements = {
   app: null,
@@ -9015,7 +9097,15 @@ var elements = {
   pauseIcon: null,
   pauseLabel: null,
   themeToggle: null,
-  magnifierLens: null
+  magnifierLens: null,
+  modelSelector: null,
+  modelRadios: null,
+  referencePicker: null,
+  referenceAdd: null,
+  referenceList: null,
+  referenceError: null,
+  editingPresets: null,
+  presetRadios: null
 };
 var magnifierActive = false;
 var MAGNIFIER_SIZE = 200;
@@ -9075,6 +9165,14 @@ function cacheElements() {
   elements.pauseLabel = document.getElementById("pause-label");
   elements.themeToggle = document.getElementById("theme-toggle");
   elements.magnifierLens = document.getElementById("magnifier-lens");
+  elements.modelSelector = document.getElementById("model-selector");
+  elements.modelRadios = document.querySelectorAll('input[name="model"]');
+  elements.referencePicker = document.getElementById("reference-picker");
+  elements.referenceAdd = document.getElementById("reference-add");
+  elements.referenceList = document.getElementById("reference-list");
+  elements.referenceError = document.getElementById("reference-error");
+  elements.editingPresets = document.getElementById("editing-presets");
+  elements.presetRadios = document.querySelectorAll('input[name="editing-preset"]');
 }
 function allElementsPresent() {
   return Object.values(elements).every((el) => el !== null);
@@ -9117,6 +9215,8 @@ async function init() {
       setupMessageListener();
       setupButtonListeners();
       setupKeyboardListeners();
+      setupEditingControls();
+      renderEditingControls();
       updatePauseButton();
       await invoke("init_generation", {
         prompt: state.prompt,
@@ -9124,7 +9224,10 @@ async function init() {
         seed: launchArgs.seed || null,
         aspectRatio: launchArgs.aspect_ratio || "1:1",
         width: launchArgs.width,
-        height: launchArgs.height
+        height: launchArgs.height,
+        modelId: launchArgs.model_id ?? null,
+        references: launchArgs.references ?? null,
+        preset: launchArgs.preset ?? null
       });
       console.log("Application initialized successfully");
     } catch (error) {
@@ -9149,6 +9252,147 @@ function setupMessageListener() {
   }).catch((err) => {
     console.error("Failed to setup message listener:", err);
   });
+}
+function activeReferencePaths() {
+  return state.pendingReferences ?? state.references;
+}
+function renderEditingControls() {
+  const editable = state.settled && !state.configUpdateInFlight;
+  elements.modelRadios?.forEach((radio) => {
+    radio.checked = radio.value === state.modelId;
+    radio.disabled = !editable;
+    const label = radio.closest("label");
+    label?.querySelector(".recommended-badge")?.remove();
+    if (label && radio.value === state.compatibility?.requiredModel) {
+      const badge = document.createElement("span");
+      badge.className = "recommended-badge";
+      badge.textContent = " recommended";
+      label.append(badge);
+    }
+  });
+  const editing = isEditingModel(state.modelId);
+  if (elements.promptInput) elements.promptInput.disabled = editing && !editable;
+  elements.editingPresets?.classList.toggle("hidden", !editing);
+  elements.aspectRatioControls?.classList.toggle("hidden", editing);
+  elements.resolutionControls?.classList.toggle("hidden", editing);
+  elements.presetRadios?.forEach((radio) => {
+    radio.checked = radio.value === state.preset;
+    radio.disabled = !editable || !editing;
+  });
+  if (elements.referenceAdd) elements.referenceAdd.disabled = !editable;
+  if (elements.referenceError) {
+    elements.referenceError.textContent = state.compatibility?.reason ?? "";
+  }
+  if (elements.pauseButton) updatePauseButton();
+  renderReferenceList();
+}
+function renderReferenceList() {
+  const list = elements.referenceList;
+  if (!list) return;
+  list.replaceChildren();
+  const paths = activeReferencePaths();
+  const editable = state.settled && !state.configUpdateInFlight;
+  paths.forEach((path, index) => {
+    const item = document.createElement("li");
+    const preview = document.createElement("img");
+    preview.src = convertFileSrc(path);
+    preview.alt = previewLabel(path, index, paths.length);
+    const filename = path.split(/[\\/]/).at(-1) ?? path;
+    const name = document.createElement("span");
+    name.textContent = filename;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
+    remove.disabled = !editable;
+    remove.addEventListener("click", () => {
+      sendEditingUpdate(state.modelId, removeReference(state.references, index), state.preset);
+    });
+    const replace = document.createElement("button");
+    replace.type = "button";
+    replace.textContent = "Replace";
+    replace.setAttribute("aria-label", `Replace reference ${index + 1} of ${paths.length}: ${filename}`);
+    replace.disabled = !editable;
+    replace.addEventListener("click", async () => {
+      const picked = await invoke("pick_reference_files");
+      if (!picked.length) return;
+      const result = replaceReference(state.references, index, picked[0]);
+      if (result.errors.length) {
+        if (elements.referenceError) elements.referenceError.textContent = result.errors.join(" ");
+        return;
+      }
+      sendEditingUpdate(state.modelId, result.references, state.preset);
+    });
+    item.append(preview, name, remove, replace);
+    list.append(item);
+  });
+}
+function sendEditingUpdate(modelId, references, preset) {
+  if (!state.settled || state.configUpdateInFlight || !modelId) return;
+  state.pendingReferences = references;
+  state.configUpdateInFlight = true;
+  renderEditingControls();
+  const selectedPreset = preset ?? (isEditingModel(modelId) ? "landscape-medium" : null);
+  const dimensions = EDITING_PRESETS.find((entry) => entry.id === selectedPreset);
+  const localReason = compatibilityMessage(modelId, references.length);
+  if (localReason && elements.referenceError) elements.referenceError.textContent = localReason;
+  void invoke("update_generation_config", {
+    prompt: elements.promptInput?.value || state.prompt,
+    aspectRatio: dimensions ? "custom" : state.aspectRatio,
+    width: dimensions?.width ?? state.width,
+    height: dimensions?.height ?? state.height,
+    modelId,
+    references,
+    preset: selectedPreset
+  }).catch((error) => {
+    state.configUpdateInFlight = false;
+    state.pendingReferences = null;
+    renderEditingControls();
+    if (elements.referenceError) elements.referenceError.textContent = String(error);
+  });
+}
+function setupEditingControls() {
+  elements.modelRadios?.forEach((radio) => {
+    radio.addEventListener("change", () => {
+      const requested = radio.value;
+      renderEditingControls();
+      sendEditingUpdate(requested, state.references, state.preset);
+    });
+  });
+  elements.presetRadios?.forEach((radio) => {
+    radio.addEventListener("change", () => {
+      renderEditingControls();
+      sendEditingUpdate(state.modelId, state.references, radio.value);
+    });
+  });
+  elements.referenceAdd?.addEventListener("click", async () => {
+    if (!state.settled || state.configUpdateInFlight) return;
+    try {
+      const picked = await invoke("pick_reference_files");
+      const result = applyPickedPaths(state.references, picked);
+      if (result.errors.length && elements.referenceError) {
+        elements.referenceError.textContent = result.errors.join(" ");
+      }
+      if (result.references.length !== state.references.length) {
+        sendEditingUpdate(state.modelId, result.references, state.preset);
+      }
+    } catch (error) {
+      if (elements.referenceError) elements.referenceError.textContent = String(error);
+    }
+  });
+}
+function handleConfigAck(payload) {
+  state.modelId = payload.model_id;
+  state.references = [...payload.reference_paths];
+  state.preset = payload.preset;
+  state.compatibility = {
+    compatible: payload.compatible,
+    reason: payload.incompatibility_reason,
+    requiredModel: payload.required_model
+  };
+  state.pendingReferences = null;
+  state.configUpdateInFlight = false;
+  renderEditingControls();
 }
 function handleMessage(msg) {
   if (!msg || !msg.type) {
@@ -9179,6 +9423,9 @@ function handleMessage(msg) {
     case "error":
       handleErrorMessage(msg.payload);
       break;
+    case "config_ack":
+      handleConfigAck(msg.payload);
+      break;
     default: {
       const unknownMsg = msg;
       console.warn("Unknown message type:", unknownMsg.type);
@@ -9187,6 +9434,8 @@ function handleMessage(msg) {
 }
 function handleStateChanged(payload) {
   state.backendState = payload;
+  state.settled = payload.state === "paused" && payload.settled === true;
+  renderEditingControls();
   const backendPaused = isBackendStatePaused(payload.state);
   if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {
     pauseCommandInFlight = false;
@@ -9255,6 +9504,12 @@ function handleFatalError(message) {
   }, 3e3);
 }
 function handleErrorMessage(payload) {
+  if (state.configUpdateInFlight) {
+    state.configUpdateInFlight = false;
+    state.pendingReferences = null;
+    renderEditingControls();
+    if (elements.referenceError) elements.referenceError.textContent = payload.message;
+  }
   if (payload.fatal) {
     handleFatalError(payload.message);
   } else {
@@ -9465,7 +9720,7 @@ function updatePauseButton() {
   if (elements.pauseButton) {
     const backendStateValue = state.backendState?.state ?? null;
     const backendAllowsPause = backendStateValue === "idle" || backendStateValue === "generating" || backendStateValue === "paused";
-    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight;
+    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight;
   }
 }
 async function displayImageRecord(record, listIdx = null) {

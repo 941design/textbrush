@@ -119,7 +119,7 @@ Rules that apply to every task (from `CLAUDE.md` and `architecture.md`):
 | T07 | IPC pause gate, acknowledgement, launch resolution, wire mirror (S8) | done | Python IPC 76 passed/13 skipped; Rust update-config 5 passed; TypeScript typecheck passed; init/update fields and `config_ack` are mirrored. |
 | T08 | CLI model and reference arguments (S9) | done | CLI/E2E/call-site suite: 143 passed, 8 skipped; fast gate: 1113 passed, 11 skipped, only 61 documented missing-UI-build failures. |
 | T09 | Desktop shell: file dialog command (S10a) | done | Native multi-pick command registered with dialog permission and asset scope; cargo check passes and cargo test passes 58/58. |
-| T10 | Desktop UI: picker, selector, presets, acknowledgement (S10b) | pending | |
+| T10 | Desktop UI: picker, selector, presets, acknowledgement (S10b) | complete | UI picker, model and preset controls, acknowledgement rollback, previews; 143 UI tests and 1175 Python gate tests passed. |
 | T11 | Headless-browser accessibility harness (S11) | pending | |
 | T12 | Cross-cutting provenance integration tests (S12) | pending | |
 | T13 | User documentation and release notes (S13) | pending | |

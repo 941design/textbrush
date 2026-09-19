@@ -308,6 +308,22 @@ class MessageHandler:
                 on_generation_start=on_generation_start,
                 start_paused=start_paused,
             )
+            if not init_refs and not init_preset:
+                server.send(
+                    Message(
+                        MessageType.CONFIG_ACK,
+                        dataclass_to_dict(
+                            ConfigAckEvent(
+                                model_id=resolution.model_id,
+                                reference_count=0,
+                                reference_paths=[],
+                                preset=None,
+                                compatible=True,
+                                settled=False,
+                            )
+                        ),
+                    )
+                )
             self._generation_started = True
             self._current_prompt = start_prompt
             if start_paused:

@@ -481,11 +481,11 @@ class TestGetCurrentConfigImplementation:
     def test_returns_default_aspect_ratio(self):
         """getCurrentConfig must have default aspect ratio fallback."""
         js_code = load_config_controls_js()
-        function_pattern = r"export\s+function\s+getCurrentConfig[^}]*\{([^}]*\{[^}]*\}[^}]*)*\}"
-        match = re.search(function_pattern, js_code, re.DOTALL)
+        match = re.search(r"export\s+function\s+getCurrentConfig\s*\(", js_code)
         assert match, "getCurrentConfig function not found"
-
-        function_body = match.group(0)
+        next_export = re.search(r"\nexport\s+", js_code[match.end() :])
+        end = match.end() + next_export.start() if next_export else len(js_code)
+        function_body = js_code[match.start() : end]
         assert "'1:1'" in function_body or '"1:1"' in function_body, (
             "getCurrentConfig must have '1:1' as default aspect ratio"
         )

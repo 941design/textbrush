@@ -1,12 +1,141 @@
 // Integration Tests for UI Enhancements
 // Tests end-to-end workflows across ThemeManager, ListManager, and ButtonFlash modules
 
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import * as ThemeManager from './theme-manager.js';
 import * as ListManager from './list-manager.js';
 import * as ButtonFlash from './button-flash.js';
+import { readFileSync } from 'node:fs';
+import { build } from 'esbuild';
+
+const ack = (model, paths, preset = null, compatible = true, reason = null, required = null) => ({
+  type: 'config_ack',
+  payload: {
+    model_id: model,
+    reference_count: paths.length,
+    reference_paths: paths,
+    preset,
+    compatible,
+    incompatibility_reason: reason,
+    required_model: required,
+    settled: true,
+  },
+});
+
+async function renderedApp() {
+  const source = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const dom = new JSDOM(source, { url: 'http://localhost', runScripts: 'outside-only' });
+  const { window } = dom;
+  const calls = [];
+  let picked = [];
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  window.__testInvoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === 'get_launch_args') return {
+      prompt: 'test prompt', aspect_ratio: '1:1', width: 256, height: 256,
+      output_path: null, seed: null,
+    };
+    if (command === 'pick_reference_files') return picked;
+    return null;
+  };
+  window.__testListen = async () => () => {};
+  const bundle = await build({
+    entryPoints: [new URL('./main.ts', import.meta.url).pathname],
+    bundle: true,
+    format: 'iife',
+    write: false,
+    logLevel: 'silent',
+    plugins: [{
+      name: 'tauri-test-bridge',
+      setup(builder) {
+        builder.onResolve({ filter: /^@tauri-apps\/api\// }, args => ({ path: args.path, namespace: 'tauri-test' }));
+        builder.onLoad({ filter: /.*/, namespace: 'tauri-test' }, args => ({
+          contents: args.path.endsWith('/core')
+            ? 'export const invoke=(command,args)=>window.__testInvoke(command,args); export const convertFileSrc=()=>"data:image/png;base64,iVBORw0KGgo=";'
+            : args.path.endsWith('/event')
+              ? 'export const listen=(event,callback)=>window.__testListen(event,callback);'
+              : 'export const getCurrentWindow=()=>({close:async()=>{}});',
+          loader: 'js',
+        }));
+      },
+    }],
+  });
+  window.eval(bundle.outputFiles[0].text);
+  await window.textbrushApp.init();
+  return {
+    window, calls, setPicked(paths) { picked = paths; },
+    emit(message) { window.textbrushApp.handleMessage(message); },
+    close() { dom.window.close(); },
+  };
+}
+
+test('rendered picker waits for settled, then keeps acknowledgements authoritative', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const add = document.getElementById('reference-add');
+    assert.equal(add.disabled, true);
+    assert.equal(document.getElementById('pause-btn').disabled, true);
+    add.click();
+    assert.equal(calls.filter(call => call.command === 'pick_reference_files').length, 0);
+
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    assert.equal(document.getElementById('prompt-input').disabled, true);
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(add.disabled, false);
+    assert.equal(document.getElementById('prompt-input').disabled, false);
+    const promptInput = document.getElementById('prompt-input');
+    promptInput.value = 'revised prompt';
+    promptInput.dispatchEvent(new window.Event('blur'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const promptUpdate = calls.filter(call => call.command === 'update_generation_config').at(-1);
+    assert.equal(promptUpdate.args.aspectRatio, 'custom');
+    assert.equal(promptUpdate.args.width, 768);
+    assert.equal(promptUpdate.args.height, 576);
+    const paths = ['/tmp/one.png', '/tmp/two.jpg', '/tmp/three.jpeg', '/tmp/four.JPG'];
+    app.setPicked(paths);
+    add.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual([...document.querySelectorAll('#reference-list img')].map(img => img.alt),
+      paths.map((path, index) => `Reference ${index + 1} of 4: ${path.split('/').at(-1)}`));
+    assert.equal(add.disabled, true);
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    assert.equal(document.getElementById('pause-btn').disabled, true);
+    emit(ack('flux2-klein-4b', paths, 'landscape-medium'));
+    assert.equal(add.disabled, false);
+    assert.equal(document.getElementById('pause-btn').disabled, false);
+
+    document.querySelectorAll('#reference-list button[aria-label^="Remove"]')[1].click();
+    const afterRemove = [paths[0], paths[2], paths[3]];
+    emit(ack('flux2-klein-4b', afterRemove, 'landscape-medium'));
+    assert.equal(document.querySelectorAll('#reference-list img').length, 3);
+    app.setPicked(['/tmp/replacement.png']);
+    document.querySelectorAll('#reference-list button[aria-label^="Replace"]')[2].click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    emit(ack('flux2-klein-4b', [paths[0], paths[2], '/tmp/replacement.png'], 'landscape-medium'));
+    assert.match(document.querySelectorAll('#reference-list li')[2].textContent, /replacement\.png/);
+
+    document.querySelector('input[value="flux1-kontext-dev"]').click();
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    emit({ type: 'error', payload: { message: 'model unavailable', fatal: false } });
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    emit(ack('flux1-kontext-dev', ['/tmp/one.png'], 'portrait-medium'));
+    app.setPicked(['/tmp/two.jpg']);
+    add.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev');
+    emit(ack('flux1-kontext-dev', ['/tmp/one.png', '/tmp/two.jpg'], 'portrait-medium',
+      false, 'Kontext requires exactly one reference', 'flux2-klein-4b'));
+    assert.match(document.getElementById('reference-error').textContent, /requires exactly one/);
+    assert.match(document.querySelector('input[value="flux2-klein-4b"]').parentElement.textContent,
+      /recommended/);
+  } finally {
+    app.close();
+  }
+});
 
 describe('UI Enhancements Integration Tests', () => {
   let dom;

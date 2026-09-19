@@ -67,6 +67,43 @@ def parse_html(html: str) -> HTMLStructureParser:
     return parser
 
 
+def test_reference_editing_controls_have_semantic_ids_and_live_regions():
+    parser = parse_html(load_html())
+    for element_id, tag in {
+        "model-selector": "fieldset",
+        "reference-picker": "div",
+        "reference-add": "button",
+        "reference-list": "ul",
+        "reference-error": "div",
+        "editing-presets": "fieldset",
+    }.items():
+        assert parser.elements_by_id[element_id] == tag
+    assert any(
+        tag == "ul" and attrs.get("id") == "reference-list" and attrs.get("aria-live") == "polite"
+        for tag, attrs in parser.all_elements
+    )
+    assert any(
+        tag == "div" and attrs.get("id") == "reference-error" and attrs.get("role") == "alert"
+        for tag, attrs in parser.all_elements
+    )
+    assert (
+        sum(
+            1
+            for tag, attrs in parser.all_elements
+            if tag == "input" and attrs.get("name") == "model"
+        )
+        == 3
+    )
+    assert (
+        sum(
+            1
+            for tag, attrs in parser.all_elements
+            if tag == "input" and attrs.get("name") == "editing-preset"
+        )
+        == 6
+    )
+
+
 class TestHTMLBasics:
     """Test basic HTML structure requirements."""
 

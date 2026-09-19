@@ -10,6 +10,10 @@ import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { fetchAndParsePngMetadata } from './png-metadata';
+import {
+  applyPickedPaths, removeReference, replaceReference, previewLabel,
+  isEditingModel, compatibilityMessage, EDITING_PRESETS,
+} from './reference_picker';
 import type {
   AppState,
   Elements,
@@ -21,6 +25,7 @@ import type {
   AcceptedPayload,
   DeleteAckPayload,
   ErrorPayload,
+  ConfigAckPayload,
   ImageRecord,
 } from './types';
 
@@ -43,6 +48,13 @@ const state: AppState = {
   currentBlobUrl: null,
   imageList: [],
   currentIndex: -1,
+  modelId: null,
+  references: [],
+  pendingReferences: null,
+  preset: null,
+  settled: false,
+  compatibility: null,
+  configUpdateInFlight: false,
 };
 
 // DOM Element References
@@ -83,6 +95,14 @@ const elements: Elements = {
   pauseLabel: null,
   themeToggle: null,
   magnifierLens: null,
+  modelSelector: null,
+  modelRadios: null,
+  referencePicker: null,
+  referenceAdd: null,
+  referenceList: null,
+  referenceError: null,
+  editingPresets: null,
+  presetRadios: null,
 };
 
 // Magnifier state
@@ -148,6 +168,14 @@ function cacheElements(): void {
   elements.pauseLabel = document.getElementById('pause-label');
   elements.themeToggle = document.getElementById('theme-toggle') as HTMLButtonElement | null;
   elements.magnifierLens = document.getElementById('magnifier-lens');
+  elements.modelSelector = document.getElementById('model-selector') as HTMLFieldSetElement | null;
+  elements.modelRadios = document.querySelectorAll('input[name="model"]');
+  elements.referencePicker = document.getElementById('reference-picker');
+  elements.referenceAdd = document.getElementById('reference-add') as HTMLButtonElement | null;
+  elements.referenceList = document.getElementById('reference-list') as HTMLUListElement | null;
+  elements.referenceError = document.getElementById('reference-error');
+  elements.editingPresets = document.getElementById('editing-presets') as HTMLFieldSetElement | null;
+  elements.presetRadios = document.querySelectorAll('input[name="editing-preset"]');
 }
 
 function allElementsPresent(): boolean {
@@ -210,6 +238,8 @@ async function init(): Promise<void> {
     setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
+    setupEditingControls();
+    renderEditingControls();
     updatePauseButton();
 
     // Initialize image generation
@@ -254,6 +284,153 @@ function setupMessageListener(): void {
   });
 }
 
+function activeReferencePaths(): string[] {
+  return state.pendingReferences ?? state.references;
+}
+
+function renderEditingControls(): void {
+  const editable = state.settled && !state.configUpdateInFlight;
+  elements.modelRadios?.forEach(radio => {
+    radio.checked = radio.value === state.modelId;
+    radio.disabled = !editable;
+    const label = radio.closest('label');
+    label?.querySelector('.recommended-badge')?.remove();
+    if (label && radio.value === state.compatibility?.requiredModel) {
+      const badge = document.createElement('span');
+      badge.className = 'recommended-badge';
+      badge.textContent = ' recommended';
+      label.append(badge);
+    }
+  });
+  const editing = isEditingModel(state.modelId);
+  if (elements.promptInput) elements.promptInput.disabled = editing && !editable;
+  elements.editingPresets?.classList.toggle('hidden', !editing);
+  elements.aspectRatioControls?.classList.toggle('hidden', editing);
+  elements.resolutionControls?.classList.toggle('hidden', editing);
+  elements.presetRadios?.forEach(radio => {
+    radio.checked = radio.value === state.preset;
+    radio.disabled = !editable || !editing;
+  });
+  if (elements.referenceAdd) elements.referenceAdd.disabled = !editable;
+  if (elements.referenceError) {
+    elements.referenceError.textContent = state.compatibility?.reason ?? '';
+  }
+  if (elements.pauseButton) updatePauseButton();
+  renderReferenceList();
+}
+
+function renderReferenceList(): void {
+  const list = elements.referenceList;
+  if (!list) return;
+  list.replaceChildren();
+  const paths = activeReferencePaths();
+  const editable = state.settled && !state.configUpdateInFlight;
+  paths.forEach((path, index) => {
+    const item = document.createElement('li');
+    const preview = document.createElement('img');
+    preview.src = convertFileSrc(path);
+    preview.alt = previewLabel(path, index, paths.length);
+    const filename = path.split(/[\\/]/).at(-1) ?? path;
+    const name = document.createElement('span');
+    name.textContent = filename;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
+    remove.disabled = !editable;
+    remove.addEventListener('click', () => {
+      sendEditingUpdate(state.modelId, removeReference(state.references, index), state.preset);
+    });
+    const replace = document.createElement('button');
+    replace.type = 'button';
+    replace.textContent = 'Replace';
+    replace.setAttribute('aria-label', `Replace reference ${index + 1} of ${paths.length}: ${filename}`);
+    replace.disabled = !editable;
+    replace.addEventListener('click', async () => {
+      const picked = await invoke<string[]>('pick_reference_files');
+      if (!picked.length) return;
+      const result = replaceReference(state.references, index, picked[0]!);
+      if (result.errors.length) {
+        if (elements.referenceError) elements.referenceError.textContent = result.errors.join(' ');
+        return;
+      }
+      sendEditingUpdate(state.modelId, result.references, state.preset);
+    });
+    item.append(preview, name, remove, replace);
+    list.append(item);
+  });
+}
+
+function sendEditingUpdate(modelId: string | null, references: string[], preset: string | null): void {
+  if (!state.settled || state.configUpdateInFlight || !modelId) return;
+  state.pendingReferences = references;
+  state.configUpdateInFlight = true;
+  renderEditingControls();
+  const selectedPreset = preset ?? (isEditingModel(modelId) ? 'landscape-medium' : null);
+  const dimensions = EDITING_PRESETS.find(entry => entry.id === selectedPreset);
+  const localReason = compatibilityMessage(modelId, references.length);
+  if (localReason && elements.referenceError) elements.referenceError.textContent = localReason;
+  void invoke('update_generation_config', {
+    prompt: elements.promptInput?.value || state.prompt,
+    aspectRatio: dimensions ? 'custom' : state.aspectRatio,
+    width: dimensions?.width ?? state.width,
+    height: dimensions?.height ?? state.height,
+    modelId,
+    references,
+    preset: selectedPreset,
+  }).catch(error => {
+    state.configUpdateInFlight = false;
+    state.pendingReferences = null;
+    renderEditingControls();
+    if (elements.referenceError) elements.referenceError.textContent = String(error);
+  });
+}
+
+function setupEditingControls(): void {
+  elements.modelRadios?.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const requested = radio.value;
+      renderEditingControls(); // Selection changes only after config_ack.
+      sendEditingUpdate(requested, state.references, state.preset);
+    });
+  });
+  elements.presetRadios?.forEach(radio => {
+    radio.addEventListener('change', () => {
+      renderEditingControls();
+      sendEditingUpdate(state.modelId, state.references, radio.value);
+    });
+  });
+  elements.referenceAdd?.addEventListener('click', async () => {
+    if (!state.settled || state.configUpdateInFlight) return;
+    try {
+      const picked = await invoke<string[]>('pick_reference_files');
+      const result = applyPickedPaths(state.references, picked);
+      if (result.errors.length && elements.referenceError) {
+        elements.referenceError.textContent = result.errors.join(' ');
+      }
+      if (result.references.length !== state.references.length) {
+        sendEditingUpdate(state.modelId, result.references, state.preset);
+      }
+    } catch (error) {
+      if (elements.referenceError) elements.referenceError.textContent = String(error);
+    }
+  });
+}
+
+function handleConfigAck(payload: ConfigAckPayload): void {
+  state.modelId = payload.model_id;
+  state.references = [...payload.reference_paths];
+  state.preset = payload.preset;
+  state.compatibility = {
+    compatible: payload.compatible,
+    reason: payload.incompatibility_reason,
+    requiredModel: payload.required_model,
+  };
+  state.pendingReferences = null;
+  state.configUpdateInFlight = false;
+  renderEditingControls();
+}
+
 // Message Handler with Type Dispatch
 function handleMessage(msg: SidecarMessage): void {
   if (!msg || !msg.type) {
@@ -294,6 +471,10 @@ function handleMessage(msg: SidecarMessage): void {
       handleErrorMessage(msg.payload as ErrorPayload);
       break;
 
+    case 'config_ack':
+      handleConfigAck(msg.payload as ConfigAckPayload);
+      break;
+
     default: {
       // Exhaustive check: all SidecarMessage union variants are handled above.
       // If this branch is reached at runtime, the message type is unknown.
@@ -306,6 +487,8 @@ function handleMessage(msg: SidecarMessage): void {
 // Message Handlers
 function handleStateChanged(payload: StateChangedPayload): void {
   state.backendState = payload;
+  state.settled = payload.state === 'paused' && payload.settled === true;
+  renderEditingControls();
   const backendPaused = isBackendStatePaused(payload.state);
   if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {
     pauseCommandInFlight = false;
@@ -415,6 +598,12 @@ function handleFatalError(message: string): void {
  * Non-fatal errors display a transient notification in the loading prompt area.
  */
 function handleErrorMessage(payload: ErrorPayload): void {
+  if (state.configUpdateInFlight) {
+    state.configUpdateInFlight = false;
+    state.pendingReferences = null;
+    renderEditingControls();
+    if (elements.referenceError) elements.referenceError.textContent = payload.message;
+  }
   if (payload.fatal) {
     handleFatalError(payload.message);
   } else {
@@ -685,7 +874,7 @@ function updatePauseButton(): void {
       backendStateValue === 'idle' ||
       backendStateValue === 'generating' ||
       backendStateValue === 'paused';
-    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight;
+    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight;
   }
 }
 

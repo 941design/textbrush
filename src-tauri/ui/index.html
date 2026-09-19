@@ -76,6 +76,28 @@
                         </div>
                     </div>
                 </div>
+                <div class="editing-controls">
+                    <fieldset id="model-selector" class="model-selector">
+                        <legend>Model</legend>
+                        <label><input type="radio" name="model" value="flux1-schnell" disabled /> FLUX.1 [schnell] <small>text to image</small></label>
+                        <label><input type="radio" name="model" value="flux1-kontext-dev" disabled /> FLUX.1 Kontext [dev] <small>1 reference</small></label>
+                        <label><input type="radio" name="model" value="flux2-klein-4b" disabled /> FLUX.2 [klein] 4B <small>1 to 4 references</small></label>
+                    </fieldset>
+                    <div id="reference-picker" class="reference-picker">
+                        <button id="reference-add" type="button" disabled>Add reference images</button>
+                        <ul id="reference-list" aria-live="polite"></ul>
+                        <div id="reference-error" role="alert" aria-live="polite"></div>
+                    </div>
+                    <fieldset id="editing-presets" class="editing-presets hidden">
+                        <legend>Output size</legend>
+                        <label><input type="radio" name="editing-preset" value="landscape-small" disabled /> Landscape small</label>
+                        <label><input type="radio" name="editing-preset" value="landscape-medium" disabled /> Landscape medium</label>
+                        <label><input type="radio" name="editing-preset" value="landscape-large" disabled /> Landscape large</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-small" disabled /> Portrait small</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-medium" disabled /> Portrait medium</label>
+                        <label><input type="radio" name="editing-preset" value="portrait-large" disabled /> Portrait large</label>
+                    </fieldset>
+                </div>
             </div>
             <div class="validation-error hidden" id="validation-error" role="alert" aria-live="polite"></div>
         </header>

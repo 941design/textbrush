@@ -19,6 +19,9 @@ function createDom() {
               <span id="dimension-display">256×256</span>
               <button id="resolution-increase" type="button">+</button>
             </div>
+            <fieldset id="model-selector"><input type="radio" name="model" value="flux1-schnell" /></fieldset>
+            <div id="reference-picker"><button id="reference-add"></button><ul id="reference-list"></ul><div id="reference-error"></div></div>
+            <fieldset id="editing-presets"><input type="radio" name="editing-preset" value="landscape-medium" /></fieldset>
             <input id="prompt-input" type="text" />
             <div id="validation-error"></div>
           </header>

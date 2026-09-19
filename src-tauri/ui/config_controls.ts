@@ -9,6 +9,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { AppState, Elements } from './types';
+import { EDITING_PRESETS, isEditingModel } from './reference_picker';
 
 interface Resolution {
   width: number;
@@ -385,6 +386,16 @@ export function showValidationError(message: string, inputElement: Element): voi
  */
 export function getCurrentConfig(elements: Elements, state: AppState): ConfigValues {
   const promptValue = elements.promptInput ? elements.promptInput.value : '';
+
+  if (isEditingModel(state.modelId)) {
+    const preset = EDITING_PRESETS.find(entry => entry.id === (state.preset ?? 'landscape-medium'))!;
+    return {
+      prompt: promptValue,
+      aspectRatio: 'custom',
+      width: preset.width,
+      height: preset.height,
+    };
+  }
 
   let aspectRatioValue = '1:1';
   if (elements.aspectRatioRadios) {
