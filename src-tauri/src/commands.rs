@@ -15,7 +15,11 @@ pub struct AppState {
 #[cfg(any(test, not(debug_assertions)))]
 fn bundled_python_from_exe(exe_path: &Path) -> Option<PathBuf> {
     let contents_dir = exe_path.parent()?.parent()?;
-    let candidate = contents_dir.join("Resources").join("python-env").join("bin").join("python3");
+    let candidate = contents_dir
+        .join("Resources")
+        .join("python-env")
+        .join("bin")
+        .join("python3");
     candidate.exists().then_some(candidate)
 }
 
@@ -491,7 +495,8 @@ while True:
     #[test]
     fn repo_venv_python_from_path_finds_checkout_virtualenv() {
         let root = make_temp_dir("repo-venv");
-        let nested = root.join("src-tauri/target/release/bundle/macos/Textbrush.app/Contents/MacOS");
+        let nested =
+            root.join("src-tauri/target/release/bundle/macos/Textbrush.app/Contents/MacOS");
         let exe_path = nested.join("Textbrush");
         let python_path = root.join(".venv/bin/python3");
 

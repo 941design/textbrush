@@ -43,6 +43,7 @@ use tauri::{command, State};
 ///        a. Return Err("No sidecar running")
 ///
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_generation_config(
     state: State<'_, AppState>,
     prompt: String,
