@@ -100,6 +100,29 @@ class TestGetDefaultConfig:
 
         assert config.editing.default_preset == "landscape-medium"
 
+    def test_editing_default_preset_constant_matches_validation_module(self):
+        """The literal `"landscape-medium"` string lives in two places
+        today: `_DEFAULT_EDITING_PRESET` in `textbrush.config` (the value
+        a fresh config file defaults to) and `DEFAULT_EDITING_PRESET` in
+        `textbrush.validation` (the value the resolver falls back to).
+        They must stay in lockstep -- if either drifts, a fresh config
+        and a programmatic default point at different identifiers, and
+        one of them silently stops being a real preset.
+
+        `config` cannot import `validation` (validation imports model;
+        config is a leaf by architecture.md boundary rule 1), so this
+        assertion lives in tests, not at module load time."""
+        import textbrush.config as config_module
+        import textbrush.validation as validation_module
+
+        config_default = config_module._DEFAULT_EDITING_PRESET
+        validation_default = validation_module.DEFAULT_EDITING_PRESET
+
+        assert config_default == validation_default, (
+            f"config._DEFAULT_EDITING_PRESET ({config_default!r}) drifted "
+            f"from validation.DEFAULT_EDITING_PRESET ({validation_default!r})"
+        )
+
     def test_output_directory_is_absolute(self):
         """Output directory is absolute path."""
         config = get_default_config()

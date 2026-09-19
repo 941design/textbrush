@@ -252,7 +252,7 @@ references.
 
 ---
 
-- [ ] **3.1 Finish `validation.py` (S4) (T03)**
+- [x] **3.1 Finish `validation.py` (S4) (T03)**
 
 **Goal.** One leaf module owns cardinality and preset rules, reads cardinality from
 `ModelSpec`, validates presets in both directions, and produces messages that satisfy
