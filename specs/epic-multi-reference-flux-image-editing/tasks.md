@@ -115,7 +115,7 @@ Rules that apply to every task (from `CLAUDE.md` and `architecture.md`):
 | T03 | Finish `validation.py` (S4) | done | Shared registry-driven rules and preset table are exercised by 211 passing validation/config tests (10 skips); backend, CLI and IPC call the shared validator. |
 | T04 | Inference reference contract and engines (S5) | done | Engine contract, ordered copies, size guards and per-model sampling checks pass: 70 tests, 1 optional-dependency skip. |
 | T05 | Worker quiescence, discard, buffer provenance (S6) | done | Worker/buffer suite passed twice (68 each run); settled callback, epoch discard and per-result provenance remain covered. |
-| T06 | Backend config lifecycle, swap, decode-once, metadata (S7) | pending | |
+| T06 | Backend config lifecycle, swap, decode-once, metadata (S7) | done | Backend/metadata/cleanup/start tests pass (51); `normalize` has one backend call site. |
 | T07 | IPC pause gate, acknowledgement, launch resolution, wire mirror (S8) | pending | |
 | T08 | CLI model and reference arguments (S9) | pending | |
 | T09 | Desktop shell: file dialog command (S10a) | pending | |
