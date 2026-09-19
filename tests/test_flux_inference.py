@@ -243,7 +243,13 @@ class TestGeneratePipelineInvocation:
     @given(prompt=prompt_strategy(), options=generation_options_strategy())
     @settings(max_examples=10)
     def test_pipeline_called_with_correct_parameters(self, prompt, options):
-        """Pipeline receives correct prompt, dimensions, steps, generator."""
+        """Pipeline receives correct prompt, dimensions, sampling defaults, generator.
+
+        The engine's per-slug `default_sampling_settings()` is the source of
+        `num_inference_steps` / `guidance_scale` reaching the pipeline (T04
+        design decision); `options.steps` is no longer forwarded -- callers
+        that want a non-default step count pass `options.sampling_settings`.
+        """
         engine = FluxInferenceEngine()
         engine._pipeline = Mock()
         engine._device = "cpu"
@@ -256,7 +262,8 @@ class TestGeneratePipelineInvocation:
         call_kwargs = engine._pipeline.call_args.kwargs
 
         assert call_kwargs["prompt"] == prompt
-        assert call_kwargs["num_inference_steps"] == options.steps
+        expected_steps = engine.default_sampling_settings()["num_inference_steps"]
+        assert call_kwargs["num_inference_steps"] == expected_steps
         assert isinstance(call_kwargs["generator"], torch.Generator)
 
         expected_width, expected_height = FluxInferenceEngine.ASPECT_RATIOS[options.aspect_ratio]

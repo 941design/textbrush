@@ -7,12 +7,28 @@ import random
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
 from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX1_SCHNELL, FLUX2_KLEIN_4B, get_repo_id
 from textbrush.model.weights import load_local_only
 
+if TYPE_CHECKING:
+    from textbrush.references import NormalizedReference
+
 logger = logging.getLogger(__name__)
+
+
+def round16(x: int) -> int:
+    """Round `x` up to the next multiple of 16 (FLUX VAE multiple-of-16 floor).
+
+    Single source of the rounding helper used by `FluxInferenceEngine.generate()`
+    and `reference_input_size()`. Both axes of the generation canvas and both
+    axes of the reference canvas must be multiples of 16 so the pipeline's
+    internal `_auto_resize=False` / area-floor / `preprocess(..., resize_mode)`
+    steps are provably no-ops (T04 design decision).
+    """
+    return ((x + 15) // 16) * 16
 
 
 class FluxInferenceEngine(InferenceEngine):
@@ -86,13 +102,41 @@ class FluxInferenceEngine(InferenceEngine):
         self._dtype = None
         self._generate_lock = threading.Lock()
 
-    @property
-    def reference_input_size(self) -> tuple[int, int] | None:
-        """None means this pipeline receives the normalized image unchanged."""
-        return None
+    def reference_input_size(self, output_width: int, output_height: int) -> tuple[int, int] | None:
+        """Return the per-reference canvas for editing-capable slugs, None otherwise.
 
-    @property
+        Pipeline facts (recorded 2026-09-19 against diffusers 0.39.0; see
+        `Flux2KleinInferenceEngine` docstring for the FLUX.2 source paths and
+        `pipelines/flux/pipeline_flux_kontext.py` for Kontext):
+
+        - Schnell accepts no references -> None.
+        - Kontext accepts one reference at the generation canvas. With
+          `_auto_resize=False` and `max_area = gw * gh`, both already multiples
+          of 16, the pipeline-internal resize is provably a no-op.
+        - FLUX.2 klein 4B accepts 1-4 references at the generation canvas.
+          The pipeline applies an unconditional area-based resize above
+          `1024 * 1024` and rounds each axis to a multiple of 16; the
+          no-op contract is `width * height <= 1024 * 1024` AND both axes
+          multiples of 16. The largest preset canvas (1024x768) is below
+          `1024 * 1024`, so this is satisfied for every preset.
+        """
+        if self.model_id == FLUX1_SCHNELL:
+            return None
+        return (round16(output_width), round16(output_height))
+
     def default_sampling_settings(self) -> dict[str, float | int]:
+        """Per-slug sampling baseline (T04 design decision).
+
+        - Schnell: distilled `num_inference_steps=4`, `guidance_scale=0.0`
+          (no classifier-free guidance for the distilled model).
+        - Kontext: `num_inference_steps=28`, `guidance_scale=2.5`
+          (matches the documented dev-mode defaults).
+        - FLUX.2 klein 4B (distilled): `num_inference_steps=4`,
+          `guidance_scale=1.0`.
+
+        Caller-supplied `options.sampling_settings` override this baseline
+        key by key (AC-MODEL-6).
+        """
         if self.model_id == FLUX1_SCHNELL:
             return {"num_inference_steps": 4, "guidance_scale": 0.0}
         if self.model_id == FLUX1_KONTEXT_DEV:
@@ -251,9 +295,9 @@ class FluxInferenceEngine(InferenceEngine):
         else:
             final_width, final_height = self._resolve_dimensions(options.aspect_ratio)
 
-        # Round dimensions to multiples of 16 (required by FLUX model)
-        generated_width = ((final_width + 15) // 16) * 16
-        generated_height = ((final_height + 15) // 16) * 16
+        # Round dimensions to multiples of 16 (required by FLUX model).
+        generated_width = round16(final_width)
+        generated_height = round16(final_height)
 
         logger.info(
             f"Generating image: prompt='{prompt}', "
@@ -276,7 +320,7 @@ class FluxInferenceEngine(InferenceEngine):
                 self._pipeline.scheduler._step_index = None
 
             start_time = time.perf_counter()
-            settings = self.default_sampling_settings | options.sampling_settings
+            settings = {**self.default_sampling_settings(), **options.sampling_settings}
             steps = int(settings.pop("num_inference_steps", options.steps))
             kwargs = dict(
                 prompt=prompt,
@@ -286,10 +330,56 @@ class FluxInferenceEngine(InferenceEngine):
                 generator=generator,
                 **settings,
             )
-            if options.references:
-                # Pipelines receive copies so held acknowledgement-time data remains immutable.
-                images = [reference.pixel_data.copy() for reference in options.references]
-                kwargs["image"] = images[0] if self.model_id == FLUX1_KONTEXT_DEV else images
+
+            # Reference handling per slug. The model-boundary guard (T04
+            # step 2): every reference forwarded to an editing pipeline
+            # must already be at the engine's `reference_input_size` canvas.
+            # The backend (S7) is the single decode site and normalizes to
+            # that canvas at acknowledgement time, so an off-canvas
+            # reference here means the engine is being called outside the
+            # documented contract and must fail loudly (a silent resize
+            # would violate the "no reference identity drift" guarantee of
+            # S5-BC-1).
+            canvas = self.reference_input_size(generated_width, generated_height)
+            references: tuple[NormalizedReference, ...] = options.references
+            if canvas is None:
+                if references:
+                    raise ValueError(
+                        f"references provided but engine {self.model_id!r} accepts none; "
+                        f"schnell is a text-to-image pipeline"
+                    )
+            elif not references:
+                raise ValueError(
+                    f"engine {self.model_id!r} requires at least one reference image; "
+                    f"a cardinality check upstream of this engine should have rejected "
+                    f"the request before generate() was called"
+                )
+            else:
+                gw, gh = canvas
+                for index, reference in enumerate(references):
+                    if (reference.width, reference.height) != (gw, gh):
+                        raise ValueError(
+                            f"reference {index} has size "
+                            f"({reference.width}, {reference.height}); "
+                            f"engine {self.model_id!r} requires "
+                            f"({gw}, {gh}) (normalize via "
+                            f"references.normalize(target_size={gw, gh}) before "
+                            f"calling generate())"
+                        )
+                if self.model_id == FLUX1_KONTEXT_DEV:
+                    # Kontext is single-reference and accepts one PIL
+                    # image; the pipeline unwraps a list itself, but T04
+                    # commits to forwarding a one-element list for
+                    # consistency with the FLUX.2 path and because
+                    # `pixel_data.copy()` belongs to the engine, not the
+                    # caller.
+                    kwargs["image"] = references[0].pixel_data.copy()
+                    kwargs["_auto_resize"] = False
+                    kwargs["max_area"] = generated_width * generated_height
+                else:
+                    # FLUX.2 klein accepts a list of PIL images.
+                    kwargs["image"] = [r.pixel_data.copy() for r in references]
+
             result = self._pipeline(**kwargs)
             generation_time = time.perf_counter() - start_time
 
@@ -306,7 +396,7 @@ class FluxInferenceEngine(InferenceEngine):
             image=image,
             seed=seed,
             generation_time=generation_time,
-            model_name=self.model_id,
+            model_name=get_repo_id(self.model_id),
             generated_width=generated_width,
             generated_height=generated_height,
         )

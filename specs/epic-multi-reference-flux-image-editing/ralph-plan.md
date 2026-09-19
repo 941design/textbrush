@@ -321,7 +321,7 @@ AC-MODEL-4. Owned ACs: AC-MODEL-4, AC-PRESET-1, AC-INPUT-4.
 
 ---
 
-- [ ] **4.1 Inference reference contract and engines (S5) (T04)**
+- [x] **4.1 Inference reference contract and engines (S5) (T04)**
 
 **Goal.** The engine layer hands each pipeline the prompt, the ordered references, and that
 model's own sampling settings, with pipeline-internal reference resizing provably disabled or
