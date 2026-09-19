@@ -970,7 +970,7 @@ committed under the owning module's task label.
 
 ---
 
-- [ ] **13.1 User documentation and release notes (S13) (T13)**
+- [x] **13.1 User documentation and release notes (S13) (T13)**
 
 **Goal.** A reader who has not seen the spec can use reference editing from desktop and CLI.
 Owned AC: AC-DOC-1.

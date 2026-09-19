@@ -7,9 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-- Added local multi-reference FLUX editing. It is additive to the existing
-  FLUX.1 schnell text-to-image workflow; FLUX.2 [klein] 4B is required for
-  two to four references.
+### Added
+- Local multi-reference FLUX editing workflow, additive to the existing
+  FLUX.1 [schnell] text-to-image path. Three registered models:
+  `flux1-schnell` (text-to-image, 0 references), `flux1-kontext-dev`
+  (single-reference editing, exactly 1), and `flux2-klein-4b`
+  (multi-reference editing, 1 to 4). FLUX.2 [klein] 4B is **required** for
+  any configuration with two to four references and is preferred for
+  single-reference edits when no model is pinned.
+- CLI flags `--model`, repeatable `--reference`, and `--preset` with
+  cardinality and preset validation; CLI exit code 1 on cardinality,
+  preset, and aspect-ratio mismatches. Cardinality, preset, and
+  text-only aspect-ratio rules are shared between CLI and IPC through
+  the `textbrush.validation` module.
+- Six canonical editing output presets (`landscape-small` / `-medium` /
+  `-large`, `portrait-small` / `-medium` / `-large`), owned by
+  `textbrush.validation.EDITING_PRESETS`. Default for an editing-capable
+  model with no explicit preset is `landscape-medium`, configurable under
+  `[editing] default_preset`.
+- Desktop UI: model selector, reference picker with per-reference
+  previews, removal, and replacement; preset radios; compatibility
+  messaging; editing controls enabled only after the worker has reached
+  a settled state. See [docs/reference-editing.md](docs/reference-editing.md)
+  for the full user guide.
+
+### Changed
+- The minimum supported `diffusers` version is now `0.37.0`; the lockfile
+  resolves to `0.39.0`. Earlier releases did not export
+  `Flux2KleinPipeline`, which the FLUX.2 editing path requires.
 
 ## [Unreleased]
 

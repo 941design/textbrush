@@ -368,3 +368,11 @@ uv run textbrush --prompt "test" --verbose
 - Relative paths resolved from current working directory
 - Absolute paths used as-is
 - Path traversal is validated (no `../../../etc/passwd`)
+
+## See Also
+
+- [Reference Editing](reference-editing.md) — the user guide for the
+  `--model`, `--reference`, and `--preset` workflow, including the
+  three registered models, the six editing presets, the desktop flow,
+  credentials, hardware expectations, privacy policy, and limitations.
+
