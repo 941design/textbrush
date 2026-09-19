@@ -410,7 +410,7 @@ cite the T02 source facts.
 
 ---
 
-- [ ] **5.1 Worker quiescence, discard, buffer provenance (S6) (T05)**
+- [x] **5.1 Worker quiescence, discard, buffer provenance (S6) (T05)**
 
 **Goal.** "Paused" is observable as quiescent, results from a superseded configuration never
 enter the buffer, and every buffered image carries its snapshot's model identity and

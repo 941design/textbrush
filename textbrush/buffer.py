@@ -27,6 +27,13 @@ class BufferedImage:
         aspect_ratio: Aspect ratio string (e.g., "1:1", "16:9").
         generated_width: Width passed to model (multiple of 16), or None.
         generated_height: Height passed to model (multiple of 16), or None.
+        model_id: Short slug of the model whose acknowledged configuration
+            produced this image (e.g. ``"flux1-kontext-dev"``).
+            Session-local; never written to output files (AC-META-1).
+        reference_ids: Tuple of session-local reference identifiers that
+            were active when this image was generated. One entry per
+            reference; duplicates reflect duplicate paths (AC-INPUT-4).
+            Session-local; never written to output files (AC-META-1).
 
     CONTRACT (generated dimension fields):
       Invariants:
@@ -40,6 +47,26 @@ class BufferedImage:
         - Backward compatibility: existing code treats None as "no dimension alignment"
         - Optional: generated_width and generated_height default to None
         - Semantic: None means "not applicable" or "legacy image without alignment"
+
+    CONTRACT (model_id / reference_ids fields, AC-META-1, AC-STATE-2):
+      Invariants:
+        - `model_id` is the short slug (e.g. "flux2-klein-4b") of the
+          model whose acknowledged configuration produced this image.
+          `model_name` (the separate field) is the HuggingFace repo id
+          (`FLUX2_KLEIN_4B`'s `repo_id`); both reach this object from the
+          worker so the buffer can distinguish "which model" (short slug,
+          the user's vocabulary) from "which exact repo" (HuggingFace id,
+          the wire metadata).
+        - `reference_ids` is the tuple of session-local ids minted at
+          acknowledgement time, in the same order as the references
+          handed to the pipeline. Length equals the number of references
+          the engine ran with, including duplicates.
+        - Both fields default to None / () for callers that pre-date S6
+          (T05). Old call sites continue to compile and run; downstream
+          attribution tests gate on `model_id is not None` /
+          `reference_ids != ()`.
+        - Neither field is ever written into output files (PNG metadata,
+          JPEG EXIF); they are session-local provenance only.
     """
 
     image: Image.Image
@@ -50,6 +77,8 @@ class BufferedImage:
     aspect_ratio: str = "1:1"
     generated_width: int | None = None
     generated_height: int | None = None
+    model_id: str | None = None
+    reference_ids: tuple[str, ...] = ()
 
     def cleanup(self) -> None:
         """Delete temporary file if it exists.

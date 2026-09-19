@@ -326,23 +326,35 @@ class TestGenerationWorkerExamples:
     """Example-based tests for specific edge cases."""
 
     def test_immediate_stop_before_first_generation(self):
-        """Worker stops promptly after stop() is called.
+        """Worker stops promptly after stop() is called, producing at most
+        one in-flight generation.
 
-        Note: Due to timing, the worker may complete a few generations before
-        the stop signal is processed. The key property is that it stops promptly.
+        The engine sleeps 50 ms before returning so the worker is
+        guaranteed to be mid-generate when `stop()` is called. The thread
+        finishes the in-flight generate, exits the loop on the next
+        `_stop_event.is_set()` check, and the buffer holds at most one
+        result (the one whose epoch matches).
         """
+        import time as _time
+
         buffer = ImageBuffer(max_size=8)
         engine = MockInferenceEngine()
-        options = GenerationOptions(seed=0)
+        original_generate = engine.generate
 
+        def slow_generate(prompt, options):
+            _time.sleep(0.05)
+            return original_generate(prompt, options)
+
+        engine.generate = slow_generate
+
+        options = GenerationOptions(seed=0)
         worker = GenerationWorker(engine, buffer, "test prompt", options)
         worker.start()
         worker.stop()
         worker.join(timeout=2.0)
 
         assert not worker._thread.is_alive()
-        # May have 0-3 images due to timing - the key property is it stopped
-        assert len(buffer) <= 3
+        assert len(buffer) <= 1
 
     def test_multiple_stop_calls_are_safe(self):
         """Calling stop() multiple times is safe (idempotent)."""
