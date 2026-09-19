@@ -2,6 +2,19 @@
 
 This guide covers GPU configuration for optimal textbrush performance.
 
+## Software Stack Requirements
+
+Textbrush installs its ML dependencies (`torch`, `diffusers`, `transformers`,
+`accelerate`, `safetensors`, `sentencepiece`) through the optional `model` extra.
+The minimum supported `diffusers` version is `0.37.0`; the lockfile currently
+resolves to `0.39.0`, which is the first series that exports both editing
+pipelines used by the app: `FluxKontextPipeline` (FLUX.1 Kontext [dev], single
+reference) and `Flux2KleinPipeline` (FLUX.2 [klein] 4B, one to four ordered
+references). Editing models therefore require a recent `diffusers`; running
+textbrush against an older release will fail at pipeline import time even when
+the model weights themselves are present. If you need to upgrade by hand, run
+`uv lock --upgrade-package diffusers` followed by `uv sync --extra model`.
+
 ## Supported Hardware Backends
 
 Textbrush automatically detects and uses the best available hardware:

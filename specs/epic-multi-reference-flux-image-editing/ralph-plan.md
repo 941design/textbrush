@@ -149,7 +149,7 @@ uv run pytest tests/test_backend_start_generation.py tests/test_worker.py -q
 
 ---
 
-- [ ] **2.1 Raise the diffusers floor and record pipeline facts (T02)**
+- [x] **2.1 Raise the diffusers floor and record pipeline facts (T02)**
 
 **Goal.** The locked ML stack provides both editing pipelines, and the exact kwargs that stop
 each pipeline from resizing references are known from source, not assumed.
@@ -198,6 +198,57 @@ skips exactly as before.
 **Done when.** The lock resolves a diffusers version exporting both pipelines and the note on
 the T02 checklist item records the klein preprocessing facts verbatim with file and line
 references.
+
+**Note (recorded 2026-09-19 against diffusers 0.39.0, lockfile
+`uv.lock`).** Source paths below are inside the cached package at
+`/home/mrother.guest/.cache/uv/archive-v0/fvtv2q8qVT-4ArfJ/lib/python3.12/site-packages/diffusers/`.
+
+- `pyproject.toml:17` pins `diffusers>=0.37.0,<1.0.0`. `uv.lock` resolves
+  `diffusers 0.39.0`. The export check (`uv run --no-project --with "diffusers==0.39.0" python -c "import diffusers; print('FluxKontextPipeline' in dir(diffusers), 'Flux2KleinPipeline' in dir(diffusers))"`)
+  prints `True True`.
+- `FluxKontextPipeline.__call__` (`pipelines/flux/pipeline_flux_kontext.py:755-784`):
+  - `image: PipelineImageInput | None = None` (line 755); accepts a single PIL image
+    (the engine forwards a one-element list, which Kontext unwraps via
+    `img = image[0] if isinstance(image, list) else image` at line 988).
+  - `num_inference_steps: int = 28` (line 763), `guidance_scale: float = 3.5` (line 765);
+    the engine overrides both per `FluxInferenceEngine.default_sampling_settings`
+    (`textbrush/inference/flux.py:99`, `num_inference_steps=28`, `guidance_scale=2.5`
+    for Kontext).
+  - Output-size recompute (lines 899-906): `width = round((max_area * aspect_ratio) ** 0.5)`,
+    `height = round((max_area / aspect_ratio) ** 0.5)`, then each axis is floored to a
+    multiple of `self.vae_scale_factor * 2` (= 16 for FLUX VAE, set on
+    `pipelines/flux/pipeline_flux.py:209-212`). Passing
+    `max_area = width * height` with both already multiples of 16 makes this a no-op.
+  - `max_area: int = 1024**2` (line 783), `_auto_resize: bool = True` (line 784).
+  - Reference preprocessing (lines 994-1002): the pipeline picks a single image via
+    `img = image[0] if isinstance(image, list) else image`, then if `_auto_resize=True`
+    it buckets the image to the closest entry of `PREFERRED_KONTEXT_RESOLUTIONS`
+    (line 83, defined later in T04 / engine). Each axis is then floored to a multiple
+    of 16, the image is `image_processor.resize`'d, then `image_processor.preprocess`'d
+    at the resolved size. With `_auto_resize=False` and width/height already multiples
+    of 16, the resize is a no-op.
+- `Flux2KleinPipeline.__call__` (`pipelines/flux2/pipeline_flux2_klein.py:614-779`):
+  - `image: list[PIL.Image.Image] | PIL.Image.Image | None = None` (line 616); the
+    engine forwards a list (T04 wiring).
+  - `num_inference_steps: int = 50` (line 620), `guidance_scale: float = 4.0`
+    (line 622); the engine overrides both for the klein 4B distilled model
+    (`num_inference_steps=4`, `guidance_scale=1.0`).
+  - Per-reference preprocessing (lines 770-779):
+    1. `if image_width * image_height > 1024 * 1024: img = self.image_processor._resize_to_target_area(img, 1024 * 1024)`
+       (uniform scale via Lanczos to fit the target area).
+    2. `multiple_of = self.vae_scale_factor * 2` (= 16 for FLUX VAE); each axis is
+       floored to a multiple of 16.
+    3. `img = self.image_processor.preprocess(img, height=image_height, width=image_width, resize_mode="crop")`.
+  - There is **no** `_auto_resize`-style flag: the area-based resize happens
+    unconditionally when pixel count exceeds `1024 * 1024`. The contract for a no-op
+    preprocessing path is therefore `width * height <= 1024 * 1024` AND width and
+    height already multiples of 16.
+- `FluxPipeline.__call__` (`pipelines/flux/pipeline_flux.py:654-682`) signature still
+  accepts `prompt`, `height`, `width`, `num_inference_steps`, `guidance_scale`,
+  `generator` (the only kwargs `tests/test_flux_load.py` exercises through
+  `FluxInferenceEngine.MODEL_ID` and the device selection path). The existing
+  schnell tests in `tests/test_flux_load.py` remain valid; they skip when torch is
+  not installed (`pytest.importorskip("torch")` at line 8).
 
 ---
 

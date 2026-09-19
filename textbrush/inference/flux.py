@@ -387,7 +387,29 @@ class FluxKontextInferenceEngine(FluxInferenceEngine):
 
 
 class Flux2KleinInferenceEngine(FluxInferenceEngine):
-    """FLUX.2 [klein] 4B ordered multi-reference editing engine."""
+    """FLUX.2 [klein] 4B ordered multi-reference editing engine.
+
+    Pipeline facts (recorded 2026-09-19 against diffusers 0.39.0,
+    ``diffusers/pipelines/flux2/pipeline_flux2_klein.py``):
+
+    - ``image`` parameter accepts ``list[PIL.Image.Image] | PIL.Image.Image | None``
+      (``pipeline_flux2_klein.py:616``); the engine forwards a list.
+    - Per-reference preprocessing (lines 770-779): if
+      ``image_width * image_height > 1024 * 1024``, the image is uniformly scaled by
+      ``_resize_to_target_area(img, 1024 * 1024)`` to that target area; otherwise the
+      image is left at its native size. Each axis is then floored to a multiple of
+      ``self.vae_scale_factor * 2`` (= 16 for FLUX VAE), and finally
+      ``self.image_processor.preprocess(img, height=image_height, width=image_width,
+      resize_mode="crop")`` is called.
+    - There is no ``_auto_resize``-style flag on this pipeline; the resize happens
+      unconditionally whenever pixel area exceeds ``1024 * 1024``. The contract
+      for a no-op preprocessing path is therefore: width and height already
+      multiples of 16 AND ``width * height <= 1024 * 1024``.
+    - ``num_inference_steps: int = 50`` (line 620), ``guidance_scale: float = 4.0``
+      (line 622). The project overrides these per
+      ``FluxInferenceEngine.default_sampling_settings`` (``num_inference_steps=4``,
+      ``guidance_scale=1.0`` for the klein 4B distilled model).
+    """
 
     def __init__(self) -> None:
         super().__init__(FLUX2_KLEIN_4B)
