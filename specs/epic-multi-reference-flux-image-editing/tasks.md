@@ -112,7 +112,7 @@ Rules that apply to every task (from `CLAUDE.md` and `architecture.md`):
 |---|---|---|---|
 | T01 | Repair regressions and hygiene from 47f6151 | done | Lint/format clean; 41 targeted tests pass; fast gate has only 61 known missing-compiled-UI failures (1089 passed, 11 skipped). |
 | T02 | Raise the diffusers floor and record pipeline facts | done | Lock: diffusers 0.39.0; exports `True True`; `pipeline_flux2_klein.py:614-779` accepts `image` as PIL or list, defaults to 50 steps/4.0 guidance, scales above 1024² pixels, floors axes to 16, then preprocesses with crop; no resize flag, so unchanged pixels require area ≤1024² and 16-aligned axes. Kontext `pipeline_flux_kontext.py:755-1002` accepts PIL or list, defaults to 28/3.5, and `_auto_resize=False` with `max_area=width*height` and 16-aligned axes avoids resize. `test_flux_load.py` skips without optional diffusers. |
-| T03 | Finish `validation.py` (S4) | pending | |
+| T03 | Finish `validation.py` (S4) | done | Shared registry-driven rules and preset table are exercised by 211 passing validation/config tests (10 skips); backend, CLI and IPC call the shared validator. |
 | T04 | Inference reference contract and engines (S5) | pending | |
 | T05 | Worker quiescence, discard, buffer provenance (S6) | pending | |
 | T06 | Backend config lifecycle, swap, decode-once, metadata (S7) | pending | |
