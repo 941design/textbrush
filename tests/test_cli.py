@@ -499,6 +499,7 @@ class TestMain:
 
         mock_engine = Mock()
         mock_engine.is_loaded.return_value = True
+        mock_engine.default_sampling_settings.return_value = {}
         mock_engine.generate.return_value = GenerationResult(
             image=Image.new("RGB", (512, 512)),
             seed=42,
@@ -557,6 +558,7 @@ class TestMain:
 
         mock_engine = Mock()
         mock_engine.is_loaded.return_value = True
+        mock_engine.default_sampling_settings.return_value = {}
         mock_engine.generate.return_value = GenerationResult(
             image=Image.new("RGB", (512, 512)),
             seed=42,
@@ -589,6 +591,7 @@ class TestMain:
 
         mock_engine = Mock()
         mock_engine.is_loaded.return_value = True
+        mock_engine.default_sampling_settings.return_value = {}
         mock_engine.generate.return_value = GenerationResult(
             image=Image.new("RGB", (512, 512)),
             seed=42,
@@ -635,6 +638,7 @@ class TestParserIntegration:
 
         mock_engine = Mock()
         mock_engine.is_loaded.return_value = True
+        mock_engine.default_sampling_settings.return_value = {}
         mock_engine.generate.return_value = GenerationResult(
             image=Image.new("RGB", (512, 512)),
             seed=42,

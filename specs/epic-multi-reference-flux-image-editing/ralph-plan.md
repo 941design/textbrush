@@ -462,7 +462,7 @@ from `backend` or `ipc`.
 
 ---
 
-- [ ] **6.1 Backend config lifecycle, engine swap, decode-once, metadata (S7) (T06)**
+- [x] **6.1 Backend config lifecycle, engine swap, decode-once, metadata (S7) (T06)**
 
 **Goal.** The backend holds the acknowledged configuration, decodes references exactly once
 at acknowledgement to the engine's canvas, applies model + references + preset atomically,

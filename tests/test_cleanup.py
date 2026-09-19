@@ -3,12 +3,23 @@
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from hypothesis import given
 from hypothesis import strategies as st
 from PIL import Image
 
+from textbrush.backend import TextbrushBackend
 from textbrush.buffer import BufferedImage, ImageBuffer
+from textbrush.config import (
+    Config,
+    EditingConfig,
+    HuggingFaceConfig,
+    InferenceConfig,
+    LoggingConfig,
+    ModelConfig,
+    OutputConfig,
+)
 
 
 class TestBufferedImageCleanup:
@@ -306,7 +317,7 @@ class TestBackendTimeouts:
             result = backend.get_next_image(timeout=None)
             retrieved.append(result)
 
-        consumer_thread = threading.Thread(target=consumer, daemon=True)
+        consumer_thread = threading.Thread(target=consumer)
         consumer_thread.start()
 
         time.sleep(0.05)
@@ -316,3 +327,99 @@ class TestBackendTimeouts:
         consumer_thread.join(timeout=0.5)
         assert len(retrieved) == 1
         assert retrieved[0] is None
+
+
+class TestBackendReferencesReleased:
+    """T06 (AC-PROCESS-3): after `abort` and `shutdown`, the backend's
+    `references` and `reference_ids` are released (empty) -- the
+    decoded data does not outlive the acknowledged configuration."""
+
+    @staticmethod
+    def _make_config(output_dir: Path) -> Config:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return Config(
+            output=OutputConfig(directory=output_dir, format="png"),
+            model=ModelConfig(directories=[], buffer_size=8, selected_id=None),
+            huggingface=HuggingFaceConfig(token=None),
+            inference=InferenceConfig(backend="flux"),
+            logging=LoggingConfig(verbosity="info"),
+            editing=EditingConfig(default_preset="landscape-medium"),
+        )
+
+    def test_accept_releases_references(self, tmp_path: Path) -> None:
+        """Accepting a buffered image does NOT release references --
+        the user can keep accepting. Only lifecycle changes (abort,
+        shutdown) release them."""
+        from textbrush.model.registry import FLUX1_KONTEXT_DEV
+        from textbrush.model.weights import AvailabilityReport
+
+        config = self._make_config(tmp_path / "out")
+        side_effect_calls = []
+
+        def factory(backend, model_id):
+            from tests.mocks import MockInferenceEngine
+            from textbrush.validation import is_editing_model
+
+            side_effect_calls.append(model_id)
+            canvas = (768, 576) if is_editing_model(model_id) else None
+            eng = MockInferenceEngine(reference_canvas=canvas)
+            eng.model_id = model_id
+            return eng
+
+        with (
+            patch("textbrush.backend.create_engine", side_effect=factory),
+            patch(
+                "textbrush.backend.TextbrushBackend._check_availability",
+                return_value=AvailabilityReport(available=True, cause=None, detail="", root=None),
+            ),
+        ):
+            backend = TextbrushBackend(config)
+            backend.initialize()
+            backend.apply_configuration(
+                model_id=FLUX1_KONTEXT_DEV,
+                reference_paths=[
+                    str(Path(__file__).parent / "fixtures" / "images" / "valid_square.png")
+                ],
+                preset="landscape-medium",
+            )
+            assert backend.references
+
+            # Aborting releases references.
+            backend.abort()
+            assert backend.references == ()
+
+    def test_shutdown_releases_references(self, tmp_path: Path) -> None:
+        from textbrush.model.registry import FLUX1_KONTEXT_DEV
+        from textbrush.model.weights import AvailabilityReport
+
+        config = self._make_config(tmp_path / "out")
+
+        def factory(backend, model_id):
+            from tests.mocks import MockInferenceEngine
+            from textbrush.validation import is_editing_model
+
+            canvas = (768, 576) if is_editing_model(model_id) else None
+            eng = MockInferenceEngine(reference_canvas=canvas)
+            eng.model_id = model_id
+            return eng
+
+        with (
+            patch("textbrush.backend.create_engine", side_effect=factory),
+            patch(
+                "textbrush.backend.TextbrushBackend._check_availability",
+                return_value=AvailabilityReport(available=True, cause=None, detail="", root=None),
+            ),
+        ):
+            backend = TextbrushBackend(config)
+            backend.initialize()
+            backend.apply_configuration(
+                model_id=FLUX1_KONTEXT_DEV,
+                reference_paths=[
+                    str(Path(__file__).parent / "fixtures" / "images" / "valid_square.png")
+                ],
+                preset="landscape-medium",
+            )
+            assert backend.references
+
+            backend.shutdown()
+            assert backend.references == ()

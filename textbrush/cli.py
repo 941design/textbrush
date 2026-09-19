@@ -503,8 +503,8 @@ def main(argv: List[str] | None = None) -> None:
         config = merge_cli_args_with_config(args, config)
         selected_model = args.model or config.model.selected_id or FLUX1_SCHNELL
         config.model.selected_id = selected_model
-        references = tuple(normalize(path) for path in args.reference)
-        preset = args.preset or (DEFAULT_EDITING_PRESET if references else None)
+        references_paths = [str(p) for p in args.reference]
+        preset = args.preset or (DEFAULT_EDITING_PRESET if references_paths else None)
         width = height = None
         if preset:
             width, height = editing_preset_dimensions(preset)
@@ -516,10 +516,10 @@ def main(argv: List[str] | None = None) -> None:
                 out=args.out,
                 config=config,
                 seed=args.seed,
-                aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
+                aspect_ratio=args.aspect_ratio if args.aspect_ratio else "custom",
                 auto_accept=args.auto_accept,
                 auto_abort=args.auto_abort,
-                references=references,
+                reference_paths=references_paths,
                 model_id=selected_model,
                 preset=preset,
                 width=width,
@@ -533,16 +533,33 @@ def main(argv: List[str] | None = None) -> None:
         print("Loading model...", file=sys.stderr)
         backend.initialize()
 
+        # T06 contract: model / references / preset are acknowledged via
+        # `apply_configuration` (the single decode-at-acknowledgement
+        # site); `start_generation` then reads them off the backend.
+        if references_paths or preset or selected_model != config.model.selected_id:
+            try:
+                ack = backend.apply_configuration(
+                    model_id=selected_model,
+                    reference_paths=references_paths,
+                    preset=preset,
+                )
+                if not ack.compatible:
+                    print(f"Error: {ack.incompatibility_reason}", file=sys.stderr)
+                    sys.exit(1)
+            except ReferenceImageError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+            except Exception as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+
         print("Generating...", file=sys.stderr)
         backend.start_generation(
             prompt=args.prompt,
             seed=args.seed,
-            aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
+            aspect_ratio=args.aspect_ratio if args.aspect_ratio else "custom",
             width=width,
             height=height,
-            references=references,
-            model_id=selected_model,
-            preset=preset,
         )
 
         import time
@@ -586,7 +603,7 @@ def run_headless(
     aspect_ratio: str,
     auto_accept: bool,
     auto_abort: bool,
-    references: tuple = (),
+    reference_paths: list[str] | tuple[str, ...] = (),
     model_id: str = FLUX1_SCHNELL,
     preset: str | None = None,
     width: int | None = None,
@@ -665,15 +682,29 @@ def run_headless(
         print("Loading model...", file=sys.stderr)
         backend.initialize()
 
+        # T06 contract: model / references / preset are acknowledged via
+        # `apply_configuration` before `start_generation`. Bypassing it
+        # would re-introduce decode-twice (AC-PROCESS-3).
+        if reference_paths or preset or model_id != config.model.selected_id:
+            try:
+                ack = backend.apply_configuration(
+                    model_id=model_id,
+                    reference_paths=list(reference_paths),
+                    preset=preset,
+                )
+                if not ack.compatible:
+                    print(f"Error: {ack.incompatibility_reason}", file=sys.stderr)
+                    sys.exit(1)
+            except ReferenceImageError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+
         backend.start_generation(
             prompt=prompt,
             seed=seed,
             aspect_ratio=aspect_ratio,
             width=width,
             height=height,
-            references=references,
-            model_id=model_id,
-            preset=preset,
         )
 
         if auto_abort:

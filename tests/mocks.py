@@ -53,8 +53,20 @@ class MockInferenceEngine(InferenceEngine):
         return self._loaded
 
     def reference_input_size(self, output_width: int, output_height: int) -> tuple[int, int] | None:
-        """Return the configured reference canvas, or None for text-only."""
-        return self._reference_canvas
+        """Return the configured reference canvas, or None for text-only.
+
+        When `reference_canvas` is set as a callable, it is invoked with
+        the (output_width, output_height) tuple so tests that drive
+        different presets observe the canvas each preset would produce
+        (a `static (1024, 1024)` mock would mask a preset-driven canvas
+        such as portrait-large's 768x1024).
+        """
+        canvas = self._reference_canvas
+        if canvas is None:
+            return None
+        if callable(canvas):
+            return canvas(output_width, output_height)
+        return canvas
 
     def generate(self, prompt: str, options: GenerationOptions) -> GenerationResult:
         self.generation_count += 1
@@ -77,14 +89,35 @@ class MockInferenceEngine(InferenceEngine):
         image = Image.new("RGB", (width, height), color=(128, 128, 128))
         seed = options.seed if options.seed is not None else 42
 
+        # Mirror `FluxInferenceEngine`: write the HuggingFace repo id
+        # (looked up from the short slug) into `model_name` so PNG /
+        # JPEG metadata tests can assert on the closed key set's value
+        # (`Model` == `get_repo_id(model_id)`, AC-META-1).
+        model_name = self._lookup_repo_id()
+
         return GenerationResult(
             image=image,
             seed=seed,
             generation_time=0.01,
-            model_name="mock",
+            model_name=model_name,
             generated_width=width,
             generated_height=height,
         )
+
+    def _lookup_repo_id(self) -> str:
+        """Best-effort translation of the active slug to a HuggingFace
+        repo id; falls back to "mock" when the slug is not registered
+        or not yet attached to the engine (older tests that did not
+        opt into the model_id attribute)."""
+        model_id = getattr(self, "model_id", None)
+        if model_id is None:
+            return "mock"
+        try:
+            from textbrush.model.registry import get_repo_id
+
+            return get_repo_id(model_id)
+        except (ValueError, ImportError):
+            return model_id
 
     def unload(self) -> None:
         self._loaded = False

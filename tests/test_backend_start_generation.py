@@ -48,7 +48,13 @@ class TestStartGenerationProperties:
     @given(prompt=prompts(), seed=seeds(), aspect_ratio=aspect_ratios())
     @settings(max_examples=10, deadline=None)
     def test_creates_generation_options_with_correct_parameters(self, prompt, seed, aspect_ratio):
-        """GenerationOptions created with seed, steps=4, and aspect_ratio."""
+        """GenerationOptions created with seed, references, and aspect_ratio.
+
+        T06 contract: `steps` is no longer threaded through GenerationOptions
+        -- the engine's per-slug `default_sampling_settings()` is the
+        source of `num_inference_steps`. We verify the model's id and the
+        references tuple are propagated instead.
+        """
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
@@ -73,8 +79,9 @@ class TestStartGenerationProperties:
                 call_kwargs = mock_gen_options.call_args[1]
 
                 assert call_kwargs["seed"] == seed
-                assert call_kwargs["steps"] == 4
                 assert call_kwargs["aspect_ratio"] == aspect_ratio
+                assert call_kwargs["model_id"] == backend.model_id
+                assert "sampling_settings" in call_kwargs
 
             finally:
                 textbrush.backend.GenerationOptions = original_gen_options
@@ -110,7 +117,6 @@ class TestStartGenerationProperties:
                 assert call_kwargs["prompt"] == prompt
                 assert isinstance(call_kwargs["options"], GenerationOptions)
                 assert call_kwargs["options"].seed == seed
-                assert call_kwargs["options"].steps == 4
                 assert call_kwargs["options"].aspect_ratio == aspect_ratio
 
             finally:
@@ -172,8 +178,8 @@ class TestStartGenerationProperties:
 
     @given(prompt=prompts())
     @settings(max_examples=5, deadline=None)
-    def test_default_aspect_ratio_is_1_to_1(self, prompt):
-        """When aspect_ratio not provided, defaults to '1:1'."""
+    def test_default_aspect_ratio_is_custom(self, prompt):
+        """When aspect_ratio not provided, defaults to 'custom' (T06)."""
         mock_config = create_mock_config()
         backend = TextbrushBackend(mock_config)
         backend._worker = None
@@ -193,7 +199,7 @@ class TestStartGenerationProperties:
                 backend.start_generation(prompt)
 
                 call_kwargs = mock_gen_worker.call_args[1]
-                assert call_kwargs["options"].aspect_ratio == "1:1"
+                assert call_kwargs["options"].aspect_ratio == "custom"
 
             finally:
                 textbrush.backend.GenerationWorker = original_gen_worker
@@ -300,8 +306,10 @@ class TestStartGenerationExamples:
 
                 assert call_kwargs["prompt"] == "test prompt"
                 assert options.seed is None
-                assert options.steps == 4
-                assert options.aspect_ratio == "1:1"
+                # T06 contract: start_generation defaults to
+                # aspect_ratio="custom" because editing models always
+                # pair width/height (the preset owns the dimensions).
+                assert options.aspect_ratio == "custom"
                 assert backend._worker is mock_worker_instance
                 mock_worker_instance.start.assert_called_once()
 

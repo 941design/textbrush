@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import hypothesis.strategies as st
 from hypothesis import given, settings
@@ -10,7 +10,18 @@ from PIL import Image, PngImagePlugin
 
 from textbrush.backend import TextbrushBackend
 from textbrush.buffer import BufferedImage
-from textbrush.config import Config, InferenceConfig, ModelConfig
+from textbrush.config import (
+    Config,
+    HuggingFaceConfig,
+    InferenceConfig,
+    LoggingConfig,
+    ModelConfig,
+    OutputConfig,
+)
+from textbrush.model.registry import (
+    FLUX1_SCHNELL,
+    get_repo_id,
+)
 
 
 def create_mock_config():
@@ -223,3 +234,97 @@ class TestJPEGMetadataHandling:
             assert img.format == "JPEG"
         finally:
             output_path.unlink(missing_ok=True)
+
+
+class TestAcceptedImageMetadata:
+    """T06 (AC-META-1): the accepted-image PNG key set is closed.
+    `Model` equals the active model's HuggingFace repo id, not the
+    short slug. The `model_id` and `reference_ids` provenance fields on
+    `BufferedImage` (T05) are never written into the output file."""
+
+    @staticmethod
+    def _factory_with_mock(model_id):
+        from tests.mocks import MockInferenceEngine
+        from textbrush.validation import is_editing_model
+
+        canvas = (768, 576) if is_editing_model(model_id) else None
+        eng = MockInferenceEngine(reference_canvas=canvas)
+        eng.model_id = model_id
+        return eng
+
+    def _run_full_cycle(self, tmp_path: Path, model_id: str) -> dict:
+        """Acknowledge + generate + accept one image; return the metadata dict."""
+        side_effect_calls = []
+
+        def factory(backend, slug):
+            side_effect_calls.append(slug)
+            return self._factory_with_mock(slug)
+
+        config = Config(
+            output=OutputConfig(directory=tmp_path / "out", format="png"),
+            model=ModelConfig(directories=[], buffer_size=8, selected_id=None),
+            huggingface=HuggingFaceConfig(token=None),
+            inference=InferenceConfig(backend="flux"),
+            logging=LoggingConfig(verbosity="info"),
+        )
+        backend = TextbrushBackend(config)
+        backend.initialize()
+
+        if model_id != FLUX1_SCHNELL:
+            backend.apply_configuration(
+                model_id=model_id,
+                reference_paths=[
+                    str(Path(__file__).parent / "fixtures" / "images" / "valid_square.png")
+                ],
+                preset="landscape-medium",
+            )
+        backend.start_generation(prompt="a prompt", seed=0)
+        import time as _time
+
+        _time.sleep(0.2)
+        backend.get_next_image(timeout=2.0)
+        output_path = tmp_path / "out" / "result.png"
+        backend.accept_current(output_path=output_path)
+        backend.shutdown()
+        return {"output_path": output_path, "side_effect_calls": side_effect_calls}
+
+    def test_png_keys_match_closed_set_for_schnell(self, tmp_path: Path) -> None:
+        (tmp_path / "out").mkdir(parents=True, exist_ok=True)
+        config = Config(
+            output=OutputConfig(directory=tmp_path / "out", format="png"),
+            model=ModelConfig(directories=[], buffer_size=8, selected_id=None),
+            huggingface=HuggingFaceConfig(token=None),
+            inference=InferenceConfig(backend="flux"),
+            logging=LoggingConfig(verbosity="info"),
+        )
+        with patch(
+            "textbrush.backend.create_engine", return_value=self._factory_with_mock(FLUX1_SCHNELL)
+        ):
+            backend = TextbrushBackend(config)
+            backend.initialize()
+            backend.start_generation(prompt="a prompt", seed=0)
+            import time as _time
+
+            _time.sleep(0.2)
+            backend.get_next_image(timeout=2.0)
+            output_path = tmp_path / "out" / "result.png"
+            backend.accept_current(output_path=output_path)
+            backend.shutdown()
+
+        img = Image.open(output_path)
+        keys = set(img.text.keys())
+        # The closed key set. GeneratedWidth/GeneratedHeight are
+        # emitted whenever the engine records them on the buffered
+        # image; the mock engine does, so they are present.
+        expected = {
+            "AspectRatio",
+            "Width",
+            "Height",
+            "Prompt",
+            "Model",
+            "Seed",
+            "GeneratedWidth",
+            "GeneratedHeight",
+        }
+        assert keys == expected
+        assert img.text["Model"] == get_repo_id(FLUX1_SCHNELL)
