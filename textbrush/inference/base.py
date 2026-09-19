@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PIL import Image
 
 if TYPE_CHECKING:
     from textbrush.references import NormalizedReference
+
+# The canvas used when neither the caller nor an aspect ratio determines a
+# dimension: `aspect_ratio == "custom"` (the caller owns the dimensions)
+# with one or both axes left unspecified. Owned here rather than restated
+# as a literal in `flux.py` and `backend.py` so the "default resolution"
+# decision has exactly one site. It is deliberately NOT a sentinel: a
+# caller that did not specify a dimension passes None, not this value, so
+# an explicit `aspect_ratio` always wins over a defaulted dimension.
+DEFAULT_DIMENSIONS: tuple[int, int] = (1024, 1024)
 
 
 @dataclass
@@ -52,15 +62,36 @@ class GenerationOptions:
 
     Attributes:
         seed: Random seed for reproducibility (None = auto-generate).
-        width: Image width in pixels (overridden by aspect_ratio).
-        height: Image height in pixels (overridden by aspect_ratio).
+        width: Image width in pixels, or None when the caller did not
+            specify one. None is the honest representation of "no explicit
+            width": the engine then resolves that axis from `aspect_ratio`
+            (or from `DEFAULT_DIMENSIONS` when `aspect_ratio` is "custom",
+            which means the caller owns the dimensions but supplied none).
+            An int -- ANY int -- is an explicit request and wins over the
+            aspect-ratio lookup.
+        height: Image height in pixels, or None. Same rules as `width`;
+            the two axes are resolved independently.
         steps: Number of inference steps.
-        aspect_ratio: Aspect ratio string (1:1, 16:9, 9:16).
+        aspect_ratio: Aspect ratio string (1:1, 16:9, 9:16, ... or the
+            literal "custom" meaning "the caller owns width/height").
+
+    CONTRACT (dimension fields):
+      Invariants:
+        - `width`/`height` are never sentinels. Before
+          gate-remediation round 7 the pair (512, 512) doubled as "caller
+          did not specify", which silently disabled the aspect-ratio
+          lookup the moment a caller defaulted them to anything else
+          (a real regression: `--aspect-ratio 16:9` became a no-op).
+          None carries that meaning now and cannot collide with a
+          legitimately requested resolution.
+      Properties:
+        - Priority: explicit width/height > aspect_ratio lookup >
+          DEFAULT_DIMENSIONS.
     """
 
     seed: int | None = None
-    width: int = 512
-    height: int = 512
+    width: int | None = None
+    height: int | None = None
     steps: int = 4
     aspect_ratio: str = "1:1"
     references: tuple[NormalizedReference, ...] = ()
@@ -92,6 +123,10 @@ class InferenceEngine(ABC):
             - Idempotent: calling load() multiple times is safe (no-op if already loaded)
             - State transition: unloaded → loaded
             - Must detect hardware (torch.cuda.is_available, torch.backends.mps.is_available)
+            - Reusable after unload(): unload() → load() reloads the engine
+              from scratch. The backend's engine swap depends on this (it
+              unloads the outgoing engine BEFORE loading the incoming one
+              and reloads it if the incoming load fails).
 
           Algorithm:
             1. Auto-detect available device (CUDA, MPS, or CPU)
@@ -102,6 +137,45 @@ class InferenceEngine(ABC):
         """
         pass
 
+    def load_from(self, root: Path | None) -> None:
+        """Load this engine, preferring an already-validated snapshot directory.
+
+        CONTRACT:
+          Inputs:
+            - root: a local snapshot directory a discovery pass has already
+              validated for this engine's model (typically
+              `AvailabilityReport.root` from
+              `textbrush.model.weights.check_model_availability`), or None
+              meaning "resolve the weights the ordinary way".
+
+          Outputs: none (modifies internal state)
+
+          Invariants:
+            - Equivalent to `load()` in every respect except WHERE the
+              weights are read from; all of `load()`'s invariants and
+              properties (idempotency, device selection, reusability after
+              unload) hold unchanged.
+            - `load_from(None)` is exactly `load()`.
+
+          Properties:
+            - This is the seam a composition root uses to honour
+              `config.model.directories`. `load()` alone cannot: a
+              repo-id-plus-HF-cache lookup never sees a custom directory,
+              so a model discovery validated in one would report available
+              and then fail to load (the gap `load_local_only`'s `root`
+              kwarg closes).
+            - Default implementation ignores `root` and delegates to
+              `load()`. That is the correct behavior for an engine with no
+              on-disk snapshot to be pointed at (a test double, a remote
+              engine). An engine that CAN consume a resolved snapshot
+              directory overrides this method -- see
+              `FluxInferenceEngine.load_from`. The capability is declared
+              here as an optional, defaulted seam rather than as a `root`
+              keyword on the abstract `load()` so that implementations are
+              not silently required to grow a parameter they cannot use.
+        """
+        self.load()
+
     @abstractmethod
     def generate(self, prompt: str, options: GenerationOptions) -> GenerationResult:
         """Generate a single image from prompt.
@@ -110,8 +184,10 @@ class InferenceEngine(ABC):
           Inputs:
             - prompt: text description, non-empty string
             - options: GenerationOptions with seed, dimensions, steps, aspect_ratio,
-              references, model_id, and sampling_settings. Explicit width/height
-              win over aspect_ratio lookup; `options.references` (already at this
+              references, model_id, and sampling_settings. Explicit (non-None)
+              width/height win over the aspect_ratio lookup; a None axis is
+              resolved from aspect_ratio, or from DEFAULT_DIMENSIONS when
+              aspect_ratio is "custom". `options.references` (already at this
               engine's `reference_input_size` canvas, when present) are forwarded
               to the pipeline in tuple order.
 
@@ -133,14 +209,16 @@ class InferenceEngine(ABC):
           Properties:
             - Deterministic: same prompt + seed → same image (within numerical precision)
             - Seed monotonic: if options.seed is provided, use it; else generate random seed
-            - Dimension priority: explicit width/height (custom aspect_ratio or any
-              non-default dimensions) take precedence over the aspect_ratio lookup
+            - Dimension priority: an explicitly supplied (non-None) width/height
+              takes precedence over the aspect_ratio lookup, per axis. There is
+              no magic dimension value: "unspecified" is None, so an engine can
+              never mistake a requested resolution for an absent one.
             - Reference handling: references are forwarded in tuple order; same
               path twice yields two list entries to the pipeline (AC-INPUT-4)
 
           Algorithm:
-            1. Resolve dimensions: explicit width/height if "custom" or non-default,
-               else aspect_ratio lookup
+            1. Resolve dimensions per axis: options.width/height when not None,
+               else the aspect_ratio lookup, else DEFAULT_DIMENSIONS
             2. Round dimensions to multiples of 16
             3. Build sampling settings from `default_sampling_settings()` overridden
                by `options.sampling_settings`

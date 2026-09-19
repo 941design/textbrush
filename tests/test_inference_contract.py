@@ -45,7 +45,7 @@ from PIL import Image
 # `_pipeline` (per project `CLAUDE.md`).
 pytest.importorskip("torch")
 
-from textbrush.inference.base import GenerationOptions
+from textbrush.inference.base import DEFAULT_DIMENSIONS, GenerationOptions
 from textbrush.inference.factory import create_engine
 from textbrush.inference.flux import (
     Flux2KleinInferenceEngine,
@@ -636,3 +636,84 @@ class TestModelNameInResult:
         result = engine.generate("test", options)
 
         assert result.model_name == get_repo_id(slug)
+
+
+# ---------------------------------------------------------------------------
+# Dimension resolution: no sentinel, aspect ratio reachable
+# ---------------------------------------------------------------------------
+
+
+class TestDimensionResolution:
+    """`GenerationOptions.width/height` are values, never sentinels.
+
+    Regression for gate-remediation round 7, finding 2: `generate` used to
+    read the literal pair (512, 512) as "the caller did not specify
+    dimensions", which made `_resolve_dimensions(aspect_ratio)` reachable
+    only while every caller happened to default to 512. The moment the
+    backend's no-args default moved to 1024 the aspect-ratio branch became
+    dead code and `--aspect-ratio 16:9` silently produced a square image.
+    """
+
+    @pytest.mark.parametrize("aspect_ratio", sorted(FluxInferenceEngine.ASPECT_RATIOS))
+    def test_unspecified_dimensions_resolve_from_aspect_ratio(self, aspect_ratio: str) -> None:
+        """width=height=None -> the ASPECT_RATIOS entry, for every ratio."""
+        expected = FluxInferenceEngine.ASPECT_RATIOS[aspect_ratio]
+        engine = FluxInferenceEngine(model_id=FLUX1_SCHNELL)
+        engine._pipeline = _pipeline_returning(*expected)
+        engine._device = "cpu"
+
+        engine.generate("test", GenerationOptions(aspect_ratio=aspect_ratio))
+
+        kwargs = engine._pipeline.call_args.kwargs
+        assert (kwargs["width"], kwargs["height"]) == expected
+
+    def test_explicit_512_is_a_request_not_a_sentinel(self) -> None:
+        """An explicit 512x512 with a non-custom ratio is honoured as 512x512.
+
+        Under the old sentinel rule this exact call resolved to the
+        aspect-ratio canvas instead -- the caller's dimensions were
+        discarded precisely because they happened to equal the sentinel.
+        """
+        engine = FluxInferenceEngine(model_id=FLUX1_SCHNELL)
+        engine._pipeline = _pipeline_returning(512, 512)
+        engine._device = "cpu"
+
+        engine.generate("test", GenerationOptions(aspect_ratio="1:1", width=512, height=512))
+
+        kwargs = engine._pipeline.call_args.kwargs
+        assert (kwargs["width"], kwargs["height"]) == (512, 512)
+
+    def test_explicit_dimensions_beat_the_aspect_ratio(self) -> None:
+        """Documented priority: explicit width/height > aspect_ratio lookup."""
+        engine = FluxInferenceEngine(model_id=FLUX1_SCHNELL)
+        engine._pipeline = _pipeline_returning(800, 640)
+        engine._device = "cpu"
+
+        engine.generate("test", GenerationOptions(aspect_ratio="16:9", width=800, height=640))
+
+        kwargs = engine._pipeline.call_args.kwargs
+        assert (kwargs["width"], kwargs["height"]) == (800, 640)
+
+    def test_custom_without_dimensions_falls_back_to_the_default_canvas(self) -> None:
+        """ "custom" claims ownership of the dimensions but supplies none."""
+        engine = FluxInferenceEngine(model_id=FLUX1_SCHNELL)
+        engine._pipeline = _pipeline_returning(*DEFAULT_DIMENSIONS)
+        engine._device = "cpu"
+
+        engine.generate("test", GenerationOptions(aspect_ratio="custom"))
+
+        kwargs = engine._pipeline.call_args.kwargs
+        assert (kwargs["width"], kwargs["height"]) == DEFAULT_DIMENSIONS
+
+    def test_axes_resolve_independently(self) -> None:
+        """One specified axis is kept; the other comes from the ratio."""
+        ratio_width, ratio_height = FluxInferenceEngine.ASPECT_RATIOS["16:9"]
+        engine = FluxInferenceEngine(model_id=FLUX1_SCHNELL)
+        engine._pipeline = _pipeline_returning(640, ratio_height)
+        engine._device = "cpu"
+
+        engine.generate("test", GenerationOptions(aspect_ratio="16:9", width=640))
+
+        kwargs = engine._pipeline.call_args.kwargs
+        assert (kwargs["width"], kwargs["height"]) == (640, ratio_height)
+        assert kwargs["width"] != ratio_width

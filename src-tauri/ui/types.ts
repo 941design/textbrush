@@ -109,7 +109,10 @@ export interface ConfigAckPayload {
   compatible: boolean;
   incompatibility_reason: string | null;
   required_model: string | null;
-  settled: boolean;
+  // Optional: the backend stamps this on every config_ack, but an omitted value
+  // must leave the settled gate as state_changed last reported it rather than
+  // silently disabling every editing control.
+  settled?: boolean;
 }
 
 export interface ConfigAckMessage {

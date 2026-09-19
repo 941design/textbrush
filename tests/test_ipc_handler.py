@@ -21,6 +21,23 @@ from textbrush.ipc.protocol import (
     MessageType,
     dataclass_to_dict,
 )
+from textbrush.model.registry import (
+    FLUX1_SCHNELL,
+    FLUX2_KLEIN_4B,
+    AvailabilityReport,
+    DiscoveryCause,
+    get_model_spec,
+)
+
+
+def _available() -> AvailabilityReport:
+    """Availability report for a model that is fully installed locally."""
+    return AvailabilityReport(True, None, "all declared files present")
+
+
+def _absent() -> AvailabilityReport:
+    """Availability report for a model with no local weights."""
+    return AvailabilityReport(False, DiscoveryCause.ABSENT, "no local marker found")
 
 
 @pytest.fixture
@@ -776,7 +793,7 @@ class TestBackendInitialization:
         mock_backend.initialize = Mock()
         handler.backend = mock_backend
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
             handler._init_backend(on_ready, mock_server)
 
         assert ready_called.is_set()
@@ -792,7 +809,7 @@ class TestBackendInitialization:
         mock_backend.initialize = Mock(side_effect=RuntimeError("Model load failed"))
         handler.backend = mock_backend
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
             handler._init_backend(on_ready, mock_server)
 
         mock_server.send.assert_called()
@@ -817,8 +834,8 @@ class TestModelDiscoveryInInitBackend:
         mock_backend.initialize = Mock()
         handler.backend = mock_backend
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
-            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
+            with patch("textbrush.ipc.handler.download_model_weights") as mock_download:
                 handler._init_backend(on_ready, mock_server)
 
         assert ready_called.is_set()
@@ -835,8 +852,8 @@ class TestModelDiscoveryInInitBackend:
         handler.backend = mock_backend
         handler.config.huggingface.token = None
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
-            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
+            with patch("textbrush.ipc.handler.download_model_weights") as mock_download:
                 with patch.object(handler, "_detect_hf_credentials", return_value=None):
                     handler._init_backend(on_ready, mock_server)
 
@@ -868,8 +885,8 @@ class TestModelDiscoveryInInitBackend:
         mock_backend.initialize = Mock()
         handler.backend = mock_backend
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
-            with patch("textbrush.ipc.handler.download_flux_weights") as mock_download:
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
+            with patch("textbrush.ipc.handler.download_model_weights") as mock_download:
                 with patch.object(handler, "_detect_hf_credentials", return_value="hf_test_token"):
                     handler._init_backend(on_ready, mock_server)
 
@@ -899,9 +916,9 @@ class TestModelDiscoveryInInitBackend:
         mock_backend.initialize = Mock()
         handler.backend = mock_backend
 
-        with patch("textbrush.ipc.handler.is_flux_available", return_value=False):
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
             with patch(
-                "textbrush.ipc.handler.download_flux_weights",
+                "textbrush.ipc.handler.download_model_weights",
                 side_effect=RuntimeError("network error"),
             ):
                 with patch.object(handler, "_detect_hf_credentials", return_value="hf_test_token"):
@@ -934,7 +951,7 @@ class TestModelDiscoveryInInitBackend:
         handler.backend = mock_backend
 
         with patch(
-            "textbrush.ipc.handler.is_flux_available",
+            "textbrush.ipc.handler.check_model_availability",
             side_effect=Exception("Unexpected discovery error"),
         ):
             handler._init_backend(on_ready, mock_server)
@@ -1367,7 +1384,9 @@ class TestUpdateConfigCommand:
         with patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend):
             with patch("textbrush.ipc.handler.threading.Thread", side_effect=ImmediateThread):
                 with patch.object(handler, "_start_image_delivery") as mock_start_delivery:
-                    with patch("textbrush.ipc.handler.is_flux_available", return_value=True):
+                    with patch(
+                        "textbrush.ipc.handler.check_model_availability", return_value=_available()
+                    ):
                         init_payload = {
                             "prompt": "A watercolor painting of a cat",
                             "aspect_ratio": "1:1",
@@ -1692,3 +1711,372 @@ class TestGenerationStartCallbackPromptBinding:
         assert state_payload["prompt"] == "cat painting", (
             f"Expected prompt 'cat painting' from first update, got '{state_payload['prompt']}'"
         )
+
+
+def _state_changed(mock_server, state: str) -> list:
+    """All STATE_CHANGED payloads recorded for `state`, in emission order."""
+    return [
+        call[0][0].payload
+        for call in mock_server.send.call_args_list
+        if call[0][0].type == MessageType.STATE_CHANGED and call[0][0].payload["state"] == state
+    ]
+
+
+def _config_acks(mock_server) -> list:
+    """All CONFIG_ACK payloads recorded, in emission order."""
+    return [
+        call[0][0].payload
+        for call in mock_server.send.call_args_list
+        if call[0][0].type == MessageType.CONFIG_ACK
+    ]
+
+
+class _ImmediateThread:
+    """threading.Thread stand-in that runs the target on the calling thread."""
+
+    def __init__(self, target=None, args=(), daemon=None):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        if self._target:
+            self._target(*self._args)
+
+
+class TestInitBackendChecksResolvedModel:
+    """_init_backend must check (and download) the model handle_init
+    actually resolved, not a hard-coded FLUX.1 schnell.
+
+    Regression: the availability probe was `is_flux_available(...)`, i.e.
+    schnell only. A launch that correctly resolved to klein-4B (the only
+    installed model) then aborted fatally, or -- with HF credentials
+    present -- downloaded schnell's weights instead of the model the user
+    was about to run.
+    """
+
+    def test_checks_the_resolved_model(self, handler, mock_server):
+        """Availability is probed for config.model.selected_id."""
+        handler.config.model.selected_id = FLUX2_KLEIN_4B
+        checked: list[str] = []
+
+        def availability(model_id, *, custom_dirs=None):
+            checked.append(model_id)
+            return _available() if model_id == FLUX2_KLEIN_4B else _absent()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.check_model_availability", side_effect=availability):
+            with patch("textbrush.ipc.handler.download_model_weights") as mock_download:
+                handler._init_backend(lambda: None, mock_server)
+
+        assert checked == [FLUX2_KLEIN_4B], (
+            f"availability must be checked for the resolved model, got {checked}"
+        )
+        mock_backend.initialize.assert_called_once()
+        mock_download.assert_not_called()
+        assert _state_changed(mock_server, "error") == []
+
+    def test_falls_back_to_schnell_without_a_committed_selection(self, handler, mock_server):
+        """No committed selection keeps the pre-resolution schnell default."""
+        handler.config.model.selected_id = None
+        checked: list[str] = []
+
+        def availability(model_id, *, custom_dirs=None):
+            checked.append(model_id)
+            return _available()
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.check_model_availability", side_effect=availability):
+            handler._init_backend(lambda: None, mock_server)
+
+        assert checked == [FLUX1_SCHNELL]
+
+    def test_downloads_the_resolved_model(self, handler, mock_server):
+        """A missing resolved model downloads THAT model, not schnell."""
+        handler.config.model.selected_id = FLUX2_KLEIN_4B
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.initialize = Mock()
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
+            with patch("textbrush.ipc.handler.download_model_weights") as mock_download:
+                with patch.object(handler, "_detect_hf_credentials", return_value="hf_test_token"):
+                    handler._init_backend(lambda: None, mock_server)
+
+        mock_download.assert_called_once_with(FLUX2_KLEIN_4B)
+        mock_backend.initialize.assert_called_once()
+
+    def test_missing_model_message_names_the_resolved_model(self, handler, mock_server):
+        """The fatal setup instructions name the model that is missing."""
+        handler.config.model.selected_id = FLUX2_KLEIN_4B
+        handler.config.huggingface.token = None
+        spec = get_model_spec(FLUX2_KLEIN_4B)
+
+        mock_backend = Mock(spec=TextbrushBackend)
+        handler.backend = mock_backend
+
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
+            with patch.object(handler, "_detect_hf_credentials", return_value=None):
+                handler._init_backend(lambda: None, mock_server)
+
+        errors = _state_changed(mock_server, "error")
+        assert len(errors) == 1
+        assert errors[0]["fatal"] is True
+        assert spec.display_name in errors[0]["message"]
+        assert spec.license_url in errors[0]["message"]
+        assert "FLUX.1 schnell" not in errors[0]["message"]
+        mock_backend.initialize.assert_not_called()
+
+
+class TestLaunchSettledSignal:
+    """The launch-time `state_changed(paused, ...)` must report the
+    worker's real quiescence.
+
+    Regression: launch hard-coded settled=False and nothing ever emitted
+    settled=True afterwards (start_generation takes no on_settled
+    callback), so every consumer gating on that flag stayed disabled until
+    a full resume/pause cycle -- while the handler's own editing gate
+    (`is_paused() and is_settled()`) already accepted editing commands.
+    """
+
+    def _launch(self, handler, mock_server, mock_backend):
+        def init_backend(on_ready, server):
+            on_ready()
+
+        with (
+            patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend),
+            patch("textbrush.ipc.handler.threading.Thread", side_effect=_ImmediateThread),
+            patch.object(handler, "_init_backend", side_effect=init_backend),
+            patch.object(handler, "_start_image_delivery"),
+        ):
+            handler.handle_init({"prompt": "a cat", "aspect_ratio": "1:1"}, mock_server)
+
+    def test_settled_true_when_worker_parks_at_launch(self, handler, mock_server):
+        """A worker started paused is settled immediately; say so."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True
+        mock_backend.is_settled.return_value = True
+
+        self._launch(handler, mock_server, mock_backend)
+
+        paused = _state_changed(mock_server, "paused")
+        assert paused, "launch must emit state_changed(paused)"
+        assert paused[-1]["settled"] is True, (
+            "launch reported the worker as unsettled although it is parked; "
+            "editing controls gated on this flag stay disabled"
+        )
+
+    def test_launch_config_ack_reports_the_same_settled_value(self, handler, mock_server):
+        """The launch config_ack carries backend truth, not a fixed False."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True
+        mock_backend.is_settled.return_value = True
+
+        self._launch(handler, mock_server, mock_backend)
+
+        acks = _config_acks(mock_server)
+        assert len(acks) == 1
+        assert acks[0]["settled"] is True
+
+    def test_settled_false_when_worker_has_not_parked(self, handler, mock_server):
+        """The value is read from the backend, not hard-coded the other way."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True
+        mock_backend.is_settled.return_value = False
+
+        self._launch(handler, mock_server, mock_backend)
+
+        paused = _state_changed(mock_server, "paused")
+        assert paused
+        assert paused[-1]["settled"] is False
+
+
+class TestEditingUpdateHonoursPrompt:
+    """The editing branch of handle_update_config must apply the prompt
+    that travelled with the editing fields.
+
+    Regression: the branch returned right after emitting config_ack, so a
+    prompt the user had typed but not blurred was silently discarded on
+    every reference add/remove or model switch, and _current_prompt went
+    stale for every later state_changed(generating).
+    """
+
+    @staticmethod
+    def _editing_backend():
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True
+        mock_backend.is_settled.return_value = True
+        mock_backend.model_id = FLUX2_KLEIN_4B
+        mock_backend.references = ["ref-a", "ref-b"]
+        mock_backend.reference_paths = ["/tmp/a.png", "/tmp/b.png"]
+        mock_backend.preset = None
+        return mock_backend
+
+    def test_editing_update_applies_the_prompt(self, handler, mock_server):
+        """An editing update propagates its prompt to the backend."""
+        mock_backend = self._editing_backend()
+        handler.backend = mock_backend
+        handler._current_prompt = "stale prompt"
+
+        handler.handle_update_config(
+            {
+                "prompt": "unblurred new prompt",
+                "aspect_ratio": "custom",
+                "references": ["/tmp/a.png", "/tmp/b.png"],
+            },
+            mock_server,
+        )
+
+        mock_backend.apply_configuration.assert_called_once()
+        assert handler._current_prompt == "unblurred new prompt", (
+            "editing update dropped the prompt; _current_prompt is stale"
+        )
+        mock_backend.update_config.assert_called_once()
+        assert mock_backend.update_config.call_args.kwargs["prompt"] == "unblurred new prompt"
+        assert _config_acks(mock_server), "editing update must still emit config_ack"
+
+    def test_editing_update_rebinds_generation_start_prompt(self, handler, mock_server):
+        """state_changed(generating) after the edit uses the new prompt."""
+        mock_backend = self._editing_backend()
+        handler.backend = mock_backend
+        handler._current_prompt = "stale prompt"
+
+        handler.handle_update_config(
+            {"prompt": "new prompt", "aspect_ratio": "custom", "preset": "edit_1024"},
+            mock_server,
+        )
+
+        on_generation_start = mock_backend.update_config.call_args.kwargs["on_generation_start"]
+        assert on_generation_start is not None
+        mock_server.reset_mock()
+        on_generation_start(seed=7, queue_position=0)
+
+        generating = _state_changed(mock_server, "generating")
+        assert len(generating) == 1
+        assert generating[0]["prompt"] == "new prompt"
+
+    def test_editing_update_reports_the_cleared_buffer(self, handler, mock_server):
+        """update_config clears the buffer, so BUFFER_STATUS follows."""
+        mock_backend = self._editing_backend()
+        handler.backend = mock_backend
+
+        handler.handle_update_config(
+            {"prompt": "new prompt", "aspect_ratio": "custom", "references": []},
+            mock_server,
+        )
+
+        buffer_events = [
+            call[0][0].payload
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.BUFFER_STATUS
+        ]
+        assert len(buffer_events) == 1
+        assert buffer_events[0]["count"] == 0
+
+    def test_empty_prompt_is_skipped_not_rejected(self, handler, mock_server):
+        """A blank prompt is not a change and must not fail the edit."""
+        mock_backend = self._editing_backend()
+        handler.backend = mock_backend
+        handler._current_prompt = "kept prompt"
+
+        handler.handle_update_config(
+            {"prompt": "   ", "aspect_ratio": "custom", "references": ["/tmp/a.png"]},
+            mock_server,
+        )
+
+        mock_backend.apply_configuration.assert_called_once()
+        mock_backend.update_config.assert_not_called()
+        assert handler._current_prompt == "kept prompt"
+        error_events = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.ERROR
+        ]
+        assert error_events == []
+
+    def test_rejected_editing_update_still_rolls_back_without_touching_prompt(
+        self, handler, mock_server
+    ):
+        """A refused editing update leaves the prompt and worker alone."""
+        from textbrush.backend import ModelUnavailableError
+
+        mock_backend = self._editing_backend()
+        mock_backend.apply_configuration.side_effect = ModelUnavailableError(
+            DiscoveryCause.ABSENT, "no local marker found", FLUX2_KLEIN_4B
+        )
+        handler.backend = mock_backend
+        handler._current_prompt = "kept prompt"
+
+        handler.handle_update_config(
+            {"prompt": "new prompt", "aspect_ratio": "custom", "model_id": FLUX2_KLEIN_4B},
+            mock_server,
+        )
+
+        mock_backend.update_config.assert_not_called()
+        assert handler._current_prompt == "kept prompt"
+        assert _config_acks(mock_server), "a rejected update must still emit the rollback ack"
+
+
+class TestPauseSettleEventOrdering:
+    """handle_pause must emit settled=False before the settle callback
+    can fire.
+
+    Regression: the callback was registered first and settled=False was
+    emitted afterwards. The callback runs on the worker thread the moment
+    it parks, so a worker between iterations emitted settled=True first
+    and the handler's settled=False then clobbered it.
+    """
+
+    def test_settled_false_precedes_settled_true(self, handler, mock_server):
+        """An immediately-parking worker still yields False then True."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.is_paused.return_value = False
+
+        def pause_generation(on_settled=None):
+            # Worst case: the worker parks and settles before
+            # pause_generation() has even returned.
+            if on_settled is not None:
+                on_settled()
+
+        mock_backend.pause_generation.side_effect = pause_generation
+        handler.backend = mock_backend
+        handler._generation_started = True
+
+        handler.handle_pause(mock_server)
+
+        assert [p["settled"] for p in _state_changed(mock_server, "paused")] == [False, True], (
+            "settled=False must be emitted before the worker's settled=True"
+        )
+
+    def test_resume_branch_is_unchanged(self, handler, mock_server):
+        """Resuming still emits state_changed(generating) with the prompt."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.is_paused.return_value = True
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = []
+        mock_backend.preset = None
+        handler.backend = mock_backend
+        handler._generation_started = True
+        handler._current_prompt = "a cat"
+
+        handler.handle_pause(mock_server)
+
+        mock_backend.resume_generation.assert_called_once()
+        generating = _state_changed(mock_server, "generating")
+        assert len(generating) == 1
+        assert generating[0]["prompt"] == "a cat"
+        assert _state_changed(mock_server, "paused") == []

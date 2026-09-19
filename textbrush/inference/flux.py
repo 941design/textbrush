@@ -9,7 +9,12 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
+from textbrush.inference.base import (
+    DEFAULT_DIMENSIONS,
+    GenerationOptions,
+    GenerationResult,
+    InferenceEngine,
+)
 from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX1_SCHNELL, FLUX2_KLEIN_4B, get_repo_id
 from textbrush.model.weights import load_local_only
 
@@ -143,6 +148,15 @@ class FluxInferenceEngine(InferenceEngine):
             return {"num_inference_steps": 28, "guidance_scale": 2.5}
         return {"num_inference_steps": 4, "guidance_scale": 1.0}
 
+    def load_from(self, root: Path | None) -> None:
+        """Load, reading the weights from `root` when discovery resolved one.
+
+        Concrete override of `InferenceEngine.load_from`: this engine CAN
+        consume a resolved snapshot directory, so it forwards it to
+        `load()` rather than dropping it. See the base-class contract.
+        """
+        self.load(root=root)
+
     def load(self, *, root: Path | None = None) -> None:
         """Load FLUX model into memory.
 
@@ -154,10 +168,12 @@ class FluxInferenceEngine(InferenceEngine):
               through to `load_local_only` (gate-remediation round 5,
               finding 3). When omitted, behavior is unchanged: the pipeline
               loads by repo id from the ordinary HuggingFace cache only.
-              Wiring a caller's `config.model.directories` root into this
-              parameter is out of scope here -- `model` (S2) only owns
-              making the plumbing available; the composition roots that own
-              custom-directory wiring end to end are S7/S8/S9.
+              The backend is the production caller that supplies it, via
+              `load_from` (gate-remediation round 7, finding 3): it passes
+              the root that discovery validated against
+              `config.model.directories`, so a model present only in a
+              custom directory loads instead of reporting available and
+              then failing UNLOADABLE mid-launch.
 
           Outputs: none (modifies internal state)
 
@@ -233,7 +249,9 @@ class FluxInferenceEngine(InferenceEngine):
 
           Outputs:
             - GenerationResult containing image, seed, time, model_name
-            - Returned image dimensions exactly match options.width × options.height
+            - Returned image dimensions exactly match the RESOLVED dimensions
+              (see the priority rule below): options.width × options.height
+              when both were supplied, the aspect-ratio canvas otherwise
             - If requested dimensions not divisible by 16, image generated at rounded-up
               dimensions and cropped back to requested size
 
@@ -254,14 +272,22 @@ class FluxInferenceEngine(InferenceEngine):
             - Crop bounds: (left, top, left + final_width, top + final_height)
             - Deterministic: same prompt + seed → same image (within numerical precision)
             - Seed handling: use options.seed if provided, else random.randint(0, 2**32 - 1)
-            - Dimension priority: "custom" or explicit width/height > aspect_ratio lookup
+            - Dimension priority, per axis: explicit (non-None) options.width /
+              options.height > ASPECT_RATIOS[options.aspect_ratio] >
+              DEFAULT_DIMENSIONS (the last only for aspect_ratio == "custom",
+              where there is no ratio to look up)
 
           Algorithm:
             1. Check is_loaded(), raise RuntimeError if not loaded
-            2. Determine final (requested) dimensions:
-               - If aspect_ratio is "custom", use options.width/height directly
-               - If options.width != 512 or options.height != 512, use those
-               - Otherwise resolve from options.aspect_ratio using ASPECT_RATIOS
+            2. Determine final (requested) dimensions, per axis:
+               - Use options.width / options.height wherever they are not None
+               - For any axis left as None: if aspect_ratio is "custom" take
+                 DEFAULT_DIMENSIONS, otherwise resolve options.aspect_ratio
+                 through ASPECT_RATIOS
+               - No dimension VALUE is ever read as "unspecified": the magic
+                 512 sentinel this step used to carry made an explicit
+                 `--aspect-ratio` unreachable as soon as a caller's default
+                 moved off 512 (gate-remediation round 7, finding 2)
             3. Round dimensions to multiples of 16:
                - generated_width = ((final_width + 15) // 16) * 16
                - generated_height = ((final_height + 15) // 16) * 16
@@ -289,11 +315,21 @@ class FluxInferenceEngine(InferenceEngine):
         if not self.is_loaded():
             raise RuntimeError("Engine not loaded. Call load() before generate().")
 
-        # Use explicit dimensions if "custom" aspect ratio or dimensions differ from defaults
-        if options.aspect_ratio == "custom" or options.width != 512 or options.height != 512:
-            final_width, final_height = options.width, options.height
-        else:
-            final_width, final_height = self._resolve_dimensions(options.aspect_ratio)
+        # Resolve the requested dimensions per axis. An explicitly supplied
+        # (non-None) axis always wins; an unspecified one comes from the
+        # aspect-ratio table, or from DEFAULT_DIMENSIONS when the caller
+        # said "custom" (i.e. claimed ownership of the dimensions) but
+        # supplied none.
+        final_width, final_height = options.width, options.height
+        if final_width is None or final_height is None:
+            if options.aspect_ratio == "custom":
+                fallback_width, fallback_height = DEFAULT_DIMENSIONS
+            else:
+                fallback_width, fallback_height = self._resolve_dimensions(options.aspect_ratio)
+            if final_width is None:
+                final_width = fallback_width
+            if final_height is None:
+                final_height = fallback_height
 
         # Round dimensions to multiples of 16 (required by FLUX model).
         generated_width = round16(final_width)

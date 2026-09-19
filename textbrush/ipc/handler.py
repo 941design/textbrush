@@ -30,24 +30,32 @@ from textbrush.model.registry import (
 )
 from textbrush.model.weights import (
     check_model_availability,
-    download_flux_weights,
-    is_flux_available,
+    download_model_weights,
 )
 from textbrush.paths import display_path
 from textbrush.references import ReferenceImageError
 
-_SCHNELL_SPEC = get_model_spec(FLUX1_SCHNELL)
+logger = logging.getLogger(__name__)
 
-_MISSING_MODEL_MESSAGE = f"""\
-{_SCHNELL_SPEC.display_name} model not found. To set up the model:
+
+def _missing_model_message(model_id: str) -> str:
+    """Render setup instructions naming the model that is actually missing.
+
+    The launch-time availability check runs against the model the
+    default-model resolver committed (any registry slug, not just
+    schnell), so the instructions must name that model: a hard-coded
+    FLUX.1 schnell text would point a user whose klein-4B install is
+    missing at the wrong repository and the wrong license page.
+    """
+    spec = get_model_spec(model_id)
+    return f"""\
+{spec.display_name} model not found. To set up the model:
 
 1. Get a HuggingFace token from https://huggingface.co/settings/tokens
-2. Accept the license at {_SCHNELL_SPEC.license_url}
+2. Accept the license at {spec.license_url}
 3. Run: HUGGINGFACE_HUB_TOKEN=hf_xxx textbrush --download-model
 
 Or manually place model files in the HuggingFace cache directory."""
-
-logger = logging.getLogger(__name__)
 
 
 class MessageHandler:
@@ -113,6 +121,9 @@ class MessageHandler:
             - Loads model in background thread
             - After model loads: sends READY event
             - After READY: starts generation via backend.start_generation()
+            - The launch-time `state_changed(paused)` (and the accompanying
+              `config_ack`) carry the worker's real settled state, not a
+              fixed settled=False
             - Starts image delivery thread to send IMAGE_READY events
 
           Properties:
@@ -308,6 +319,15 @@ class MessageHandler:
                 on_generation_start=on_generation_start,
                 start_paused=start_paused,
             )
+            # Report the worker's actual quiescence rather than assuming it
+            # is unsettled: a worker started paused parks before producing
+            # anything and is settled immediately, and nothing else emits a
+            # settled signal at launch (start_generation takes no on_settled
+            # callback). Hard-coding settled=False left every consumer that
+            # gates on it stuck until a full resume/pause cycle, while the
+            # backend's own gate in handle_update_config already accepted
+            # editing commands.
+            settled = self.backend.is_paused() and self.backend.is_settled()
             if not init_refs and not init_preset:
                 server.send(
                     Message(
@@ -319,7 +339,7 @@ class MessageHandler:
                                 reference_paths=[],
                                 preset=None,
                                 compatible=True,
-                                settled=False,
+                                settled=settled,
                             )
                         ),
                     )
@@ -327,8 +347,8 @@ class MessageHandler:
             self._generation_started = True
             self._current_prompt = start_prompt
             if start_paused:
-                logger.info("Backend ready, emitting state_changed(paused)")
-                self._emit_state_changed(server, "paused", settled=False)
+                logger.info(f"Backend ready, emitting state_changed(paused, settled={settled})")
+                self._emit_state_changed(server, "paused", settled=settled)
             else:
                 logger.info("Backend ready, emitting state_changed(idle)")
                 self._emit_state_changed(server, "idle")
@@ -543,12 +563,21 @@ class MessageHandler:
         CONTRACT:
           Inputs:
             - payload: dict with keys: prompt (str), aspect_ratio (str),
-                       width (int|None), height (int|None)
+                       width (int|None), height (int|None), and optionally
+                       model_id (str|None), references (list|None),
+                       preset (str|None)
             - server: IPCServer instance for sending events
 
           Outputs: none (modifies backend state, sends events)
 
           Invariants:
+            - An editing update (any of model_id / references / preset set)
+              takes the editing branch: it requires a paused, settled worker,
+              applies the editing fields via apply_configuration, and then
+              applies the command's prompt too -- the prompt travels with
+              every editing update, so dropping it would discard an unblurred
+              edit and leave _current_prompt stale. An empty prompt is
+              skipped, not treated as an error.
             - If backend not initialized: sends non-fatal ERROR event
             - If backend exists:
               * Calls backend.update_config() to update worker settings
@@ -610,8 +639,6 @@ class MessageHandler:
         # Editing fields are applied only after the worker has actually
         # parked. Plain prompt/dimension updates retain the legacy behavior.
         if cmd.model_id is not None or cmd.references is not None or cmd.preset is not None:
-            from textbrush.ipc.protocol import BackendState
-
             if not self.backend.is_paused() or not self.backend.is_settled():
                 server.send(
                     Message(
@@ -670,7 +697,58 @@ class MessageHandler:
                 )
                 return
 
+            # An editing update carries the prompt alongside the editing
+            # fields (the UI sends whatever is in the prompt box, blurred or
+            # not). Returning here without applying it dropped an unblurred
+            # edit and left _current_prompt stale for every later
+            # state_changed(generating). Honour it exactly as the prompt-only
+            # path below does. An empty prompt is not a change, so it is
+            # skipped rather than failing an editing update that already
+            # succeeded.
+            prompt_changed = bool(cmd.prompt and cmd.prompt.strip())
+            if prompt_changed:
+                self._current_prompt = cmd.prompt
+                # Bind the prompt at registration time, as the prompt-only
+                # path does, so a later update cannot retro-attribute this
+                # generation's state_changed(generating).
+                editing_prompt = cmd.prompt
+
+                def on_generation_start(seed: int, queue_position: int) -> None:
+                    """Callback invoked when worker starts generating an image."""
+                    logger.debug(
+                        f"Generation started: seed={seed}, queue_position={queue_position}"
+                    )
+                    self._emit_state_changed(server, "generating", prompt=editing_prompt)
+
+                self.backend.update_config(
+                    prompt=cmd.prompt,
+                    aspect_ratio=cmd.aspect_ratio,
+                    width=cmd.width,
+                    height=cmd.height,
+                    on_generation_start=on_generation_start,
+                )
+                self._generation_started = True
+
             self._emit_config_ack(server, settled=True)
+
+            if prompt_changed:
+                # update_config cleared the buffer; report it and release the
+                # delivery thread, which may be parked on the now-stale image.
+                server.send(
+                    Message(
+                        MessageType.BUFFER_STATUS,
+                        dataclass_to_dict(
+                            BufferStatusEvent(
+                                count=0,
+                                max=self.backend.buffer.max_size,
+                                generating=not self.backend.is_paused(),
+                            )
+                        ),
+                    )
+                )
+                with self._state_lock:
+                    self._current_image = None
+                self._signal_action()
             return
 
         # Only validate aspect_ratio if using preset (not "custom") and no explicit dimensions
@@ -792,9 +870,13 @@ class MessageHandler:
                a. Send non-fatal ERROR event ("Backend not initialized")
                b. Return
             2. Check current pause state via backend.is_paused()
-            3. If paused: call backend.resume_generation()
-            4. If running: call backend.pause_generation()
-            5. Send state_changed event with appropriate state
+            3. If paused: call backend.resume_generation(), then send
+               state_changed(generating)
+            4. If running: send state_changed(paused, settled=False) FIRST,
+               then call backend.pause_generation() with the on_settled
+               callback that emits state_changed(paused, settled=True).
+               The order matters: the callback fires on the worker thread
+               and must never be overwritten by a later settled=False.
         """
         from textbrush.ipc.protocol import ErrorEvent
 
@@ -840,22 +922,23 @@ class MessageHandler:
                 )
                 return
             self.backend.resume_generation()
-            new_paused = False
+            logger.info("Generation resumed")
+            self._emit_state_changed(server, "generating", prompt=self._current_prompt)
         else:
+            # Emit the unsettled state BEFORE arming the settle callback.
+            # The callback runs on the worker thread the moment it enters
+            # the pause-wait loop, which can happen before pause_generation()
+            # even returns; emitting settled=False afterwards would overwrite
+            # the worker's settled=True and strand every consumer that gates
+            # on it until the next full pause/resume cycle.
+            logger.info("Generation paused")
+            self._emit_state_changed(server, "paused", settled=False)
             # T07: forward the on_settled callback so a second
             # `state_changed(paused, settled=True)` is emitted by the
             # worker thread when quiescence is actually reached.
             self.backend.pause_generation(
                 on_settled=lambda: self._emit_state_changed(server, "paused", settled=True)
             )
-            new_paused = True
-
-        logger.info(f"Generation {'paused' if new_paused else 'resumed'}")
-
-        if new_paused:
-            self._emit_state_changed(server, "paused", settled=False)
-        else:
-            self._emit_state_changed(server, "generating", prompt=self._current_prompt)
 
     def handle_delete(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle DELETE command: soft-delete image by index.
@@ -1135,11 +1218,14 @@ class MessageHandler:
           Outputs: none (calls callback or sends error)
 
           Invariants:
-            - Checks model availability before backend.initialize()
+            - Checks availability of the model handle_init actually resolved
+              (config.model.selected_id), never a hard-coded slug, before
+              backend.initialize()
             - If model available: calls backend.initialize() directly
-            - If model missing with credentials: emits loading state, downloads,
-              then calls backend.initialize()
-            - If model missing without credentials: emits fatal error and returns
+            - If model missing with credentials: emits loading state, downloads
+              THAT model, then calls backend.initialize()
+            - If model missing without credentials: emits fatal error naming
+              that model and returns
             - If discovery logic fails unexpectedly: falls back to direct
               backend.initialize() call (graceful degradation)
             - If backend.initialize() fails: logs error, sends fatal ERROR event
@@ -1152,10 +1238,14 @@ class MessageHandler:
               original behavior
 
           Algorithm:
+            0. Read the resolved model id off config.model.selected_id (the
+               id handle_init committed after resolve_model_selection).
             1. Try model discovery:
-               a. Call is_flux_available(custom_dirs=config.model.directories)
+               a. Call check_model_availability(model_id,
+                  custom_dirs=config.model.directories)
                b. If not available: check credentials
-                  - If credentials found: emit loading state, call download_flux_weights()
+                  - If credentials found: emit loading state, call
+                    download_model_weights(model_id)
                     - If download fails: emit fatal error, return
                   - If no credentials: emit fatal error with instructions, return
                c. If unexpected error: log warning, fall through to backend.initialize()
@@ -1168,26 +1258,38 @@ class MessageHandler:
         """
         import os
 
+        # handle_init commits the resolver's choice to
+        # config.model.selected_id before starting this thread, and that is
+        # the model TextbrushBackend will load. Check and download that
+        # model -- checking schnell here would abort a launch whose only
+        # installed model is klein-4B, or download 23 GB of the wrong
+        # weights. The schnell fallback covers callers that reach this
+        # method without a committed selection.
+        model_id = self.config.model.selected_id or FLUX1_SCHNELL
+
         # Model discovery step — graceful degradation on unexpected errors
         proceed_to_init = True
         try:
             custom_dirs = self.config.model.directories
-            model_available = is_flux_available(custom_dirs=custom_dirs)
+            model_available = check_model_availability(model_id, custom_dirs=custom_dirs).available
 
             if not model_available:
                 token = self._detect_hf_credentials()
 
                 if token:
                     # Credentials found — attempt auto-download
-                    logger.info("Model not found, credentials available — starting auto-download")
+                    logger.info(
+                        f"Model {model_id} not found, credentials available — "
+                        "starting auto-download"
+                    )
                     self._emit_state_changed(server, "loading")
 
                     try:
-                        # Set HF_TOKEN so download_flux_weights can find it
+                        # Set HF_TOKEN so download_model_weights can find it
                         old_hf_token = os.environ.get("HF_TOKEN")
                         os.environ["HF_TOKEN"] = token
                         try:
-                            download_flux_weights()
+                            download_model_weights(model_id)
                         finally:
                             if old_hf_token is None:
                                 os.environ.pop("HF_TOKEN", None)
@@ -1206,11 +1308,13 @@ class MessageHandler:
                         proceed_to_init = False
                 else:
                     # No credentials — emit actionable error
-                    logger.warning("Model not found and no HuggingFace credentials available")
+                    logger.warning(
+                        f"Model {model_id} not found and no HuggingFace credentials available"
+                    )
                     self._emit_state_changed(
                         server,
                         "error",
-                        message=_MISSING_MODEL_MESSAGE,
+                        message=_missing_model_message(model_id),
                         fatal=True,
                     )
                     proceed_to_init = False

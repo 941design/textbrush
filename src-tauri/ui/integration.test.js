@@ -10,7 +10,8 @@ import * as ButtonFlash from './button-flash.js';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 
-const ack = (model, paths, preset = null, compatible = true, reason = null, required = null) => ({
+const ack = (model, paths, preset = null, compatible = true, reason = null, required = null,
+  settled = true) => ({
   type: 'config_ack',
   payload: {
     model_id: model,
@@ -20,9 +21,16 @@ const ack = (model, paths, preset = null, compatible = true, reason = null, requ
     compatible,
     incompatibility_reason: reason,
     required_model: required,
-    settled: true,
+    settled,
   },
 });
+
+// A config_ack from a backend that predates the settled field.
+const ackWithoutSettled = (model, paths, preset = null) => {
+  const message = ack(model, paths, preset);
+  delete message.payload.settled;
+  return message;
+};
 
 async function renderedApp() {
   const source = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
@@ -82,7 +90,8 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
     add.click();
     assert.equal(calls.filter(call => call.command === 'pick_reference_files').length, 0);
 
-    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    // The launch-time ack reports settled=false, so the controls stay closed.
+    emit(ack('flux2-klein-4b', [], 'landscape-medium', true, null, null, false));
     assert.equal(document.getElementById('prompt-input').disabled, true);
     emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
     assert.equal(add.disabled, false);
@@ -132,6 +141,60 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
     assert.match(document.getElementById('reference-error').textContent, /requires exactly one/);
     assert.match(document.querySelector('input[value="flux2-klein-4b"]').parentElement.textContent,
       /recommended/);
+  } finally {
+    app.close();
+  }
+});
+
+test('config_ack opens the editing controls without a preceding state_changed', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, emit } = app;
+    const document = window.document;
+    const add = document.getElementById('reference-add');
+    assert.equal(add.disabled, true);
+
+    // settled=true on config_ack alone must unlock the controls; without it the
+    // UI stays dead until a full resume/pause cycle.
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    assert.equal(add.disabled, false);
+    assert.equal(document.getElementById('prompt-input').disabled, false);
+    assert.equal(document.querySelector('input[value="flux2-klein-4b"]').disabled, false);
+
+    // An ack without the field leaves the gate where it was.
+    emit(ackWithoutSettled('flux2-klein-4b', []));
+    assert.equal(add.disabled, false);
+
+    emit(ack('flux2-klein-4b', [], 'landscape-medium', true, null, null, false));
+    assert.equal(add.disabled, true);
+    emit(ackWithoutSettled('flux2-klein-4b', []));
+    assert.equal(add.disabled, true);
+  } finally {
+    app.close();
+  }
+});
+
+test('an unknown editing preset falls back instead of breaking prompt submission', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+
+    // textbrush/config.py does not validate the preset, so an unknown id can
+    // reach the UI verbatim through config_ack.
+    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'not-a-preset'));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+
+    const promptInput = document.getElementById('prompt-input');
+    promptInput.value = 'prompt with an unknown preset';
+    promptInput.dispatchEvent(new window.Event('blur'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const update = calls.filter(call => call.command === 'update_generation_config').at(-1);
+    assert.ok(update, 'prompt blur still reaches the backend');
+    assert.equal(update.args.aspectRatio, 'custom');
+    assert.equal(update.args.width, 768);
+    assert.equal(update.args.height, 576);
   } finally {
     app.close();
   }

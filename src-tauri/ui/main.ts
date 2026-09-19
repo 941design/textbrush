@@ -428,6 +428,11 @@ function handleConfigAck(payload: ConfigAckPayload): void {
   };
   state.pendingReferences = null;
   state.configUpdateInFlight = false;
+  // config_ack is the second channel of truth for the settled gate. An omitted
+  // value leaves whatever state_changed last reported intact.
+  if (typeof payload.settled === 'boolean') {
+    state.settled = payload.settled;
+  }
   renderEditingControls();
 }
 

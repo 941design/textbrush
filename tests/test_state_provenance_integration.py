@@ -185,6 +185,9 @@ class GatedMockEngine:
     ) -> None:
         self.model_id = model_id
         self._loaded = False
+        # Records the `root` of the most recent `load_from` call (None
+        # until the backend loads this engine).
+        self.loaded_from: Path | None = None
         # `_gate` is the shared blocking point. Tests call
         # `release_one()` to let one `generate` through.
         self._gate = threading.Event()
@@ -208,6 +211,17 @@ class GatedMockEngine:
 
     def load(self) -> None:
         self._loaded = True
+
+    def load_from(self, root: Path | None) -> None:
+        """Mirror `InferenceEngine.load_from`'s default: ignore `root`.
+
+        This double has no on-disk snapshot to be pointed at, which is
+        exactly the case the base class defaults for. The root is recorded
+        rather than discarded so a test can assert which snapshot the
+        backend resolved without the double pretending it can load one.
+        """
+        self.loaded_from = root
+        self.load()
 
     def is_loaded(self) -> bool:
         return self._loaded
@@ -382,8 +396,6 @@ def full_stack(tmp_path: Path):
       whose `side_effect = ImmediateThread`, mirroring the pattern in
       `tests/test_ipc_handler.py`. This makes `_init_backend` run
       synchronously in the test thread.
-    - `textbrush.ipc.handler.is_flux_available` -> True (the init path
-      checks this; with a synthetic backend there's nothing to discover).
     - `textbrush.ipc.handler.check_model_availability` -> always available
       (the resolver in `handle_init` consults this; without the patch it
       returns unavailable and `handle_init` returns before starting the
@@ -435,7 +447,6 @@ def full_stack(tmp_path: Path):
     }
 
     stack.enter_context(patch("textbrush.ipc.handler.TextbrushBackend", lambda c: backend))
-    stack.enter_context(patch("textbrush.ipc.handler.is_flux_available", lambda *a, **kw: True))
     stack.enter_context(
         patch(
             "textbrush.ipc.handler.check_model_availability",

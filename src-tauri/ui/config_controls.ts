@@ -16,6 +16,32 @@ interface Resolution {
   height: number;
 }
 
+// Documented fallback when no editing preset is selected. Mirrors the default in
+// textbrush/config.py.
+const DEFAULT_EDITING_PRESET = 'landscape-medium';
+
+// Preset ids already reported as unknown, so the warning is emitted once per id
+// instead of on every prompt blur.
+const warnedPresets = new Set<string>();
+
+/**
+ * Resolve an editing preset id to its dimensions.
+ *
+ * The backend does not validate the configured preset, so an id absent from
+ * EDITING_PRESETS can reach the UI. Degrade to the documented default instead of
+ * throwing inside the prompt handlers, but say so on the console.
+ */
+export function resolveEditingPreset(presetId: string | null): { id: string; width: number; height: number } {
+  const requested = presetId ?? DEFAULT_EDITING_PRESET;
+  const match = EDITING_PRESETS.find(entry => entry.id === requested);
+  if (match) return match;
+  if (!warnedPresets.has(requested)) {
+    warnedPresets.add(requested);
+    console.warn(`Unknown editing preset "${requested}"; falling back to "${DEFAULT_EDITING_PRESET}"`);
+  }
+  return EDITING_PRESETS.find(entry => entry.id === DEFAULT_EDITING_PRESET) ?? EDITING_PRESETS[0];
+}
+
 // Supported aspect ratios with their available resolutions (smallest to largest)
 // Must match SUPPORTED_RATIOS in textbrush/cli.py
 const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
@@ -388,7 +414,7 @@ export function getCurrentConfig(elements: Elements, state: AppState): ConfigVal
   const promptValue = elements.promptInput ? elements.promptInput.value : '';
 
   if (isEditingModel(state.modelId)) {
-    const preset = EDITING_PRESETS.find(entry => entry.id === (state.preset ?? 'landscape-medium'))!;
+    const preset = resolveEditingPreset(state.preset);
     return {
       prompt: promptValue,
       aspectRatio: 'custom',

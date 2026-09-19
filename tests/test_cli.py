@@ -907,3 +907,76 @@ class TestDownloadModelDispatch:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "Download failed" in captured.err
+
+
+class TestAspectRatioIsNotANoOp:
+    """`--aspect-ratio` must reach the engine as a ratio, not as a
+    pre-resolved square canvas (gate-remediation round 7, finding 2).
+
+    The CLI passes `--aspect-ratio` to `backend.start_generation` without
+    width/height. While `start_generation` substituted 1024x1024 for the
+    missing dimensions, the engine could not distinguish that from a
+    caller who had genuinely asked for 1024x1024, so the aspect-ratio
+    lookup was unreachable and `textbrush --aspect-ratio 16:9 "a cat"`
+    produced a square image.
+    """
+
+    @pytest.mark.parametrize("ratio", ["16:9", "9:16", "4:5"])
+    @patch("textbrush.cli.load_config")
+    @patch("textbrush.backend.create_engine")
+    def test_cli_ratio_survives_to_the_engine(
+        self, mock_create_engine, mock_load_config, sample_config, tmp_path, ratio
+    ):
+        from unittest.mock import Mock
+
+        from PIL import Image
+
+        from textbrush.inference.base import GenerationResult
+
+        mock_load_config.return_value = sample_config
+
+        seen = []
+
+        def _generate(prompt, options):
+            seen.append(options)
+            return GenerationResult(
+                image=Image.new("RGB", (64, 64)),
+                seed=42,
+                generation_time=0.1,
+                model_name="mock",
+            )
+
+        mock_engine = Mock()
+        mock_engine.is_loaded.return_value = True
+        mock_engine.default_sampling_settings.return_value = {}
+        mock_engine.reference_input_size.return_value = None
+        mock_engine.generate.side_effect = _generate
+        mock_create_engine.return_value = mock_engine
+
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("[test]\n")
+        try:
+            main(
+                [
+                    "--prompt",
+                    "a cat",
+                    "--out",
+                    str(tmp_path / "test.png"),
+                    "--config",
+                    str(config_file),
+                    "--seed",
+                    "42",
+                    "--aspect-ratio",
+                    ratio,
+                ]
+            )
+        except SystemExit:
+            pass
+
+        assert seen, "the engine was never asked to generate"
+        options = seen[0]
+        assert options.aspect_ratio == ratio
+        # The CLI specified no dimensions, so none may be invented on
+        # the way down: the ratio is the engine's to resolve.
+        assert options.width is None
+        assert options.height is None

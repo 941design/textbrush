@@ -166,6 +166,18 @@ function compatibilityMessage(modelId, referenceCount) {
 }
 
 // config_controls.ts
+var DEFAULT_EDITING_PRESET = "landscape-medium";
+var warnedPresets = /* @__PURE__ */ new Set();
+function resolveEditingPreset(presetId) {
+  const requested = presetId ?? DEFAULT_EDITING_PRESET;
+  const match = EDITING_PRESETS.find((entry) => entry.id === requested);
+  if (match) return match;
+  if (!warnedPresets.has(requested)) {
+    warnedPresets.add(requested);
+    console.warn(`Unknown editing preset "${requested}"; falling back to "${DEFAULT_EDITING_PRESET}"`);
+  }
+  return EDITING_PRESETS.find((entry) => entry.id === DEFAULT_EDITING_PRESET) ?? EDITING_PRESETS[0];
+}
 var ASPECT_RATIO_RESOLUTIONS = {
   "1:1": [
     { width: 256, height: 256 },
@@ -408,7 +420,7 @@ function showValidationError(message, inputElement) {
 function getCurrentConfig(elements2, state2) {
   const promptValue = elements2.promptInput ? elements2.promptInput.value : "";
   if (isEditingModel(state2.modelId)) {
-    const preset = EDITING_PRESETS.find((entry) => entry.id === (state2.preset ?? "landscape-medium"));
+    const preset = resolveEditingPreset(state2.preset);
     return {
       prompt: promptValue,
       aspectRatio: "custom",
@@ -9392,6 +9404,9 @@ function handleConfigAck(payload) {
   };
   state.pendingReferences = null;
   state.configUpdateInFlight = false;
+  if (typeof payload.settled === "boolean") {
+    state.settled = payload.settled;
+  }
   renderEditingControls();
 }
 function handleMessage(msg) {
