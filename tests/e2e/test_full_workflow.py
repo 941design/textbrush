@@ -34,6 +34,21 @@ class TestCLIHelp:
         assert "--auto-accept" in result.stdout
         assert "--auto-abort" in result.stdout
         assert "--download-model" in result.stdout
+        assert "--model" in result.stdout
+        assert "--reference" in result.stdout
+        assert "--preset" in result.stdout
+
+    @pytest.mark.e2e_smoke
+    def test_kontext_without_reference_exits_one_before_loading(self):
+        result = subprocess.run(
+            ["textbrush", "--prompt", "x", "--model", "flux1-kontext-dev"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "flux1-kontext-dev" in result.stderr
+        assert "requires exactly 1 reference image" in result.stderr
+        assert result.stdout == ""
 
 
 class TestDownloadModelCLI:

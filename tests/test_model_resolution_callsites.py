@@ -52,18 +52,38 @@ class TestResolveModelSelectionCallsites:
 
     def test_call_sites_match_handler_init(self) -> None:
         sites = _find_resolve_call_sites()
-        # The IPC handler is the T07 deliverable; T08 may add the CLI
-        # entry, in which case it joins this set. Until T08 lands,
-        # assert exactly the handler site.
+        # T08 lands the CLI call site. Both `handle_init` and `main`
+        # are the documented production callers; no other production
+        # module is allowed to call `resolve_model_selection` (running
+        # the resolver silently elsewhere would re-route the model
+        # selection and silently violate AC-MODEL-5b).
         handler_site = ("textbrush/ipc/handler.py", "handle_init")
+        cli_site = ("textbrush/cli.py", "main")
         assert handler_site in sites, (
             f"handle_init must call resolve_model_selection; found sites: {sites}"
         )
+        assert cli_site in sites, (
+            f"cli.main must call resolve_model_selection; found sites: {sites}"
+        )
         non_test_sites = {(file, func) for file, func in sites if not file.startswith("tests/")}
-        # Only documented production callers.
-        assert non_test_sites == {handler_site}, (
+        # Only the two documented production callers.
+        assert non_test_sites == {handler_site, cli_site}, (
             f"Unexpected resolve_model_selection call sites: {non_test_sites}"
         )
+
+    def test_cli_launch_resolves_once(self, sample_config) -> None:
+        from textbrush.cli import main
+        from textbrush.model.registry import FLUX1_SCHNELL, ModelResolution
+
+        resolver = Mock(return_value=ModelResolution(model_id=FLUX1_SCHNELL, blocked=False))
+        with (
+            patch("textbrush.cli.load_config", return_value=sample_config),
+            patch("textbrush.cli.resolve_model_selection", resolver),
+            patch("textbrush.cli.run_headless") as headless,
+        ):
+            main(["--prompt", "test", "--headless"])
+        resolver.assert_called_once()
+        headless.assert_called_once()
 
     def test_handler_calls_resolve_once_across_init_and_two_edits(self, tmp_path) -> None:
         """Live test: handle_init runs the resolver exactly once; editing

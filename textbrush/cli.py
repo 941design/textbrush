@@ -10,13 +10,16 @@ from pathlib import Path
 from typing import List
 
 from .config import Config, load_config
-from .model.registry import FLUX1_SCHNELL, iter_model_slugs
+from .model.registry import FLUX1_SCHNELL, FLUX2_KLEIN_4B, iter_model_slugs, resolve_model_selection
+from .model.weights import check_model_availability
 from .paths import CONFIG_PATH
-from .references import ReferenceImageError, normalize
+from .references import (
+    SUPPORTED_EXTENSIONS,
+    ReferenceImageError,
+)
 from .validation import (
     DEFAULT_EDITING_PRESET,
     EDITING_PRESETS,
-    editing_preset_dimensions,
     validate_selection,
 )
 
@@ -293,19 +296,31 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.seed is not None and args.seed < 0:
         raise ValueError("--seed must be non-negative")
 
-    model_id = getattr(args, "model", None) or FLUX1_SCHNELL
     references = getattr(args, "reference", [])
     preset = getattr(args, "preset", None)
-    verdict = validate_selection(model_id, len(references), preset)
+    # When no model was explicitly selected, the launch resolver chooses
+    # FLUX.2 for references. Validate that prospective mode here so errors
+    # still precede backend construction.
+    model_id = getattr(args, "model", None) or (FLUX2_KLEIN_4B if references else FLUX1_SCHNELL)
+    verdict = validate_selection(model_id, len(references), preset, args.aspect_ratio)
     if not verdict.valid:
         raise ValueError(verdict.reason)
-    # Decode before loading any model. This also validates readability, corruption,
-    # case-insensitive extensions, and resource guards with the desktop's taxonomy.
+    # T08: do NOT decode here. Validate only that each --reference
+    # path exists, is a file, and has a supported extension (case-
+    # insensitive). Decode lives in the backend's apply_configuration
+    # so the decoded data outlives exactly one acknowledged
+    # configuration (AC-PROCESS-3).
     for path in references:
-        try:
-            normalize(path)
-        except ReferenceImageError as exc:
-            raise ValueError(str(exc)) from exc
+        p = Path(path)
+        if not p.exists():
+            raise ValueError(f"--reference file does not exist: {path}")
+        if not p.is_file():
+            raise ValueError(f"--reference is not a regular file: {path}")
+        if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"--reference has unsupported extension: {path} "
+                f"(supported: {sorted(SUPPORTED_EXTENSIONS)})"
+            )
 
     if args.out is not None:
         # Normalize path to prevent traversal attacks
@@ -373,6 +388,9 @@ def main(argv: List[str] | None = None) -> None:
         - Final output path goes to stdout (generation) or stderr (download)
         - backend.shutdown() always called (even on error, generation path only)
         - If --headless flag set, delegates to run_headless()
+        - Argument validation and one model resolution run before backend construction.
+          References decode once in backend.apply_configuration after initialize()
+          and before start_generation(), in both GUI and headless modes.
 
       Properties:
         - Configuration priority: CLI args > env vars > config file > defaults
@@ -501,13 +519,40 @@ def main(argv: List[str] | None = None) -> None:
         config_path = args.config if args.config is not None else CONFIG_PATH
         config = load_config(config_path)
         config = merge_cli_args_with_config(args, config)
-        selected_model = args.model or config.model.selected_id or FLUX1_SCHNELL
-        config.model.selected_id = selected_model
         references_paths = [str(p) for p in args.reference]
         preset = args.preset or (DEFAULT_EDITING_PRESET if references_paths else None)
-        width = height = None
-        if preset:
-            width, height = editing_preset_dimensions(preset)
+
+        # AC-MODEL-5b: run the model resolver exactly once at launch
+        # (T08 step 2). A blocked resolution prints the discovery reason
+        # and the download hint (when a specific model is required) and
+        # exits with code 1 -- no model is loaded.
+        def availability(slug):
+            return check_model_availability(slug, custom_dirs=config.model.directories)
+
+        try:
+            resolution = resolve_model_selection(
+                selected_id=args.model or config.model.selected_id,
+                reference_count=len(references_paths),
+                availability=availability,
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if resolution.blocked:
+            print(
+                f"Error: {resolution.reason}",
+                file=sys.stderr,
+            )
+            if resolution.required_model:
+                print(
+                    f"Run: textbrush --download-model {resolution.required_model}",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
+
+        config.model.selected_id = resolution.model_id
+        selected_model = resolution.model_id
 
         # Dispatch to headless mode if flag is set
         if args.headless:
@@ -522,8 +567,6 @@ def main(argv: List[str] | None = None) -> None:
                 reference_paths=references_paths,
                 model_id=selected_model,
                 preset=preset,
-                width=width,
-                height=height,
             )
             # run_headless() calls sys.exit(), so this line is unreachable
             return
@@ -558,8 +601,6 @@ def main(argv: List[str] | None = None) -> None:
             prompt=args.prompt,
             seed=args.seed,
             aspect_ratio=args.aspect_ratio if args.aspect_ratio else "custom",
-            width=width,
-            height=height,
         )
 
         import time
@@ -606,8 +647,6 @@ def run_headless(
     reference_paths: list[str] | tuple[str, ...] = (),
     model_id: str = FLUX1_SCHNELL,
     preset: str | None = None,
-    width: int | None = None,
-    height: int | None = None,
 ) -> None:
     """Run textbrush in headless mode without GUI (for CI/testing).
 
@@ -703,8 +742,6 @@ def run_headless(
             prompt=prompt,
             seed=seed,
             aspect_ratio=aspect_ratio,
-            width=width,
-            height=height,
         )
 
         if auto_abort:

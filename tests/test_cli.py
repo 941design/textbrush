@@ -619,6 +619,93 @@ class TestMain:
         assert "Error:" in captured.err
 
 
+@pytest.mark.parametrize(
+    ("model_id", "count", "valid"),
+    [
+        (model, count, lower <= count <= upper)
+        for model, lower, upper in (
+            ("flux1-schnell", 0, 0),
+            ("flux1-kontext-dev", 1, 1),
+            ("flux2-klein-4b", 1, 4),
+        )
+        for count in range(6)
+    ],
+)
+def test_cli_model_reference_cardinality_before_backend(model_id, count, valid, tmp_path, capsys):
+    paths = [tmp_path / f"reference-{n}.png" for n in range(count)]
+    for path in paths:
+        path.write_bytes(b"not decoded during argument validation")
+    argv = ["--prompt", "edit", "--model", model_id]
+    for path in paths:
+        argv.extend(["--reference", str(path)])
+
+    if valid:
+        validate_args(build_parser().parse_args(argv))
+        return
+
+    with patch("textbrush.backend.TextbrushBackend") as backend_class:
+        with pytest.raises(SystemExit) as error:
+            main(argv)
+    assert error.value.code == 1
+    assert backend_class.call_count == 0
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert model_id in output.err
+
+
+def test_cli_rejects_text_aspect_ratio_for_editing_before_backend(tmp_path, capsys):
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"not decoded")
+    with patch("textbrush.backend.TextbrushBackend") as backend_class:
+        with pytest.raises(SystemExit) as error:
+            main(
+                [
+                    "--prompt",
+                    "edit",
+                    "--model",
+                    "flux2-klein-4b",
+                    "--reference",
+                    str(reference),
+                    "--aspect-ratio",
+                    "16:9",
+                ]
+            )
+    assert error.value.code == 1
+    assert backend_class.call_count == 0
+    assert "text-only aspect ratio" in capsys.readouterr().err
+
+
+def test_cli_accepts_uppercase_jpg_without_decoding(tmp_path):
+    reference = tmp_path / "IMG_1234.JPG"
+    reference.write_bytes(b"not decoded")
+    args = build_parser().parse_args(
+        ["--prompt", "edit", "--model", "flux1-kontext-dev", "--reference", str(reference)]
+    )
+    validate_args(args)
+
+
+def test_explicit_unavailable_model_never_substitutes(sample_config, tmp_path, capsys):
+    from textbrush.model.registry import AvailabilityReport, DiscoveryCause
+
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(b"not decoded")
+    with (
+        patch("textbrush.cli.load_config", return_value=sample_config),
+        patch(
+            "textbrush.cli.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ),
+        patch("textbrush.backend.TextbrushBackend") as backend_class,
+        pytest.raises(SystemExit) as error,
+    ):
+        main(["--prompt", "edit", "--model", "flux1-kontext-dev", "--reference", str(reference)])
+    assert error.value.code == 1
+    assert backend_class.call_count == 0
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "--download-model flux1-kontext-dev" in output.err
+
+
 class TestParserIntegration:
     """Integration tests for parser with main."""
 

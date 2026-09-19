@@ -63,6 +63,40 @@ class TestAbortWorkflow:
                 )
             assert exc_info.value.code == 1
 
+    def test_two_references_are_decoded_once_in_order(self, sample_config, tmp_path):
+        from PIL import Image
+
+        from tests.mocks import MockInferenceEngine
+        from textbrush.model.registry import FLUX2_KLEIN_4B
+        from textbrush.references import normalize
+
+        paths = [tmp_path / "first.png", tmp_path / "second.png"]
+        for index, path in enumerate(paths):
+            Image.new("RGB", (32, 32), color=(index * 80, 0, 0)).save(path)
+        sample_config.model.selected_id = FLUX2_KLEIN_4B
+        engine = MockInferenceEngine(reference_canvas=(768, 576))
+        engine.model_id = FLUX2_KLEIN_4B
+
+        with (
+            patch("textbrush.backend.create_engine", return_value=engine),
+            patch("textbrush.backend.normalize", wraps=normalize) as decode,
+            pytest.raises(SystemExit) as result,
+        ):
+            run_headless(
+                prompt="edit",
+                out=None,
+                config=sample_config,
+                seed=None,
+                aspect_ratio="custom",
+                auto_accept=False,
+                auto_abort=True,
+                reference_paths=[str(path) for path in paths],
+                model_id=FLUX2_KLEIN_4B,
+                preset="landscape-medium",
+            )
+        assert result.value.code == 1
+        assert [call.args[0] for call in decode.call_args_list] == paths
+
     def test_abort_calls_backend_abort(self, sample_config):
         """Auto-abort calls backend.abort()."""
         mock_backend = Mock()
