@@ -22,6 +22,17 @@ export CARGO_HOME
 UI_DIR := src-tauri/ui
 UI_PLATFORM_STAMP := $(UI_DIR)/node_modules/.platform
 CURRENT_PLATFORM := $(shell node -e "console.log(process.platform+'-'+process.arch)" 2>/dev/null || echo unknown)
+RECORDED_PLATFORM := $(shell cat $(UI_PLATFORM_STAMP) 2>/dev/null)
+
+# The stamp is a real file, so make would otherwise call it up to date
+# whenever it is newer than package.json/package-lock.json -- and skip the
+# recipe that holds the platform check, which is the whole point of it.
+# Forcing it PHONY on a mismatch (or when it is missing, giving an empty
+# RECORDED_PLATFORM) makes the check run regardless of timestamps. On a
+# match the target stays an ordinary file and make skips it as usual.
+ifneq ($(RECORDED_PLATFORM),$(CURRENT_PLATFORM))
+.PHONY: $(UI_PLATFORM_STAMP)
+endif
 
 # Default target: show help
 .DEFAULT_GOAL := help
