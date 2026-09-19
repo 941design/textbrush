@@ -681,7 +681,7 @@ TypeScript in this task. Owned ACs: AC-STATE-3, AC-STATE-4, AC-MODEL-5b (IPC hal
 
 ---
 
-- [ ] **8.1 CLI model and reference arguments (S9) (T08)**
+- [x] **8.1 CLI model and reference arguments (S9) (T08)**
 
 **Goal.** `--model`, repeatable `--reference`, and `--preset` are validated before any model
 load, decoded once, resolved through the shared resolver once, and fail with exit code 1.
