@@ -824,7 +824,7 @@ class MessageHandler:
 
         if is_paused:
             # Incompatible acknowledged selections are retained, but never run.
-            verdict = self.backend._check_compatibility()
+            verdict = self._check_compatibility()
             if not verdict.valid:
                 server.send(
                     Message(

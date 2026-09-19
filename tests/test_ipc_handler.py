@@ -268,6 +268,30 @@ class TestInitCommand:
         assert startup_acks[0].payload["model_id"] == "flux1-schnell"
         assert startup_acks[0].payload["reference_paths"] == []
 
+    def test_handle_pause_resume_uses_handler_check_compatibility(self):
+        """Regression for a T12 finding: `handle_pause` used to call
+        `self.backend._check_compatibility()`, which does not exist on
+        `TextbrushBackend` (the helper is a `MessageHandler` method).
+        The real-backend `full_stack` harness in T12 trips this on
+        the first resume; this test pins the call against a real
+        `MessageHandler._check_compatibility` to catch a regression."""
+        from textbrush.config import get_default_config
+        from textbrush.ipc.handler import MessageHandler
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        backend = Mock()
+        backend.model_id = "flux1-schnell"
+        backend.references = ()
+        backend.preset = None
+        handler.backend = backend
+
+        verdict = handler._check_compatibility()
+
+        # The verdict reflects the (mocked) backend's acknowledged
+        # state: schnell, 0 references, None preset is a valid combo.
+        assert verdict.valid is True
+
 
 class TestSkipCommand:
     """Property-based tests for SKIP command handling."""

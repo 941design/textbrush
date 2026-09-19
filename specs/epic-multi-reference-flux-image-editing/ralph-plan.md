@@ -923,7 +923,7 @@ stubbed. Owned AC: AC-ACCESS-1.
 
 ---
 
-- [ ] **12.1 Cross-cutting provenance integration tests (S12) (T12)**
+- [x] **12.1 Cross-cutting provenance integration tests (S12) (T12)**
 
 **Goal.** Against the real handler, backend, worker, and mock engine (only the pipeline is a
 double), prove per-result provenance across pause/update/resume/generate/navigate/delete
