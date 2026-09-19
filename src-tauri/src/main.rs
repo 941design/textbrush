@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod commands_reference_dialog;
 mod commands_update_config;
 mod exit_handlers;
 mod launch_args;
@@ -71,11 +72,11 @@ use tauri::Manager;
  *         launch_args::get_launch_args,
  *     ]
  *   - Keep all existing code unchanged (AppState, other commands)
- *   - Ensure Cargo.toml has no additional dependencies (std::process in stdlib)
  */
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             sidecar: Mutex::new(None),
         })
@@ -88,6 +89,7 @@ fn main() {
             commands::delete_image,
             commands::get_image_list,
             commands_update_config::update_generation_config,
+            commands_reference_dialog::pick_reference_files,
             exit_handlers::print_paths_and_exit,
             exit_handlers::abort_exit,
             launch_args::get_launch_args,

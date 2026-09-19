@@ -38,7 +38,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"],
+          "allow": ["**", "$HOME/**", "$DESKTOP/**", "$DOCUMENT/**", "$PICTURE/**", "$DOWNLOAD/**"],
           "requireLiteralLeadingDot": false
         }
       }
