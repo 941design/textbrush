@@ -54,7 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
       Invariants:
         - Optional arguments:
           · --prompt (type: str, default: None) — mutually exclusive with --download-model
-          · --download-model (flag, default: False) — mutually exclusive with --prompt/--headless
+          · --download-model (optional registry slug, default: None; bare use
+            means flux1-schnell) — mutually exclusive with --prompt/--headless
           · --out (type: Path)
           · --config (type: Path, default: None)
           · --seed (type: int)
@@ -78,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
       Algorithm:
         1. Create ArgumentParser with program description
         2. Add optional argument: --prompt (required=False, default=None)
-        3. Add --download-model flag (action=store_true)
+        3. Add --download-model (nargs="?", const=flux1-schnell)
         4. Add optional arguments with types and defaults:
            - --out as Path
            - --config as Path
@@ -107,9 +108,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--download-model",
-        action="store_true",
-        default=False,
-        help="Download FLUX.1 schnell model weights (~23 GB) and exit",
+        nargs="?",
+        const=FLUX1_SCHNELL,
+        default=None,
+        metavar="MODEL",
+        help=(
+            "Download a model's weights and exit. Accepts a registry slug "
+            f"({', '.join(iter_model_slugs())}); defaults to {FLUX1_SCHNELL} "
+            "when given without a value."
+        ),
     )
 
     parser.add_argument(
@@ -411,7 +418,7 @@ def main(argv: List[str] | None = None) -> None:
            b. Print "Downloading FLUX.1 schnell model (~23 GB)..." to stderr
            c. Load config, resolve token (HF_TOKEN env var, then config.huggingface.token)
            d. Set HF_TOKEN in env if resolved from config
-           e. Call download_flux_weights()
+           e. Call download_model_weights(slug)
            f. On TokenRequiredError: print instructions (HF_TOKEN, token URL) → exit 1
            g. On other Exception: print "Download failed: ..." → exit 1
            h. On success: print "Model downloaded successfully to: <path>" → exit 0
@@ -470,9 +477,17 @@ def main(argv: List[str] | None = None) -> None:
         # Download model dispatch — early exit before normal generation flow
         if args.download_model:
             from .model.registry import get_model_spec
-            from .model.weights import TokenRequiredError, download_flux_weights
+            from .model.weights import TokenRequiredError, download_model_weights
 
-            schnell_spec = get_model_spec(FLUX1_SCHNELL)
+            # The slug is validated here rather than via argparse `choices`
+            # so the error names the flag's own vocabulary; `nargs="?"`
+            # would otherwise reject a bare --download-model against choices.
+            if args.download_model not in iter_model_slugs():
+                parser.error(
+                    f"unknown model {args.download_model!r} for --download-model; "
+                    f"choose from {', '.join(iter_model_slugs())}"
+                )
+            spec = get_model_spec(args.download_model)
 
             config_path = args.config if args.config is not None else CONFIG_PATH
             config = load_config(config_path)
@@ -482,21 +497,21 @@ def main(argv: List[str] | None = None) -> None:
             if token and not os.environ.get("HF_TOKEN"):
                 os.environ["HF_TOKEN"] = token
 
-            print(
-                f"{schnell_spec.display_name} is available under the FLUX.1 [schnell] "
-                "Non-Commercial License.\n"
-                f"Review the license before use: {schnell_spec.license_url}",
-                file=sys.stderr,
-            )
-            print(f"Downloading {schnell_spec.display_name} model (~23 GB)...", file=sys.stderr)
+            if spec.license_url:
+                print(
+                    f"{spec.display_name} is distributed under its own license.\n"
+                    f"Review the license before use: {spec.license_url}",
+                    file=sys.stderr,
+                )
+            print(f"Downloading {spec.display_name}...", file=sys.stderr)
 
             try:
-                model_path = download_flux_weights()
+                model_path = download_model_weights(spec.slug)
                 print(f"Model downloaded successfully to: {model_path}", file=sys.stderr)
                 sys.exit(0)
             except TokenRequiredError:
                 print(
-                    f"HuggingFace token required to download {schnell_spec.display_name}.\n"
+                    f"HuggingFace token required to download {spec.display_name}.\n"
                     "Set your token with:\n"
                     "  export HF_TOKEN=<your_token>\n"
                     "Or add to config file "
@@ -506,7 +521,7 @@ def main(argv: List[str] | None = None) -> None:
                     "Get a token at: "
                     "https://huggingface.co/settings/tokens\n"
                     "Then accept the model license at: "
-                    f"{schnell_spec.license_url}",
+                    f"{spec.license_url}",
                     file=sys.stderr,
                 )
                 sys.exit(1)

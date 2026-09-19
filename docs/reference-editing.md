@@ -216,14 +216,21 @@ treat it as you would any other read-scope credential. Never commit it
 to version control. See [Configuration Reference](configuration.md) for
 the precedence rules.
 
-**Downloading weights.** The `--download-model` flag downloads the
-FLUX.1 [schnell] weights (~23 GB) and exits. Other registered models
-can be obtained by running the same one-time download through the
-HuggingFace tooling that already populates the cache
-(`huggingface-cli download black-forest-labs/FLUX.2-klein-4B`, etc.) or
-by triggering a load in textbrush, which prints the exact
-`huggingface-cli` command needed to fetch a missing model. Editing
-models are large; allow time and disk space accordingly.
+**Downloading weights.** The `--download-model` flag downloads a
+model's weights and exits. Given no value it fetches FLUX.1 [schnell]
+(~23 GB); given a registry slug it fetches that model instead:
+
+```bash
+textbrush --download-model                     # FLUX.1 schnell (default)
+textbrush --download-model flux1-kontext-dev   # gated: needs a token
+textbrush --download-model flux2-klein-4b      # ungated: no token needed
+```
+
+`make download-model MODEL=<slug>` does the same through the build
+system. FLUX.1 [schnell] and FLUX.1 [Kontext] dev are gated and require
+a token plus an accepted license; FLUX.2 [klein] 4B is not gated and
+downloads anonymously. Editing models are large; allow time and disk
+space accordingly.
 
 **Hardware.** FLUX.1 [schnell] needs roughly 12 GB of VRAM in
 BFloat16 on CUDA, or about 16 GB of unified memory on Apple Silicon.

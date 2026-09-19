@@ -76,9 +76,13 @@ Then download the release binary for your platform and run it directly. `uv` is 
 # Install dependencies
 uv sync
 
-# Download model (requires HuggingFace token)
+# Download the default model, FLUX.1 schnell (gated: needs a HuggingFace token)
 export HF_TOKEN="hf_xxxxxxxxxxxxx"
 uv run textbrush --download-model
+
+# Or download one of the reference-editing models by slug
+uv run textbrush --download-model flux1-kontext-dev   # gated, needs HF_TOKEN
+uv run textbrush --download-model flux2-klein-4b      # ungated, no token needed
 
 # Build the application
 make build
@@ -215,6 +219,7 @@ Configuration priority: CLI arguments > environment variables > config file > de
 ```bash
 make install        # Install dependencies
 uv run textbrush --download-model  # Download FLUX.1 schnell (requires HF_TOKEN)
+uv run textbrush --download-model flux2-klein-4b  # Or any registry slug
 ```
 
 ### Development Tasks

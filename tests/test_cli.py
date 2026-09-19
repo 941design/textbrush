@@ -17,6 +17,7 @@ from textbrush.cli import (
     merge_cli_args_with_config,
     validate_args,
 )
+from textbrush.model.registry import FLUX1_SCHNELL, iter_model_slugs
 
 # Note: sample_config fixture is provided by conftest.py
 
@@ -40,7 +41,7 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args([])
         assert args.prompt is None
-        assert args.download_model is False
+        assert args.download_model is None
 
     @given(st.text(min_size=1).filter(lambda s: not s.startswith("-")))
     @settings(suppress_health_check=[HealthCheck.filter_too_much])
@@ -764,16 +765,16 @@ class TestDownloadModelFlag:
     """Tests for --download-model flag: parser registration and mutual exclusivity."""
 
     def test_download_model_flag_in_parser(self):
-        """Parser includes --download-model flag (AC-001)."""
+        """Bare --download-model resolves to the default slug (AC-001)."""
         parser = build_parser()
         args = parser.parse_args(["--download-model"])
-        assert args.download_model is True
+        assert args.download_model == FLUX1_SCHNELL
 
-    def test_download_model_defaults_to_false(self):
-        """--download-model defaults to False when not provided (AC-002)."""
+    def test_download_model_defaults_to_none(self):
+        """--download-model is None when not provided (AC-002)."""
         parser = build_parser()
         args = parser.parse_args(["--prompt", "test"])
-        assert args.download_model is False
+        assert args.download_model is None
 
     @patch("textbrush.cli.load_config")
     def test_no_args_exits_2(self, mock_load_config, sample_config, capsys):
@@ -810,7 +811,7 @@ class TestDownloadModelDispatch:
     """Tests for --download-model dispatch in main(): license, progress, success, errors."""
 
     @patch("textbrush.cli.load_config")
-    @patch("textbrush.model.weights.download_flux_weights")
+    @patch("textbrush.model.weights.download_model_weights")
     def test_download_model_prints_license_and_progress(
         self, mock_download, mock_load_config, sample_config, capsys
     ):
@@ -825,10 +826,10 @@ class TestDownloadModelDispatch:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "https://huggingface.co/black-forest-labs/FLUX.1-schnell" in captured.err
-        assert "Downloading FLUX.1 schnell model (~23 GB)..." in captured.err
+        assert "Downloading FLUX.1 schnell..." in captured.err
 
     @patch("textbrush.cli.load_config")
-    @patch("textbrush.model.weights.download_flux_weights")
+    @patch("textbrush.model.weights.download_model_weights")
     def test_download_model_success_prints_path_and_exits_0(
         self, mock_download, mock_load_config, sample_config, capsys
     ):
@@ -846,7 +847,7 @@ class TestDownloadModelDispatch:
         assert captured.out.strip() == ""
 
     @patch("textbrush.cli.load_config")
-    @patch("textbrush.model.weights.download_flux_weights")
+    @patch("textbrush.model.weights.download_model_weights")
     def test_download_model_token_required_error(
         self, mock_download, mock_load_config, sample_config, capsys
     ):
@@ -867,7 +868,7 @@ class TestDownloadModelDispatch:
         assert "[huggingface]" in captured.err
 
     @patch("textbrush.cli.load_config")
-    @patch("textbrush.model.weights.download_flux_weights")
+    @patch("textbrush.model.weights.download_model_weights")
     def test_download_uses_config_token_when_env_absent(
         self, mock_download, mock_load_config, sample_config, capsys
     ):
@@ -880,8 +881,9 @@ class TestDownloadModelDispatch:
 
         captured_token = {}
 
-        def capture_env_token():
+        def capture_env_token(model_id):
             captured_token["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            captured_token["model_id"] = model_id
             return Path("/tmp/hf_cache/flux")
 
         mock_download.side_effect = capture_env_token
@@ -892,9 +894,10 @@ class TestDownloadModelDispatch:
                 main(["--download-model"])
         assert exc_info.value.code == 0
         assert captured_token["HF_TOKEN"] == "hf_config_token"
+        assert captured_token["model_id"] == FLUX1_SCHNELL
 
     @patch("textbrush.cli.load_config")
-    @patch("textbrush.model.weights.download_flux_weights")
+    @patch("textbrush.model.weights.download_model_weights")
     def test_download_model_generic_error_exits_1(
         self, mock_download, mock_load_config, sample_config, capsys
     ):
@@ -980,3 +983,53 @@ class TestAspectRatioIsNotANoOp:
         # the way down: the ratio is the engine's to resolve.
         assert options.width is None
         assert options.height is None
+
+
+class TestDownloadModelAcceptsAnyRegistrySlug:
+    """--download-model is model-generic, not hard-wired to schnell.
+
+    Before this, both the flag and `make download-model` could only fetch
+    flux1-schnell, so the two editing models the reference workflow needs
+    had no supported download path at all.
+    """
+
+    @pytest.mark.parametrize("slug", list(iter_model_slugs()))
+    def test_each_registry_slug_parses(self, slug):
+        """Every registry slug is accepted as the flag's value."""
+        parser = build_parser()
+        args = parser.parse_args(["--download-model", slug])
+        assert args.download_model == slug
+
+    @patch("textbrush.cli.load_config")
+    def test_unknown_slug_exits_2(self, mock_load_config, sample_config, capsys):
+        """An unregistered slug is rejected, naming the valid choices."""
+        mock_load_config.return_value = sample_config
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--download-model", "not-a-model"])
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "unknown model 'not-a-model'" in captured.err
+        for slug in iter_model_slugs():
+            assert slug in captured.err
+
+    @pytest.mark.parametrize("slug", list(iter_model_slugs()))
+    @patch("textbrush.cli.load_config")
+    def test_requested_slug_reaches_the_downloader(self, mock_load_config, slug, sample_config):
+        """The slug the user named is the slug that gets downloaded."""
+        mock_load_config.return_value = sample_config
+        with patch("textbrush.model.weights.download_model_weights") as mock_download:
+            mock_download.return_value = Path("/cache/snapshot")
+            with pytest.raises(SystemExit) as exc_info:
+                main(["--download-model", slug])
+        assert exc_info.value.code == 0
+        mock_download.assert_called_once_with(slug)
+
+    @patch("textbrush.cli.load_config")
+    def test_bare_flag_still_downloads_schnell(self, mock_load_config, sample_config):
+        """Bare --download-model keeps its previous behaviour."""
+        mock_load_config.return_value = sample_config
+        with patch("textbrush.model.weights.download_model_weights") as mock_download:
+            mock_download.return_value = Path("/cache/snapshot")
+            with pytest.raises(SystemExit):
+                main(["--download-model"])
+        mock_download.assert_called_once_with(FLUX1_SCHNELL)

@@ -54,8 +54,12 @@ install:  ## Install Python dependencies with uv (includes model extras)
 ensure-model-env:  ## Ensure Python model dependencies are installed
 	uv sync --extra model
 
-download-model:  ## Download FLUX.1 schnell model (requires HuggingFace token)
-	uv run python scripts/download_model.py
+# Which model `download-model` fetches. Any registry slug: flux1-schnell,
+# flux1-kontext-dev, flux2-klein-4b.
+MODEL ?= flux1-schnell
+
+download-model:  ## Download a model's weights (MODEL=<slug>, default flux1-schnell; gated models need a HuggingFace token)
+	uv run python scripts/download_model.py $(MODEL)
 
 # ============================================================================
 # Development

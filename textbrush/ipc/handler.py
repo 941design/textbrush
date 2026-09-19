@@ -46,14 +46,35 @@ def _missing_model_message(model_id: str) -> str:
     schnell), so the instructions must name that model: a hard-coded
     FLUX.1 schnell text would point a user whose klein-4B install is
     missing at the wrong repository and the wrong license page.
+
+    The download command carries the slug for the same reason -- a bare
+    `--download-model` defaults to schnell, so omitting it would name the
+    right model and then hand the user a command that fetches a different
+    one.
+
+    Only the token and license-acceptance STEPS are conditional on
+    `spec.gated`: an ungated model (klein-4B) downloads anonymously, so
+    demanding a token would send the user after a credential they do not
+    need. The model page itself is still shown either way -- `gated` and
+    "has a page worth linking" are different facts, and a user who cannot
+    find the weights wants that URL regardless.
     """
     spec = get_model_spec(model_id)
+    steps = []
+    if spec.gated:
+        steps.append("Get a HuggingFace token from https://huggingface.co/settings/tokens")
+        if spec.license_url:
+            steps.append(f"Accept the license at {spec.license_url}")
+        steps.append(f"Run: HUGGINGFACE_HUB_TOKEN=hf_xxx textbrush --download-model {spec.slug}")
+    else:
+        if spec.license_url:
+            steps.append(f"Review the model page at {spec.license_url}")
+        steps.append(f"Run: textbrush --download-model {spec.slug}")
+    numbered = "\n".join(f"{n}. {step}" for n, step in enumerate(steps, start=1))
     return f"""\
 {spec.display_name} model not found. To set up the model:
 
-1. Get a HuggingFace token from https://huggingface.co/settings/tokens
-2. Accept the license at {spec.license_url}
-3. Run: HUGGINGFACE_HUB_TOKEN=hf_xxx textbrush --download-model
+{numbered}
 
 Or manually place model files in the HuggingFace cache directory."""
 

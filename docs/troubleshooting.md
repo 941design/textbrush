@@ -57,8 +57,10 @@ export HUGGINGFACE_HUB_TOKEN="hf_xxxxxxxxxxxxx"
 2. **Download model manually:**
 ```bash
 make download-model
-# Or:
-uv run python scripts/download_model.py
+# Or a specific model:
+make download-model MODEL=flux2-klein-4b
+# Or directly:
+uv run python scripts/download_model.py flux2-klein-4b
 ```
 
 3. **Accept license on HuggingFace:**
