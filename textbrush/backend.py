@@ -5,16 +5,19 @@ Orchestrates model loading, generation workflow, and image buffer management.
 
 from __future__ import annotations
 
-from pathlib import Path
 from dataclasses import replace
+from pathlib import Path
 
 from textbrush.buffer import BufferedImage, ImageBuffer
 from textbrush.config import Config
 from textbrush.inference.base import GenerationOptions
 from textbrush.inference.factory import create_engine
-from textbrush.worker import GenerationWorker, OnGenerationStartCallback
 from textbrush.references import normalize
-from textbrush.validation import DEFAULT_EDITING_PRESET, editing_preset_dimensions, validate_selection
+from textbrush.validation import (
+    editing_preset_dimensions,
+    validate_selection,
+)
+from textbrush.worker import GenerationWorker, OnGenerationStartCallback
 
 
 class TextbrushBackend:
@@ -131,7 +134,14 @@ class TextbrushBackend:
         verdict = validate_selection(active_model, len(active_references), active_preset)
         if not verdict.valid:
             raise ValueError(verdict.reason)
-        if active_preset in ("landscape-small", "landscape-medium", "landscape-large", "portrait-small", "portrait-medium", "portrait-large"):
+        if active_preset in (
+            "landscape-small",
+            "landscape-medium",
+            "landscape-large",
+            "portrait-small",
+            "portrait-medium",
+            "portrait-large",
+        ):
             width, height = editing_preset_dimensions(active_preset)
         options = GenerationOptions(
             seed=seed,
@@ -152,13 +162,22 @@ class TextbrushBackend:
         )
         self._worker.start()
 
-    def update_editing_config(self, *, model_id: str | None = None, reference_paths: list[str] | None = None,
-                              preset: str | None = None) -> dict:
+    def update_editing_config(
+        self,
+        *,
+        model_id: str | None = None,
+        reference_paths: list[str] | None = None,
+        preset: str | None = None,
+    ) -> dict:
         """Acknowledge a paused editing configuration; source files are decoded once here."""
         if self._worker and not self._worker.is_settled():
             raise RuntimeError("model and reference changes require a settled paused worker")
         candidate_model = model_id or self.model_id
-        candidate_refs = self.references if reference_paths is None else tuple(normalize(Path(path)) for path in reference_paths)
+        candidate_refs = (
+            self.references
+            if reference_paths is None
+            else tuple(normalize(Path(path)) for path in reference_paths)
+        )
         candidate_preset = preset if preset is not None else self.preset
         verdict = validate_selection(candidate_model, len(candidate_refs), candidate_preset)
         # An incompatible combination is acknowledged and held intact; resume blocks it.
@@ -172,16 +191,26 @@ class TextbrushBackend:
                 raise
             self.engine = next_engine
             previous_engine.unload()
-        self.model_id, self.references, self.preset = candidate_model, candidate_refs, candidate_preset
+        self.model_id, self.references, self.preset = (
+            candidate_model,
+            candidate_refs,
+            candidate_preset,
+        )
         if self._worker and verdict.valid:
             self._worker.engine = self.engine
-            self._worker.update_config(self._worker.prompt, replace(
-                self._worker.options, references=candidate_refs, model_id=candidate_model
-            ))
+            self._worker.update_config(
+                self._worker.prompt,
+                replace(self._worker.options, references=candidate_refs, model_id=candidate_model),
+            )
             self.buffer.clear()
-        return {"model_id": candidate_model, "reference_count": len(candidate_refs), "preset": candidate_preset,
-                "compatible": verdict.valid, "incompatibility_reason": verdict.reason,
-                "required_model": verdict.required_model}
+        return {
+            "model_id": candidate_model,
+            "reference_count": len(candidate_refs),
+            "preset": candidate_preset,
+            "compatible": verdict.valid,
+            "incompatibility_reason": verdict.reason,
+            "required_model": verdict.required_model,
+        }
 
     def get_next_image(self, timeout: float | None = 30.0) -> BufferedImage | None:
         """Get next generated image (blocks if buffer empty).

@@ -17,7 +17,10 @@ def create_mock_config():
     mock_config.inference = Mock(spec=InferenceConfig)
     mock_config.inference.backend = "flux"
     mock_config.model = Mock(spec=ModelConfig)
+    mock_config.model.selected_id = None
     mock_config.model.buffer_size = 8
+    mock_config.editing = Mock()
+    mock_config.editing.default_preset = "landscape-medium"
     return mock_config
 
 

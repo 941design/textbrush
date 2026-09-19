@@ -75,6 +75,7 @@ class UpdateConfigCommand:
     references: list[str] | None = None
     preset: str | None = None
 
+
 @dataclass
 class ConfigAckEvent:
     model_id: str

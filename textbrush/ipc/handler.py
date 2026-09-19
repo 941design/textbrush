@@ -468,17 +468,43 @@ class MessageHandler:
         # parked. Plain prompt/dimension updates retain the legacy behavior.
         if cmd.model_id is not None or cmd.references is not None or cmd.preset is not None:
             from textbrush.ipc.protocol import ConfigAckEvent
-            if not self.backend.is_paused() or not self.backend._worker or not self.backend._worker.is_settled():
-                server.send(Message(MessageType.ERROR, dataclass_to_dict(
-                    ErrorEvent(message="model and reference changes require paused, settled generation", fatal=False))))
+
+            if (
+                not self.backend.is_paused()
+                or not self.backend._worker
+                or not self.backend._worker.is_settled()
+            ):
+                server.send(
+                    Message(
+                        MessageType.ERROR,
+                        dataclass_to_dict(
+                            ErrorEvent(
+                                message=(
+                                    "model and reference changes require paused, settled generation"
+                                ),
+                                fatal=False,
+                            )
+                        ),
+                    )
+                )
                 return
             try:
                 acknowledgement = self.backend.update_editing_config(
-                    model_id=cmd.model_id, reference_paths=cmd.references, preset=cmd.preset)
+                    model_id=cmd.model_id, reference_paths=cmd.references, preset=cmd.preset
+                )
             except Exception as exc:
-                server.send(Message(MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(exc), fatal=False))))
+                server.send(
+                    Message(
+                        MessageType.ERROR,
+                        dataclass_to_dict(ErrorEvent(message=str(exc), fatal=False)),
+                    )
+                )
                 return
-            server.send(Message(MessageType.CONFIG_ACK, dataclass_to_dict(ConfigAckEvent(**acknowledgement))))
+            server.send(
+                Message(
+                    MessageType.CONFIG_ACK, dataclass_to_dict(ConfigAckEvent(**acknowledgement))
+                )
+            )
             return
 
         # Only validate aspect_ratio if using preset (not "custom") and no explicit dimensions
@@ -633,9 +659,21 @@ class MessageHandler:
         if is_paused:
             # Incompatible acknowledged selections are retained, but never run.
             from textbrush.validation import validate_selection
-            verdict = validate_selection(self.backend.model_id, len(self.backend.references), self.backend.preset)
+
+            verdict = validate_selection(
+                self.backend.model_id, len(self.backend.references), self.backend.preset
+            )
             if not verdict.valid:
-                server.send(Message(MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=verdict.reason or "incompatible configuration", fatal=False))))
+                server.send(
+                    Message(
+                        MessageType.ERROR,
+                        dataclass_to_dict(
+                            ErrorEvent(
+                                message=verdict.reason or "incompatible configuration", fatal=False
+                            )
+                        ),
+                    )
+                )
                 return
             self.backend.resume_generation()
             new_paused = False

@@ -30,7 +30,11 @@ def create_engine(backend: str, model_id: str = "flux1-schnell") -> InferenceEng
         3. If unknown: raise ValueError with helpful message
     """
     if backend == "flux":
-        from textbrush.inference.flux import Flux2KleinInferenceEngine, FluxInferenceEngine, FluxKontextInferenceEngine
+        from textbrush.inference.flux import (
+            Flux2KleinInferenceEngine,
+            FluxInferenceEngine,
+            FluxKontextInferenceEngine,
+        )
         from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX2_KLEIN_4B
 
         if model_id == FLUX1_KONTEXT_DEV:

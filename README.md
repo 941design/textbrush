@@ -1,5 +1,26 @@
 # Textbrush
 
+Text-to-image generation tool with customizable workflows and local model inference.
+
+## Features
+
+- **Command-line interface** for text-to-image generation with FLUX.1 schnell model
+- **Background image generation** with 8-image FIFO buffer for smooth workflows
+- **Desktop slideshow UI** for rapid image review with keyboard/mouse controls
+- **Real-time buffer visualization** showing generation progress as images are created
+- **Dark/light theme toggle** with persistent preference and smooth transitions
+- **Bidirectional navigation** through image history with position indicator
+- **Image deletion** with Cmd/Ctrl+Delete to curate selections
+- **Multi-image workflows** with batch acceptance of all retained images
+- **Visual feedback** for keyboard shortcuts with button flash animations
+- **Image metadata display** with split-view panel showing prompt, model, and seed for each image
+- **Flexible configuration** via CLI arguments, environment variables, or TOML config file
+- **Local model management** with automatic HuggingFace cache discovery
+- **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends
+- **XDG-compliant** configuration directory (~/.config/textbrush/)
+- **Reproducible results** via seed parameter for deterministic generation
+- **IPC Protocol** for Tauri-Python communication with thread-safe message delivery
+
 ## Reference editing
 
 Textbrush can edit local images with locally installed FLUX models. `flux1-schnell`
@@ -29,27 +50,6 @@ Editing presets are `landscape-small` (512×384), `landscape-medium` (768×576),
 `landscape-medium`. Models stay in local Hugging Face storage; gated FLUX.1 models
 need an accepted license and credentials, while FLUX.2 is ungated. Editing models
 need substantial GPU memory. Face-aware cropping is deliberately deferred.
-
-Text-to-image generation tool with customizable workflows and local model inference.
-
-## Features
-
-- **Command-line interface** for text-to-image generation with FLUX.1 schnell model
-- **Background image generation** with 8-image FIFO buffer for smooth workflows
-- **Desktop slideshow UI** for rapid image review with keyboard/mouse controls
-- **Real-time buffer visualization** showing generation progress as images are created
-- **Dark/light theme toggle** with persistent preference and smooth transitions
-- **Bidirectional navigation** through image history with position indicator
-- **Image deletion** with Cmd/Ctrl+Delete to curate selections
-- **Multi-image workflows** with batch acceptance of all retained images
-- **Visual feedback** for keyboard shortcuts with button flash animations
-- **Image metadata display** with split-view panel showing prompt, model, and seed for each image
-- **Flexible configuration** via CLI arguments, environment variables, or TOML config file
-- **Local model management** with automatic HuggingFace cache discovery
-- **Hardware auto-detection** supporting CUDA, Apple MPS, and CPU backends
-- **XDG-compliant** configuration directory (~/.config/textbrush/)
-- **Reproducible results** via seed parameter for deterministic generation
-- **IPC Protocol** for Tauri-Python communication with thread-safe message delivery
 
 ## Requirements
 

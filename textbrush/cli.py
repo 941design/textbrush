@@ -10,10 +10,15 @@ from pathlib import Path
 from typing import List
 
 from .config import Config, load_config
-from .paths import CONFIG_PATH
 from .model.registry import FLUX1_SCHNELL, iter_model_slugs
+from .paths import CONFIG_PATH
 from .references import ReferenceImageError, normalize
-from .validation import DEFAULT_EDITING_PRESET, EDITING_PRESETS, editing_preset_dimensions, validate_selection
+from .validation import (
+    DEFAULT_EDITING_PRESET,
+    EDITING_PRESETS,
+    editing_preset_dimensions,
+    validate_selection,
+)
 
 # Supported aspect ratios with their available resolutions (smallest to largest)
 # Each ratio maps to a list of (width, height) tuples
@@ -131,12 +136,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=f"Image aspect ratio (choices: {', '.join(SUPPORTED_RATIOS.keys())})",
     )
-    parser.add_argument("--model", choices=list(iter_model_slugs()), default=None,
-                        help="Local model: flux1-schnell, flux1-kontext-dev, or flux2-klein-4b")
-    parser.add_argument("--reference", action="append", type=Path, default=[], metavar="PATH",
-                        help="Reference image (repeat up to four times; order is preserved)")
-    parser.add_argument("--preset", choices=list(EDITING_PRESETS), default=None,
-                        help="Editing output preset")
+    parser.add_argument(
+        "--model",
+        choices=list(iter_model_slugs()),
+        default=None,
+        help="Local model: flux1-schnell, flux1-kontext-dev, or flux2-klein-4b",
+    )
+    parser.add_argument(
+        "--reference",
+        action="append",
+        type=Path,
+        default=[],
+        metavar="PATH",
+        help="Reference image (repeat up to four times; order is preserved)",
+    )
+    parser.add_argument(
+        "--preset", choices=list(EDITING_PRESETS), default=None, help="Editing output preset"
+    )
 
     parser.add_argument(
         "--format",
@@ -522,7 +538,11 @@ def main(argv: List[str] | None = None) -> None:
             prompt=args.prompt,
             seed=args.seed,
             aspect_ratio=args.aspect_ratio if args.aspect_ratio else "1:1",
-            width=width, height=height, references=references, model_id=selected_model, preset=preset,
+            width=width,
+            height=height,
+            references=references,
+            model_id=selected_model,
+            preset=preset,
         )
 
         import time
@@ -649,7 +669,11 @@ def run_headless(
             prompt=prompt,
             seed=seed,
             aspect_ratio=aspect_ratio,
-            width=width, height=height, references=references, model_id=model_id, preset=preset,
+            width=width,
+            height=height,
+            references=references,
+            model_id=model_id,
+            preset=preset,
         )
 
         if auto_abort:

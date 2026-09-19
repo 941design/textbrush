@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from textbrush.inference.base import GenerationOptions, GenerationResult, InferenceEngine
-from textbrush.model.registry import FLUX1_SCHNELL, FLUX1_KONTEXT_DEV, FLUX2_KLEIN_4B, get_repo_id
+from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX1_SCHNELL, FLUX2_KLEIN_4B, get_repo_id
 from textbrush.model.weights import load_local_only
 
 logger = logging.getLogger(__name__)
@@ -164,11 +164,15 @@ class FluxInferenceEngine(InferenceEngine):
         pipeline_class = FluxPipeline
         if self.model_id == FLUX1_KONTEXT_DEV:
             from diffusers import FluxKontextPipeline
+
             pipeline_class = FluxKontextPipeline
         elif self.model_id == FLUX2_KLEIN_4B:
             from diffusers import Flux2KleinPipeline
+
             pipeline_class = Flux2KleinPipeline
-        self._pipeline = load_local_only(pipeline_class.from_pretrained, self.model_id, root=root, torch_dtype=self._dtype)
+        self._pipeline = load_local_only(
+            pipeline_class.from_pretrained, self.model_id, root=root, torch_dtype=self._dtype
+        )
 
         if self._device == "cuda":
             self._pipeline.enable_model_cpu_offload()
@@ -274,8 +278,14 @@ class FluxInferenceEngine(InferenceEngine):
             start_time = time.perf_counter()
             settings = self.default_sampling_settings | options.sampling_settings
             steps = int(settings.pop("num_inference_steps", options.steps))
-            kwargs = dict(prompt=prompt, width=generated_width, height=generated_height,
-                          num_inference_steps=steps, generator=generator, **settings)
+            kwargs = dict(
+                prompt=prompt,
+                width=generated_width,
+                height=generated_height,
+                num_inference_steps=steps,
+                generator=generator,
+                **settings,
+            )
             if options.references:
                 # Pipelines receive copies so held acknowledgement-time data remains immutable.
                 images = [reference.pixel_data.copy() for reference in options.references]
@@ -371,11 +381,13 @@ class FluxInferenceEngine(InferenceEngine):
 
 class FluxKontextInferenceEngine(FluxInferenceEngine):
     """FLUX.1 Kontext [dev] single-reference editing engine."""
+
     def __init__(self) -> None:
         super().__init__(FLUX1_KONTEXT_DEV)
 
 
 class Flux2KleinInferenceEngine(FluxInferenceEngine):
     """FLUX.2 [klein] 4B ordered multi-reference editing engine."""
+
     def __init__(self) -> None:
         super().__init__(FLUX2_KLEIN_4B)
