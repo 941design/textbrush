@@ -744,7 +744,7 @@ has exactly two production call sites, and all listed tests pass.
 
 ---
 
-- [ ] **9.1 Desktop shell: file dialog command (S10a) (T09)**
+- [x] **9.1 Desktop shell: file dialog command (S10a) (T09)**
 
 **Goal.** A Tauri command that opens the native multi-file dialog and returns only a list of
 paths. No validation in Rust.
