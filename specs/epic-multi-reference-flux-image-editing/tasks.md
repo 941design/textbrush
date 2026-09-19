@@ -9,21 +9,18 @@ Read `architecture.md` once before starting (module map, boundary rules, preset 
 
 ## 0. How to work this file
 
-1. Find the first task in the status table (section 2) that is not `done`. Do only that task.
-2. Read the task's **Files** and every file it names before editing anything.
-3. Implement **Steps** in order. Write the **Tests** listed. Do not skip a test because it is
-   hard; if it is impossible, write why in the status row and leave the task `blocked`.
-4. Run the **Verify** commands. All must pass. Then run the global gate:
+1. For remaining work, find the first unchecked item in section 4. Do only that item.
+2. Read the checkbox and its named files before editing. Also read the relevant ACs.
+3. Implement that checkbox and its tests. If blocked, leave it unchecked and explain why
+   on the same line; do not silently skip it.
+4. Run the checkbox's local checks. Then run the global gate:
    ```bash
    uv run ruff check textbrush tests && uv run ruff format --check textbrush tests
    uv run pytest tests --ignore=tests/test_buffer_stress.py -m "not slow and not integration" -q
    ```
-   Baseline expectation for the pytest line: the only failures allowed are the 61 pre-existing
-   failures in `tests/test_config_controls.py` and `tests/test_config_controls_integration.py`
-   (they need a compiled `config_controls.js`; see task T10 step 9, which fixes them). Any other
-   failure is yours.
-5. Update the status table row (`done` / `blocked` + one-line note). Commit with a message
-   `feat(<module>): <task title>` on `master`. One commit per task.
+   T10 committed `config_controls.js`; the 61 prior failures are fixed. Any failure is yours.
+5. Check the completed item in section 4, adding a short test result on that
+   line. Commit with a descriptive message on `master`. One commit per checkbox.
 6. Never revert, delete, or overwrite files you did not create in the current task. Never
    rewrite git history.
 
@@ -119,11 +116,9 @@ Rules that apply to every task (from `CLAUDE.md` and `architecture.md`):
 | T07 | IPC pause gate, acknowledgement, launch resolution, wire mirror (S8) | done | Python IPC 76 passed/13 skipped; Rust update-config 5 passed; TypeScript typecheck passed; init/update fields and `config_ack` are mirrored. |
 | T08 | CLI model and reference arguments (S9) | done | CLI/E2E/call-site suite: 143 passed, 8 skipped; fast gate: 1113 passed, 11 skipped, only 61 documented missing-UI-build failures. |
 | T09 | Desktop shell: file dialog command (S10a) | done | Native multi-pick command registered with dialog permission and asset scope; cargo check passes and cargo test passes 58/58. |
-| T10 | Desktop UI: picker, selector, presets, acknowledgement (S10b) | complete | UI picker, model and preset controls, acknowledgement rollback, previews; 143 UI tests and 1175 Python gate tests passed. |
-| T11 | Headless-browser accessibility harness (S11) | pending | |
-| T12 | Cross-cutting provenance integration tests (S12) | pending | |
-| T13 | User documentation and release notes (S13) | pending | |
-| T14 | Epic closure | pending | |
+| T10 | Desktop UI: picker, selector, presets, acknowledgement (S10b) | done | UI picker, model and preset controls, acknowledgement rollback, previews; 143 UI tests and 1175 Python gate tests passed. |
+
+Remaining work is tracked by the flat checkboxes in section 4. Each checkbox is one commit.
 
 ## 3. Tasks
 
@@ -839,166 +834,31 @@ native dialog.
 
 ---
 
-### T11. Headless-browser accessibility harness (S11)
+## 4. Remaining work: one checkbox per commit
 
-**Goal.** Keyboard reachability, accessible names, text-form errors, and the four-preview
-layout are asserted against the rendered interface in a real browser with the Tauri bridge
-stubbed. Owned AC: AC-ACCESS-1.
+Work top to bottom. For each checkbox, read the named files, make the change, run its local
+check and the section 0 global gate, check the box with a short result, and commit. Leave a
+blocked item unchecked with a concrete reason. Preserve unrelated changes, including the
+existing `.gitignore` modification. The ACs and architecture remain authoritative.
 
-**Files.** `src-tauri/ui/a11y/` (new: `playwright.config.ts`, `tauri-stub.ts`,
-`reference-controls.spec.ts`, `serve.mjs`), `src-tauri/ui/package.json`, `Makefile`
-(`test-ui-a11y` target), `docs/` (one paragraph in the developer section of README or
-`docs/troubleshooting.md` on installing browsers).
-
-**Steps.**
-1. Add dev dependencies `@playwright/test` and `esbuild` is already present. Add scripts
-   `"build:a11y": "esbuild main.ts --bundle --outfile=a11y/bundle.a11y.js --format=esm --target=es2022 --alias:@tauri-apps/api/core=./a11y/tauri-stub.ts --alias:@tauri-apps/api/event=./a11y/tauri-stub.ts"`
-   and `"test:a11y": "npm run build:a11y && playwright test -c a11y/playwright.config.ts"`.
-2. `tauri-stub.ts` exports `invoke`, `listen`, `convertFileSrc`: `invoke` records calls and
-   returns canned results (`pick_reference_files` returns the path list the test injected via
-   `window.__a11yPaths`); `listen` stores handlers on `window.__a11yEmit(type, payload)` so
-   tests can dispatch `state_changed` and `config_ack`; `convertFileSrc` returns a data URL of
-   a 1x1 PNG.
-3. `serve.mjs`: static server for `src-tauri/ui` on a free port, serving an `a11y/index.html`
-   copy of `index.html` whose script tag points at `bundle.a11y.js`.
-4. Spec assertions (Playwright, Chromium):
-   - Tab from the prompt input reaches, in order: model radios, add button, each preview's
-     remove and replace buttons, preset radios; use real `keyboard.press('Tab')` and
-     `document.activeElement` checks. Activate remove with `Enter` and `Space`.
-   - `getByRole('button', { name: /Remove reference 2 of 4/ })` and the img `alt` values
-     exist for four injected paths; alt text contains the filename and position and no other
-     words.
-   - Emit a `config_ack` with `compatible=false`; assert the reason is visible text inside
-     `[role=alert]` and `getComputedStyle` colour is not the only difference (check text
-     content non-empty).
-   - Layout at the supported window size `1024x768` (from `tauri.conf.json`) and at the
-     smallest size the app allows if resizable (it is not; test 1024x768 and 1280x800): with
-     four previews, every control's `boundingBox` lies inside the viewport and inside its
-     scroll container, and `scrollWidth <= clientWidth` on `.config-controls`.
-   - Theme and font-size: toggle the theme button and each font-size radio; assert the new
-     controls' computed `color` and `font-size` change accordingly (values differ between
-     settings).
-   - Disabled state: before any `state_changed(paused, settled=true)`, the add button and
-     model radios report `disabled === true` and clicking them does not call `invoke`.
-5. `Makefile`: `test-ui-a11y: cd src-tauri/ui && npx playwright install chromium && npm run test:a11y`.
-   Do not add it to `make test` (browser download is heavy); document it.
-
-**Verify.** `cd src-tauri/ui && npx playwright install chromium && npm run test:a11y`
-
-**Done when.** The spec passes headless with no Python backend running.
-
----
-
-### T12. Cross-cutting provenance integration tests (S12)
-
-**Goal.** Against the real handler, backend, worker, and mock engine (only the pipeline is a
-double), prove per-result provenance across pause/update/resume/generate/navigate/delete
-sequences and the six adversarial interleavings. Owned AC: AC-STATE-2.
-
-**Files.** `tests/test_state_provenance_integration.py` (new),
-`tests/e2e/test_config_change_flow.py` (new). Fix any production gap in the owning module's
-file, not in these tests.
-
-**Steps.**
-1. Build a helper that constructs `MessageHandler(config)` with `create_engine` patched to
-   return a `MockInferenceEngine` whose `generate` can be gated by a `threading.Event`, and
-   a fake server that records every message in order. Drive `handle_init` with
-   `start_paused` semantics as the app does today.
-2. Scenarios (each its own test, named after the guarantee):
-   - `test_stale_result_never_visible`: start generation A, pause, wait settled, switch to
-     Kontext with one reference, resume; assert no `image_ready` whose record carries model A
-     appears after the `config_ack`.
-   - `test_control_enablement_window_is_empty`: the first `state_changed(paused, settled=true)`
-     is emitted only after the gated `generate` returned.
-   - `test_snapshot_attribution_across_two_changes`: three configurations in one session;
-     for each delivered image, read the preview PNG metadata (`Prompt`, `Model`, `Seed`,
-     `Width`, `Height`) and the handler's index map record; assert they match the
-     configuration active when that image's generation started, through navigation and a
-     `handle_delete` of the middle image.
-   - `test_no_partial_reference_set`: switch from two references to three while a generation
-     is gated; assert the engine never received a set that is neither the old nor the new
-     tuple.
-   - `test_decode_lifetime`: acknowledge, delete the source file, generate twice; both use the
-     held data; after `handle_abort`, `backend.references == ()`.
-   - `test_resume_during_update`: as in T07 but through the full stack.
-   - `test_no_reference_identity_persisted`: for every preview and accepted file, the PNG key
-     set is the closed set from T06 and no chunk value contains any reference path, basename,
-     or the `reference_ids` strings.
-3. `tests/e2e/test_config_change_flow.py`: subprocess-level headless run with
-   `--model flux2-klein-4b` and two fixture references against the mock engine (patch via an
-   env var only if one already exists; otherwise mark `@pytest.mark.slow` and gate on
-   `--run-slow`). Do not run `--run-slow` yourself.
-
-**Verify.** `uv run pytest tests/test_state_provenance_integration.py -q` (twice).
-
-**Done when.** All seven scenarios pass deterministically and any production fix made here is
-committed under the owning module's task label.
-
----
-
-### T13. User documentation and release notes (S13)
-
-**Goal.** A reader who has not seen the spec can use reference editing from desktop and CLI.
-Owned AC: AC-DOC-1.
-
-**Files.** `README.md`, `docs/reference-editing.md` (new), `docs/configuration.md`
-(cross-link only), `CHANGELOG.md`.
-
-**Steps.**
-1. `docs/reference-editing.md` sections, each with real content:
-   - Models and capabilities (table: slug, display name, mode, reference count).
-   - Supported reference formats and the four-file limit; duplicates allowed.
-   - Output presets: the six identifiers with dimensions; default `landscape-medium`; text-mode
-     aspect ratios unchanged for schnell.
-   - CLI examples: one Kontext example, one FLUX.2 example with three references, one showing
-     the validation error for two references on Kontext. Every command must run as written
-     against `uv run textbrush --help` (check flags exist).
-   - Desktop walkthrough: pause, wait for the settled indicator, pick files, choose model,
-     choose preset, resume; what the compatibility message means; why the model is never
-     switched automatically.
-   - Model storage, gated licence, credentials (`TEXTBRUSH_HF_TOKEN` or whatever
-     `docs/configuration.md` documents), `--download-model <slug>`, hardware and memory
-     expectations (state that editing models need substantially more VRAM than schnell and
-     that two models are never held in memory at once).
-   - Prompt guidance: prompt wording controls identity and reference use; no guaranteed
-     identity fidelity; references are equal and untyped.
-   - Privacy: local-only processing; PNG metadata key list; JPEG has none; no reference paths,
-     hashes, or bytes are written.
-   - Limitations and roadmap: no face-aware cropping, masks, roles, weights, iterative editing;
-     face-aware selection is a later direction.
-2. `README.md`: shorten the section moved in T01 to a short paragraph plus a link to
-   `docs/reference-editing.md`; keep two copy-pasteable examples.
-3. `CHANGELOG.md` "Unreleased": "Added" entry describing the additive editing workflow, naming
-   FLUX.2 [klein] 4B as required for two to four references, and a "Changed" entry for the
-   diffusers minimum version.
-4. Verify each documented command parses: run each with `--help`-style dry checks or with a
-   patched backend in a throwaway script; delete the script afterwards.
-
-**Verify.** Manual review against the AC-DOC-1 list; `uv run textbrush --help` shows every
-flag used in the examples.
-
-**Done when.** Every bullet in AC-DOC-1 maps to a paragraph with content.
-
----
-
-### T14. Epic closure
-
-**Goal.** The epic's own records reflect what shipped.
-
-**Files.** `specs/epic-multi-reference-flux-image-editing/reconciliation.json`,
-`epic-state.json`, `S3-reference-normalization/result.json`, this file.
-
-**Steps.**
-1. Run the full fast suite, `make check-all`, `cd src-tauri/ui && npm run check && npm test`,
-   and `cd src-tauri && cargo test`. Record results in the status table.
-2. Update `reconciliation.json`: one verdict per AC with the test file and test name that
-   proves it. Any AC still `unverifiable` must say why.
-3. Update `epic-state.json`: `completed_stories` S1 through S13, `status: "complete"` only if
-   every AC holds. Set `S3-reference-normalization/result.json` `status` to `done`.
-4. Remove any temporary files created during the tasks (scratch scripts, backups). Do not
-   remove `textbrush-missed-acceptance-criteria.md` or `implementation-state.json`; they
-   predate this epic.
-5. Ask the user before running the hardware-gated smoke test described in `spec.md` §15; it
-   is the release gate and needs real weights.
-
-**Done when.** The status table is all `done` or has an explicit `blocked` reason per row.
+- [ ] **S11-01: Browser build.** Add `@playwright/test` and `build:a11y`/`test:a11y` scripts in `src-tauri/ui/package.json`. Bundle `main.ts` with esbuild into `a11y/bundle.a11y.js`; alias both `@tauri-apps/api/core` and `@tauri-apps/api/event` to `a11y/tauri-stub.ts`. Create that stub with compiling placeholder exports; S11-02 fills in behavior. Run `npm install && npm run check && npm run build:a11y`.
+- [ ] **S11-02: Browser stub.** Implement `a11y/tauri-stub.ts` exports `invoke`, `listen`, `convertFileSrc`. Expose injectable picker paths, an invoke log, and an event emitter on `window`. Stub the startup commands used in `main.ts` (see `integration.test.js`); return a valid tiny PNG data URL for previews. Verify startup has no page errors.
+- [ ] **S11-03: Browser server.** Add `a11y/serve.mjs`, `a11y/playwright.config.ts`, an `a11y/index.html` copy pointing to the test bundle, and one browser smoke spec that loads the page without errors. Serve on a free local port; Playwright starts and stops the server. Run `npx playwright install chromium && npm run test:a11y` without a Python sidecar.
+- [ ] **S11-04: Keyboard semantics.** In `a11y/reference-controls.spec.ts`, emit `state_changed` with `{state:'paused',settled:true}`, inject four paths and acknowledge them, then use real Tab/Enter/Space to check model radios, add, each remove/replace, and preset radios. Check img alt and button accessible names include position and filename. T10's button wording is `Remove reference N: file`.
+- [ ] **S11-05: Browser states and layout.** Test disabled controls before settled, incompatible ack reason as visible text in `#reference-error[role=alert]`, theme and font-size computed-style changes, and no horizontal overflow at 1024x768 and 1280x800 with four previews. Allow vertical scrolling and check reachability. Run `npm run test:a11y`.
+- [ ] **S11-06: Browser test entry point.** Add `Makefile` target `test-ui-a11y` to install Chromium and run the a11y script. Document browser installation in an existing developer README/troubleshooting section; keep this heavy download out of `make test`. Verify target plus `npm run check && npm test`.
+- [ ] **S12-01: Deterministic full-stack fixture.** Add `tests/test_state_provenance_integration.py` with real `MessageHandler`/backend/worker, a fake ordered-message server, and a mock inference engine whose `generate` is gated by `threading.Event`. Reuse conventions from `test_ipc_handler.py`, `test_backend_start_generation.py`, and `test_worker.py`. Use bounded waits, clean shutdown, and a start-paused test.
+- [ ] **S12-02: Pause/stale results.** Add `test_control_enablement_window_is_empty`: settled is emitted only after gated generation returns. Add `test_stale_result_never_visible`: after pause, Kontext update with one reference, ack, and resume, no old-model result appears after ack. Run this test file twice.
+- [ ] **S12-03: Reference/update races.** Add `test_no_partial_reference_set`: engine sees only the old two-reference tuple or new three-reference tuple. Add `test_resume_during_update` through the full stack; assert message order and final acknowledged configuration. Run file twice.
+- [ ] **S12-04: Decode lifetime.** Add `test_decode_lifetime`: acknowledge a temp reference, remove source file, generate twice from held pixels, then abort and assert `backend.references == ()`. Run file twice.
+- [ ] **S12-05: Attribution through history.** Add `test_snapshot_attribution_across_two_changes`: generate under three configurations, navigate and delete the middle result, then compare every surviving preview PNG's Prompt/Model/Seed/Width/Height with its index-map record and generation snapshot. Run file twice.
+- [ ] **S12-06: Metadata privacy.** Add `test_no_reference_identity_persisted`: all preview and accepted PNGs have only T06's closed key set; no chunk value contains reference paths, basenames, or `reference_ids`. Run file twice.
+- [ ] **S12-07: CLI E2E collection.** Add `tests/e2e/test_config_change_flow.py` with `--model flux2-klein-4b` and two fixture references using a mock engine. Use an existing injection hook if available; otherwise mark slow and gate on `--run-slow`. Do not run real weights. Verify collection and fast suite twice. Fix any production gap in its owning module with a regression assertion.
+- [ ] **S13-01: Model/reference guide.** Create `docs/reference-editing.md` with three model slugs, display names, modes and reference counts; accepted .png/.jpg/.jpeg, four-file maximum, duplicates; six preset IDs/dimensions and default `landscape-medium`; unchanged schnell aspect ratios. Copy facts from `model/registry.py`, `validation.py`, and `architecture.md`. Cross-link `docs/configuration.md`.
+- [ ] **S13-02: CLI examples.** Add runnable Kontext and FLUX.2 (three references) examples plus two-reference Kontext validation failure. Check every flag with `uv run textbrush --help`; exercise parsing through a temporary patched backend if needed, then remove it. State actual error and exit code.
+- [ ] **S13-03: Desktop/operation guide.** Document pause, settled indication, picker, explicit model/preset selection, resume, compatibility messaging, storage/download command, gated license/credentials from `docs/configuration.md`, hardware needs, and one-model-at-a-time memory behavior.
+- [ ] **S13-04: Guidance/privacy/release notes.** Document prompt/identity uncertainty, equal untyped references, local processing, exact PNG keys and JPEG behavior, no stored reference identity, and limits (no face-aware cropping, masks, roles, weights, iterative editing). Condense README to a link plus two working examples. Update Unreleased CHANGELOG Added/Changed for editing, FLUX.2 [klein] 4B's 2–4 references, and diffusers floor. Review against AC-DOC-1.
+- [ ] **S14-01: Final gates.** Run full fast suite, `make check-all`, `cd src-tauri/ui && npm run check && npm test && npm run test:a11y`, and `cd src-tauri && cargo test`. Record results here. Fix failures in owning modules and rerun affected gates. Exclude real weights.
+- [ ] **S14-02: AC reconciliation.** Update `reconciliation.json` with a verdict for every AC and exact test file/test name proving it; give reasons for unverifiable ACs. Audit against `acceptance-criteria.md`, not just green suites.
+- [ ] **S14-03: Epic records.** If every AC holds, set `epic-state.json` to complete with S1–S13 and set `S3-reference-normalization/result.json` status to done. Remove only epic scratch files. Preserve `textbrush-missed-acceptance-criteria.md`, `implementation-state.json`, and user changes.
+- [ ] **S14-04: Hardware release gate.** Prepare the exact smoke command and expected evidence from `spec.md` §15, then ask the user before running because it loads real weights. If declined, record an explicit unverified release gate and keep epic status consistent with evidence.
