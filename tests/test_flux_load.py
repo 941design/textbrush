@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 pytest.importorskip("torch")
+pytest.importorskip("diffusers")
 
 import torch
 
@@ -15,7 +16,7 @@ from textbrush.inference.flux import FluxInferenceEngine
 class TestLoadIdempotency:
     """Tests for load() idempotency property."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_load_is_idempotent(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -41,7 +42,7 @@ class TestLoadIdempotency:
         assert engine._dtype is first_dtype
         assert mock_pipeline_class.from_pretrained.call_count == 1
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     @pytest.mark.parametrize("n", [1, 2, 5, 10])
@@ -65,7 +66,7 @@ class TestLoadIdempotency:
 class TestLoadStateTransition:
     """Tests for load() state transition property."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_unloaded_to_loaded_state_transition(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -83,7 +84,7 @@ class TestLoadStateTransition:
 
         assert engine.is_loaded()
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_pipeline_initialized_after_load(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -105,7 +106,7 @@ class TestLoadStateTransition:
 class TestDeviceAutoDetection:
     """Tests for device auto-detection property."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cuda_priority_when_available(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -121,7 +122,7 @@ class TestDeviceAutoDetection:
         assert engine._device == "cuda"
         assert engine.device == "cuda"
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_mps_priority_when_cuda_unavailable(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -137,7 +138,7 @@ class TestDeviceAutoDetection:
         assert engine._device == "mps"
         assert engine.device == "mps"
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cpu_fallback_when_no_acceleration(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -153,7 +154,7 @@ class TestDeviceAutoDetection:
         assert engine._device == "cpu"
         assert engine.device == "cpu"
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_device_is_one_of_valid_options(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -172,7 +173,7 @@ class TestDeviceAutoDetection:
 class TestDtypeSelection:
     """Tests for dtype selection based on device."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cuda_uses_bfloat16(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -190,7 +191,7 @@ class TestDtypeSelection:
             FluxInferenceEngine.MODEL_ID, local_files_only=True, torch_dtype=torch.bfloat16
         )
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_mps_uses_float32(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -208,7 +209,7 @@ class TestDtypeSelection:
             FluxInferenceEngine.MODEL_ID, local_files_only=True, torch_dtype=torch.float32
         )
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cpu_uses_float32(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -230,7 +231,7 @@ class TestDtypeSelection:
 class TestDeviceOptimization:
     """Tests for device-specific optimization application."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cuda_uses_cpu_offload(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -246,7 +247,7 @@ class TestDeviceOptimization:
         mock_pipeline.enable_model_cpu_offload.assert_called_once_with()
         mock_pipeline.to.assert_not_called()
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_mps_uses_to_device(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -263,7 +264,7 @@ class TestDeviceOptimization:
         mock_pipeline.to.assert_called_once_with("mps")
         mock_pipeline.enable_model_cpu_offload.assert_not_called()
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cpu_uses_to_device(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -285,7 +286,7 @@ class TestCpuWarningLog:
     """Tests for CPU warning log property."""
 
     @patch("textbrush.inference.flux.logger")
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cpu_logs_warning(self, mock_mps, mock_cuda, mock_pipeline_class, mock_logger):
@@ -302,7 +303,7 @@ class TestCpuWarningLog:
         mock_logger.warning.assert_called_once_with("Running on CPU - inference will be slow")
 
     @patch("textbrush.inference.flux.logger")
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_cuda_does_not_log_warning(self, mock_mps, mock_cuda, mock_pipeline_class, mock_logger):
@@ -318,7 +319,7 @@ class TestCpuWarningLog:
         mock_logger.warning.assert_not_called()
 
     @patch("textbrush.inference.flux.logger")
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_mps_does_not_log_warning(self, mock_mps, mock_cuda, mock_pipeline_class, mock_logger):
@@ -342,7 +343,7 @@ class TestLoadWithExplicitRoot:
     load from that exact directory instead of `from_pretrained` resolving
     only the HF cache by repo id."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_root_is_passed_in_place_of_repo_id(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -360,7 +361,7 @@ class TestLoadWithExplicitRoot:
         assert call_args[0][0] == str(custom_root)
         assert call_args[1]["local_files_only"] is True
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_omitting_root_is_unchanged_from_prior_behavior(
@@ -381,7 +382,7 @@ class TestLoadWithExplicitRoot:
 class TestModelIdInvariant:
     """Tests for MODEL_ID invariant."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_loads_correct_model_id(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -403,7 +404,7 @@ class TestModelIdInvariant:
 class TestDevicePropertyConsistency:
     """Tests for device property consistency."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_device_property_reflects_internal_device(
@@ -420,7 +421,7 @@ class TestDevicePropertyConsistency:
 
         assert engine.device == engine._device
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     @pytest.mark.parametrize(
@@ -456,7 +457,7 @@ class TestDevicePropertyConsistency:
 class TestLoadUnloadLoadCycle:
     """Tests for load-unload-load cycle property."""
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     def test_load_unload_load_cycle(self, mock_mps, mock_cuda, mock_pipeline_class):
@@ -482,7 +483,7 @@ class TestLoadUnloadLoadCycle:
         assert engine._device == "cpu"
         assert mock_pipeline_class.from_pretrained.call_count == 2
 
-    @patch("textbrush.inference.flux.FluxPipeline")
+    @patch("diffusers.FluxPipeline")
     @patch("torch.cuda.is_available")
     @patch("torch.backends.mps.is_available")
     @pytest.mark.parametrize("n", [1, 2, 3, 5])

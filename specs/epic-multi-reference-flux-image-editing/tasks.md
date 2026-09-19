@@ -110,7 +110,7 @@ Rules that apply to every task (from `CLAUDE.md` and `architecture.md`):
 
 | Task | Title | Status | Note |
 |---|---|---|---|
-| T01 | Repair regressions and hygiene from 47f6151 | pending | |
+| T01 | Repair regressions and hygiene from 47f6151 | done | Lint/format clean; 41 targeted tests pass; fast gate has only 61 known missing-compiled-UI failures (1089 passed, 11 skipped). |
 | T02 | Raise the diffusers floor and record pipeline facts | pending | |
 | T03 | Finish `validation.py` (S4) | pending | |
 | T04 | Inference reference contract and engines (S5) | pending | |
