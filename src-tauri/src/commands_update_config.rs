@@ -1,12 +1,10 @@
-// Stub for update_generation_config Tauri command
-//
-// This file will be integrated into commands.rs after implementation.
+// Tauri command for forwarding configuration changes to the Python sidecar.
 
 use crate::commands::AppState;
 use crate::sidecar::IpcMessage;
 use tauri::{command, State};
 
-/// Update generation configuration (prompt, aspect ratio, and dimensions).
+/// Update generation configuration, including model, references, and preset.
 ///
 /// CONTRACT:
 ///   Inputs:
@@ -15,24 +13,22 @@ use tauri::{command, State};
 ///     - aspect_ratio: new aspect ratio string, one of "1:1", "16:9", "9:16"
 ///     - width: optional image width in pixels (overrides aspect_ratio)
 ///     - height: optional image height in pixels (overrides aspect_ratio)
+///     - model_id: optional selected model slug
+///     - references: optional ordered reference file paths
+///     - preset: optional editing output preset
 ///
 ///   Outputs:
 ///     - Result<(), String>: Ok on success, error message on failure
 ///
 ///   Invariants:
-///     - If sidecar exists: sends UPDATE_CONFIG command with prompt, aspect_ratio, width, height
+///     - If sidecar exists: sends UPDATE_CONFIG with all supplied fields
 ///     - If no sidecar: returns error "No sidecar running"
-///     - Python backend will:
-///       * Stop current generation worker
-///       * Clear image buffer
-///       * Restart generation with new configuration
-///       * Send BUFFER_STATUS event showing reset state
 ///
 ///   Properties:
-///     - Synchronous: returns after sending command (backend restart is async)
+///     - Synchronous: returns after sending command (backend acknowledgement is async)
 ///     - Error handling: returns Result with error if no sidecar
 ///     - Validation: input validation happens on frontend and Python backend
-///     - Non-blocking: command send is fast, restart happens in backend
+///     - Non-blocking: command send is fast, configuration application happens in backend
 ///     - Dimension priority: explicit width/height override aspect_ratio
 ///
 ///   Algorithm:
@@ -40,16 +36,12 @@ use tauri::{command, State};
 ///     2. If sidecar exists:
 ///        a. Create IpcMessage:
 ///           - msg_type: "update_config"
-///           - payload: JSON object with "prompt", "aspect_ratio", "width", "height" fields
+///           - payload: JSON object with prompt, dimensions, model, references, preset
 ///        b. Send message via sidecar.send()
 ///        c. Return Ok or Err from send operation
 ///     3. If no sidecar:
 ///        a. Return Err("No sidecar running")
 ///
-/// Integration:
-///   - Add this function to commands.rs after skip_image() function
-///   - Add to tauri::Builder in main.rs: .invoke_handler(tauri::generate_handler![..., update_generation_config])
-///   - Frontend invokes via: await invoke('update_generation_config', { prompt, aspect_ratio, width, height })
 #[command]
 pub async fn update_generation_config(
     state: State<'_, AppState>,
@@ -57,6 +49,9 @@ pub async fn update_generation_config(
     aspect_ratio: String,
     width: Option<u32>,
     height: Option<u32>,
+    model_id: Option<String>,
+    references: Option<Vec<String>>,
+    preset: Option<String>,
 ) -> Result<(), String> {
     let sidecar_guard = state.sidecar.lock().unwrap();
 
@@ -68,6 +63,9 @@ pub async fn update_generation_config(
                 "aspect_ratio": aspect_ratio,
                 "width": width,
                 "height": height,
+                "model_id": model_id,
+                "references": references,
+                "preset": preset,
             }),
         };
         sidecar.send(&message)?;
@@ -249,13 +247,19 @@ while True:
         #[test]
         fn message_serialization_roundtrip(
             prompt in "[a-zA-Z0-9 ]{1,100}",
-            aspect_ratio in prop::sample::select(vec!["1:1", "16:9", "9:16"])
+            aspect_ratio in prop::sample::select(vec!["1:1", "16:9", "9:16"]),
+            model_id in prop::sample::select(vec!["flux1-schnell", "flux1-kontext-dev", "flux2-klein-4b"]),
+            references in prop::collection::vec("[a-z]{1,12}\\.png", 0..=4),
+            preset in prop::sample::select(vec!["landscape-medium", "portrait-large"])
         ) {
             let message = IpcMessage {
                 msg_type: "update_config".to_string(),
                 payload: serde_json::json!({
                     "prompt": prompt,
                     "aspect_ratio": aspect_ratio,
+                    "model_id": model_id,
+                    "references": &references,
+                    "preset": preset,
                 }),
             };
 
@@ -266,6 +270,9 @@ while True:
             let payload = deserialized.payload.as_object().unwrap();
             prop_assert_eq!(payload["prompt"].as_str().unwrap(), prompt);
             prop_assert_eq!(payload["aspect_ratio"].as_str().unwrap(), aspect_ratio);
+            prop_assert_eq!(payload["model_id"].as_str().unwrap(), model_id);
+            prop_assert_eq!(payload["references"].as_array().unwrap().len(), references.len());
+            prop_assert_eq!(payload["preset"].as_str().unwrap(), preset);
         }
 
         #[test]

@@ -123,6 +123,9 @@ pub async fn init_generation(
     aspect_ratio: String,
     width: Option<u32>,
     height: Option<u32>,
+    model_id: Option<String>,
+    references: Option<Vec<String>>,
+    preset: Option<String>,
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])
@@ -165,6 +168,9 @@ pub async fn init_generation(
             "aspect_ratio": aspect_ratio,
             "width": width,
             "height": height,
+            "model_id": model_id,
+            "references": references,
+            "preset": preset,
         }),
     };
 

@@ -24,6 +24,7 @@ export interface StateChangedGenerating {
 
 export interface StateChangedPaused {
   state: "paused";
+  settled?: boolean;
 }
 
 export interface StateChangedError {
@@ -96,6 +97,24 @@ export interface DeleteAckMessage {
 export interface ErrorPayload {
   message: string;
   fatal: boolean;
+  cause?: string | null;
+  required_model?: string | null;
+}
+
+export interface ConfigAckPayload {
+  model_id: string;
+  reference_count: number;
+  reference_paths: string[];
+  preset: string | null;
+  compatible: boolean;
+  incompatibility_reason: string | null;
+  required_model: string | null;
+  settled: boolean;
+}
+
+export interface ConfigAckMessage {
+  type: 'config_ack';
+  payload: ConfigAckPayload;
 }
 
 export interface ErrorMessage {
@@ -110,6 +129,7 @@ export type SidecarMessage =
   | AcceptedMessage
   | AbortedMessage
   | DeleteAckMessage
+  | ConfigAckMessage
   | ErrorMessage;
 
 // Launch args from Rust backend
@@ -121,6 +141,9 @@ export interface LaunchArgs {
   seed: number | null;
   width: number;
   height: number;
+  model_id?: string | null;
+  references?: string[] | null;
+  preset?: string | null;
 }
 
 // Image record for list navigation

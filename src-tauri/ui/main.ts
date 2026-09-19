@@ -220,6 +220,9 @@ async function init(): Promise<void> {
       aspectRatio: launchArgs.aspect_ratio || '1:1',
       width: launchArgs.width,
       height: launchArgs.height,
+      modelId: launchArgs.model_id ?? null,
+      references: launchArgs.references ?? null,
+      preset: launchArgs.preset ?? null,
     });
 
     console.log('Application initialized successfully');
