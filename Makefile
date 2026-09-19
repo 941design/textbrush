@@ -1,8 +1,27 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui test-ui-a11y lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui test-ui-a11y lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug ui-deps distclean
 
 # Use a user-writable Cargo home (the system CARGO_HOME may be read-only)
 override CARGO_HOME := $(HOME)/.cargo
 export CARGO_HOME
+
+# ----------------------------------------------------------------------------
+# Cross-environment guard (host OS + VM/container sharing one project tree)
+#
+# npm resolves the cpu/os fields of optional dependencies against whichever
+# platform runs the install, so packages shipping native binaries (esbuild
+# here) end up architecture-specific. When a macOS host and a Linux VM share
+# this tree over a mount, an install on one side leaves the other executing a
+# foreign binary: `cannot execute binary file` (exit 126) out of esbuild.
+#
+# `node_modules/.platform` records the platform the current install targeted.
+# Every UI target routes through `ui-deps`, which reinstalls from scratch when
+# the stamp disagrees with the running platform -- or is missing, which is the
+# same situation minus the evidence (a tree installed before this guard, or by
+# a bare `npm install`). Never hand-edit the stamp; delete it and re-run make.
+# ----------------------------------------------------------------------------
+UI_DIR := src-tauri/ui
+UI_PLATFORM_STAMP := $(UI_DIR)/node_modules/.platform
+CURRENT_PLATFORM := $(shell node -e "console.log(process.platform+'-'+process.arch)" 2>/dev/null || echo unknown)
 
 # Default target: show help
 .DEFAULT_GOAL := help
@@ -61,22 +80,22 @@ test-e2e:  ## Run end-to-end smoke tests
 test-rust:  ## Run Rust test suite
 	cd src-tauri && cargo test
 
-test-ui:  ## Run UI TypeScript tests
+test-ui: ui-deps  ## Run UI TypeScript tests
 	cd src-tauri/ui && npm run test
 
-test-ui-a11y:  ## Run headless-browser accessibility harness (downloads Chromium on first run; not part of make test)
+test-ui-a11y: ui-deps  ## Run headless-browser accessibility harness (downloads Chromium on first run; not part of make test)
 	cd src-tauri/ui && npx playwright install chromium && npm run test:a11y
 
 lint:  ## Check Python code quality with ruff
 	uv run ruff check textbrush tests
 
-lint-ui:  ## Check TypeScript code quality with ESLint
+lint-ui: ui-deps  ## Check TypeScript code quality with ESLint
 	cd src-tauri/ui && npm run lint
 
-typecheck-ui:  ## Type-check TypeScript code
+typecheck-ui: ui-deps  ## Type-check TypeScript code
 	cd src-tauri/ui && npm run typecheck
 
-check-ui:  ## Run all UI checks (typecheck + lint)
+check-ui: ui-deps  ## Run all UI checks (typecheck + lint)
 	cd src-tauri/ui && npm run check
 
 check-all:  ## Run all code quality checks (format-check + lint + clippy + typecheck)
@@ -116,12 +135,25 @@ fmt-check:  ## Verify all code is formatted (for CI)
 # Build
 # ============================================================================
 
-build-ui:  ## Build UI TypeScript bundle
-	cd src-tauri/ui && npm install
-	cd src-tauri/ui && npm run build
+ui-deps: $(UI_PLATFORM_STAMP)  ## Install UI dependencies, rebuilding them on a platform switch
 
-ui-install:  ## Install or refresh UI dependencies
-	cd src-tauri/ui && npm install
+$(UI_PLATFORM_STAMP): $(UI_DIR)/package.json $(UI_DIR)/package-lock.json
+	@if [ -d $(UI_DIR)/node_modules ]; then \
+		if [ ! -f $(UI_PLATFORM_STAMP) ]; then \
+			echo "No platform stamp (installed before this guard, or by a bare npm install); cleaning $(UI_DIR)/node_modules..."; \
+			rm -rf $(UI_DIR)/node_modules; \
+		elif [ "$$(cat $(UI_PLATFORM_STAMP))" != "$(CURRENT_PLATFORM)" ]; then \
+			echo "Platform changed ($$(cat $(UI_PLATFORM_STAMP)) -> $(CURRENT_PLATFORM)); cleaning $(UI_DIR)/node_modules..."; \
+			rm -rf $(UI_DIR)/node_modules; \
+		fi; \
+	fi
+	cd $(UI_DIR) && npm install
+	@echo "$(CURRENT_PLATFORM)" > $(UI_PLATFORM_STAMP)
+
+build-ui: ui-deps  ## Build UI TypeScript bundle
+	cd $(UI_DIR) && npm run build
+
+ui-install: ui-deps  ## Install or refresh UI dependencies
 
 build: build-ui  ## Build Tauri application (includes UI)
 	cd src-tauri && cargo build
@@ -156,6 +188,9 @@ release: clean install package  ## Full release build (clean, install, build, pa
 # ============================================================================
 # Cleanup
 # ============================================================================
+
+distclean: clean  ## Also remove UI dependencies (nuke option for a corrupt node_modules)
+	rm -rf $(UI_DIR)/node_modules
 
 clean:  ## Remove build artifacts and caches
 	rm -rf dist build src-tauri/target .pytest_cache __pycache__ .ruff_cache src-tauri/ui-dist
