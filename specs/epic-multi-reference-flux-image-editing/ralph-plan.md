@@ -775,7 +775,7 @@ permission.
 
 ---
 
-- [ ] **10.1 Desktop UI: picker, selector, presets, acknowledgement (S10b) (T10)**
+- [x] **10.1 Desktop UI: picker, selector, presets, acknowledgement (S10b) (T10)**
 
 **Goal.** The desktop offers a model selector, a reference picker with previews, removal and
 replacement, the six editing presets, compatibility messaging, and enables editing controls
