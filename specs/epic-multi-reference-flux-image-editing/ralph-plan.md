@@ -576,7 +576,7 @@ keeps the PNG key set closed. Owned ACs: AC-PROCESS-3, AC-STORAGE-1, AC-META-1, 
 
 ---
 
-- [ ] **7.1 IPC pause gate, acknowledgement, launch resolution, wire mirror (S8) (T07)**
+- [x] **7.1 IPC pause gate, acknowledgement, launch resolution, wire mirror (S8) (T07)**
 
 **Goal.** The desktop path acknowledges configuration through a `config_ack` event, reports
 the settled state, refuses resume while incompatible, serializes resume behind an update, and

@@ -9,7 +9,12 @@ from __future__ import annotations
 import logging
 import threading
 
-from textbrush.backend import TextbrushBackend
+from textbrush.backend import (
+    FatalModelError,
+    ModelSwitchError,
+    ModelUnavailableError,
+    TextbrushBackend,
+)
 from textbrush.buffer import BufferedImage
 from textbrush.config import Config
 from textbrush.ipc.protocol import (
@@ -17,9 +22,19 @@ from textbrush.ipc.protocol import (
     MessageType,
     dataclass_to_dict,
 )
-from textbrush.model.registry import FLUX1_SCHNELL, get_model_spec
-from textbrush.model.weights import download_flux_weights, is_flux_available
+from textbrush.model.registry import (
+    FLUX1_SCHNELL,
+    DiscoveryCause,
+    get_model_spec,
+    resolve_model_selection,
+)
+from textbrush.model.weights import (
+    check_model_availability,
+    download_flux_weights,
+    is_flux_available,
+)
 from textbrush.paths import display_path
+from textbrush.references import ReferenceImageError
 
 _SCHNELL_SPEC = get_model_spec(FLUX1_SCHNELL)
 
@@ -77,6 +92,9 @@ class MessageHandler:
         self._generation_started = False  # True after backend.start_generation() succeeds
         self._pending_startup_config: dict | None = None  # Latest UPDATE_CONFIG before start
         self._pending_start_paused = True  # Default startup behavior: begin paused
+        self._init_command: InitCommand | None = None  # type: ignore  # noqa: F821
+        self._init_references: list[str] = []  # References from init command (T07)
+        self._init_preset: str | None = None  # Preset from init command (T07)
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle INIT command: load model and start generation.
@@ -127,7 +145,7 @@ class MessageHandler:
                f. Wait for skip/accept action before delivering next
             2. Exit on shutdown or error
         """
-        from textbrush.ipc.protocol import InitCommand
+        from textbrush.ipc.protocol import ConfigAckEvent, ErrorEvent, InitCommand
 
         cmd = InitCommand(**payload)
         logger.info(
@@ -135,6 +153,56 @@ class MessageHandler:
             f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
         )
         self._current_prompt = cmd.prompt  # Store prompt for state_changed events
+
+        # AC-MODEL-5b: run the default-model resolver exactly once at
+        # launch (T07 step 1). If the resolver is blocked, surface the
+        # discovery cause via a fatal ErrorEvent so the UI can render
+        # the download hint; do not construct a backend.
+        def availability(slug):
+            return check_model_availability(slug, custom_dirs=self.config.model.directories)
+
+        try:
+            resolution = resolve_model_selection(
+                selected_id=cmd.model_id or self.config.model.selected_id,
+                reference_count=len(cmd.references or []),
+                availability=availability,
+            )
+        except ValueError as exc:
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(
+                        ErrorEvent(message=str(exc), fatal=True, cause=DiscoveryCause.UNKNOWN.value)
+                    ),
+                )
+            )
+            return
+
+        if resolution.blocked:
+            cause_value = resolution.cause.value if resolution.cause else None
+            server.send(
+                Message(
+                    MessageType.ERROR,
+                    dataclass_to_dict(
+                        ErrorEvent(
+                            message=resolution.reason or "model resolution failed",
+                            fatal=True,
+                            cause=cause_value,
+                            required_model=resolution.required_model,
+                        )
+                    ),
+                )
+            )
+            return
+
+        # Resolution succeeded -- commit the chosen model and create the
+        # backend. AC-MODEL-5b: writes the resolved id onto the config
+        # so subsequent reloads of the config surface the same choice.
+        self.config.model.selected_id = resolution.model_id
+        self._init_command = cmd
+        self._init_references = list(cmd.references or [])
+        self._init_preset = cmd.preset
+
         self._emit_state_changed(server, "loading")
         self.backend = TextbrushBackend(self.config)
         self._generation_started = False
@@ -161,6 +229,65 @@ class MessageHandler:
                 )
                 self._pending_startup_config = None
 
+            # AC-STATE-3 / T07: if the init command carried references or a
+            # preset, acknowledge them via apply_configuration before
+            # the first generate(). An incompatible acknowledgement is
+            # still held (resume is refused by the compatibility gate in
+            # handle_pause).
+            init_refs = self._init_references or []
+            init_preset = self._init_preset
+            if init_refs or init_preset:
+                try:
+                    ack = self.backend.apply_configuration(
+                        reference_paths=init_refs,
+                        preset=init_preset,
+                    )
+                except ReferenceImageError as exc:
+                    server.send(
+                        Message(
+                            MessageType.ERROR,
+                            dataclass_to_dict(ErrorEvent(message=str(exc), fatal=False)),
+                        )
+                    )
+                    server.send(
+                        Message(
+                            MessageType.CONFIG_ACK,
+                            dataclass_to_dict(
+                                ConfigAckEvent(
+                                    model_id=self.backend.model_id,
+                                    reference_count=len(self.backend.references),
+                                    reference_paths=list(self.backend.reference_paths),
+                                    preset=self.backend.preset,
+                                    compatible=False,
+                                    incompatibility_reason=str(exc),
+                                    required_model=None,
+                                    settled=True,
+                                )
+                            ),
+                        )
+                    )
+                    return
+                else:
+                    server.send(
+                        Message(
+                            MessageType.CONFIG_ACK,
+                            dataclass_to_dict(
+                                ConfigAckEvent(
+                                    model_id=ack.model_id,
+                                    reference_count=ack.reference_count,
+                                    reference_paths=list(ack.reference_paths),
+                                    preset=ack.preset,
+                                    compatible=ack.compatible,
+                                    incompatibility_reason=ack.incompatibility_reason,
+                                    required_model=ack.required_model,
+                                    settled=True,
+                                )
+                            ),
+                        )
+                    )
+                self._init_references = []
+                self._init_preset = None
+
             # Capture prompt at registration time to avoid races with later updates.
             generation_prompt = start_prompt
 
@@ -185,7 +312,7 @@ class MessageHandler:
             self._current_prompt = start_prompt
             if start_paused:
                 logger.info("Backend ready, emitting state_changed(paused)")
-                self._emit_state_changed(server, "paused")
+                self._emit_state_changed(server, "paused", settled=False)
             else:
                 logger.info("Backend ready, emitting state_changed(idle)")
                 self._emit_state_changed(server, "idle")
@@ -467,13 +594,9 @@ class MessageHandler:
         # Editing fields are applied only after the worker has actually
         # parked. Plain prompt/dimension updates retain the legacy behavior.
         if cmd.model_id is not None or cmd.references is not None or cmd.preset is not None:
-            from textbrush.ipc.protocol import ConfigAckEvent
+            from textbrush.ipc.protocol import BackendState
 
-            if (
-                not self.backend.is_paused()
-                or not self.backend._worker
-                or not self.backend._worker.is_settled()
-            ):
+            if not self.backend.is_paused() or not self.backend.is_settled():
                 server.send(
                     Message(
                         MessageType.ERROR,
@@ -489,22 +612,49 @@ class MessageHandler:
                 )
                 return
             try:
-                acknowledgement = self.backend.update_editing_config(
-                    model_id=cmd.model_id, reference_paths=cmd.references, preset=cmd.preset
+                self.backend.apply_configuration(
+                    model_id=cmd.model_id,
+                    reference_paths=cmd.references,
+                    preset=cmd.preset,
                 )
-            except Exception as exc:
+            except (ReferenceImageError, ModelUnavailableError, ModelSwitchError) as exc:
+                cause = getattr(exc, "cause", None)
+                required = getattr(exc, "required_model", None)
                 server.send(
                     Message(
                         MessageType.ERROR,
-                        dataclass_to_dict(ErrorEvent(message=str(exc), fatal=False)),
+                        dataclass_to_dict(
+                            ErrorEvent(
+                                message=str(exc),
+                                fatal=False,
+                                cause=cause.value if cause else None,
+                                required_model=required,
+                            )
+                        ),
+                    )
+                )
+                # Roll back: emit a config_ack describing the unchanged
+                # current configuration so the UI can reconcile (AC-STATE-3).
+                self._emit_config_ack(server, settled=True)
+                return
+            except FatalModelError as exc:
+                from textbrush.ipc.protocol import BackendState, StateChangedEvent
+
+                server.send(
+                    Message(
+                        MessageType.STATE_CHANGED,
+                        dataclass_to_dict(
+                            StateChangedEvent(
+                                state=BackendState.ERROR.value,
+                                message=str(exc),
+                                fatal=True,
+                            )
+                        ),
                     )
                 )
                 return
-            server.send(
-                Message(
-                    MessageType.CONFIG_ACK, dataclass_to_dict(ConfigAckEvent(**acknowledgement))
-                )
-            )
+
+            self._emit_config_ack(server, settled=True)
             return
 
         # Only validate aspect_ratio if using preset (not "custom") and no explicit dimensions
@@ -658,18 +808,16 @@ class MessageHandler:
 
         if is_paused:
             # Incompatible acknowledged selections are retained, but never run.
-            from textbrush.validation import validate_selection
-
-            verdict = validate_selection(
-                self.backend.model_id, len(self.backend.references), self.backend.preset
-            )
+            verdict = self.backend._check_compatibility()
             if not verdict.valid:
                 server.send(
                     Message(
                         MessageType.ERROR,
                         dataclass_to_dict(
                             ErrorEvent(
-                                message=verdict.reason or "incompatible configuration", fatal=False
+                                message=verdict.reason or "incompatible configuration",
+                                fatal=False,
+                                required_model=verdict.required_model,
                             )
                         ),
                     )
@@ -678,13 +826,18 @@ class MessageHandler:
             self.backend.resume_generation()
             new_paused = False
         else:
-            self.backend.pause_generation()
+            # T07: forward the on_settled callback so a second
+            # `state_changed(paused, settled=True)` is emitted by the
+            # worker thread when quiescence is actually reached.
+            self.backend.pause_generation(
+                on_settled=lambda: self._emit_state_changed(server, "paused", settled=True)
+            )
             new_paused = True
 
         logger.info(f"Generation {'paused' if new_paused else 'resumed'}")
 
         if new_paused:
-            self._emit_state_changed(server, "paused")
+            self._emit_state_changed(server, "paused", settled=False)
         else:
             self._emit_state_changed(server, "generating", prompt=self._current_prompt)
 
@@ -1139,6 +1292,7 @@ class MessageHandler:
         prompt: str | None = None,
         message: str | None = None,
         fatal: bool | None = None,
+        settled: bool | None = None,
     ) -> None:
         """Emit STATE_CHANGED event with current backend state.
 
@@ -1186,7 +1340,9 @@ class MessageHandler:
             self._current_state = state
 
         # Create and send event
-        event = StateChangedEvent(state=state, prompt=prompt, message=message, fatal=fatal)
+        event = StateChangedEvent(
+            state=state, prompt=prompt, message=message, fatal=fatal, settled=settled
+        )
         server.send(Message(MessageType.STATE_CHANGED, dataclass_to_dict(event)))
 
         # Log state change
@@ -1196,6 +1352,47 @@ class MessageHandler:
             logger.error(f"State changed: {state} (message: {message}, fatal: {fatal})")
         else:
             logger.info(f"State changed: {state}")
+
+    def _emit_config_ack(
+        self,
+        server: "IPCServer",  # type: ignore  # noqa: F821
+        settled: bool = True,
+    ) -> None:
+        """Emit a `config_ack` describing the backend's current
+        acknowledged configuration. Used after a successful
+        `apply_configuration` and as the "rollback ack" after a rejected
+        update so the UI can reconcile to backend truth (AC-STATE-3)."""
+        from textbrush.ipc.protocol import ConfigAckEvent
+        from textbrush.validation import validate_selection
+
+        if self.backend is None:
+            return
+        verdict = validate_selection(
+            self.backend.model_id, len(self.backend.references), self.backend.preset
+        )
+        ack = ConfigAckEvent(
+            model_id=self.backend.model_id,
+            reference_count=len(self.backend.references),
+            reference_paths=list(self.backend.reference_paths),
+            preset=self.backend.preset,
+            compatible=verdict.valid,
+            incompatibility_reason=verdict.reason,
+            required_model=verdict.required_model,
+            settled=settled,
+        )
+        server.send(Message(MessageType.CONFIG_ACK, dataclass_to_dict(ack)))
+
+    def _check_compatibility(self):
+        """Run `validate_selection` against the backend's current
+        acknowledged state. Returns the verdict; convenience helper so
+        handle_pause does not need a local import."""
+        from textbrush.validation import validate_selection
+
+        return validate_selection(
+            self.backend.model_id,
+            len(self.backend.references),
+            self.backend.preset,
+        )
 
     def _assign_image_index(self, buffered_image: BufferedImage) -> int:
         """Assign next available index to image and store in index map.

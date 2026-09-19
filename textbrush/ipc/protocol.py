@@ -57,6 +57,13 @@ class InitCommand:
     format: str = "png"
     width: int | None = None
     height: int | None = None
+    # T07: editing fields propagate to the acknowledged configuration at
+    # init time so the first `config_ack` already reflects the user's
+    # selected model, references, and preset (rather than `backend` then
+    # receiving an immediate `UPDATE_CONFIG` race).
+    model_id: str | None = None
+    references: list[str] | None = None
+    preset: str | None = None
 
 
 @dataclass
@@ -78,12 +85,22 @@ class UpdateConfigCommand:
 
 @dataclass
 class ConfigAckEvent:
+    """Acknowledgement event from the backend describing the current
+    acknowledged configuration.
+
+    AC-STATE-3: a `config_ack` is emitted after every successful
+    `apply_configuration` and also after a rejected update so the UI
+    can roll back from backend truth. `settled` reports the worker's
+    pause/settled state at the moment the ack was produced."""
+
     model_id: str
     reference_count: int
+    reference_paths: list[str]
     preset: str | None
     compatible: bool
     incompatibility_reason: str | None = None
     required_model: str | None = None
+    settled: bool = False
 
 
 @dataclass
@@ -216,10 +233,18 @@ class AcceptedEvent:
 
 @dataclass
 class ErrorEvent:
-    """Event reporting an error."""
+    """Event reporting an error.
+
+    T07: `cause` and `required_model` extend the IPC error envelope so
+    the desktop UI can route discovery-cause specific messaging and
+    surface the recommended model when a cardinality mismatch points at
+    a different selection (AC-MODEL-5b). `cause` is the `DiscoveryCause`
+    enum string value."""
 
     message: str
     fatal: bool = False
+    cause: str | None = None
+    required_model: str | None = None
 
 
 @dataclass
@@ -300,6 +325,9 @@ class StateChangedEvent:
         - prompt: string, present only when state = GENERATING
         - message: string, present only when state = ERROR
         - fatal: boolean, present only when state = ERROR
+        - settled: boolean, present only when state = PAUSED. Tells the
+          desktop UI whether the worker has actually reached quiescence
+          (T07); controls whether editing controls are enabled.
 
       Invariants:
         - state is one of: loading, idle, generating, paused, error
@@ -307,6 +335,7 @@ class StateChangedEvent:
         - If state = ERROR: message field is non-empty string, fatal is boolean
         - If state ≠ GENERATING: prompt field is None
         - If state ≠ ERROR: message and fatal fields are None
+        - If state ≠ PAUSED: settled field is None
 
       Properties:
         - Complete state representation: all backend state information in one event
@@ -317,15 +346,17 @@ class StateChangedEvent:
         1. Model load completes → state = IDLE or PAUSED
         2. Generation starts → state = GENERATING, prompt = current_prompt
         3. Image completes → state = IDLE or GENERATING (if buffer not empty)
-        4. User pauses → state = PAUSED
-        5. User resumes → state = GENERATING, prompt = current_prompt
-        6. Error occurs → state = ERROR, message = error_message, fatal = is_fatal
+        4. User pauses → state = PAUSED, settled=False
+        5. Worker reaches quiescence → state = PAUSED, settled=True
+        6. User resumes → state = GENERATING, prompt = current_prompt
+        7. Error occurs → state = ERROR, message = error_message, fatal = is_fatal
     """
 
     state: str  # BackendState enum value as string
     prompt: str | None = None
     message: str | None = None
     fatal: bool | None = None
+    settled: bool | None = None
 
 
 @dataclass

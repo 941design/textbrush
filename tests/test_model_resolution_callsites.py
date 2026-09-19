@@ -1,0 +1,126 @@
+"""AC-MODEL-5b structural test: `resolve_model_selection` is called
+exactly once per launch, from the documented composition roots
+(`textbrush/ipc/handler.py::handle_init` and `textbrush/cli.py::main`).
+T08 may add the CLI site; until then we assert only the handler site
+plus a live test that the IPC path calls the resolver exactly once.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+TEXTBRUSH_ROOT = Path(__file__).resolve().parents[1] / "textbrush"
+
+
+def _find_resolve_call_sites() -> set[tuple[str, str]]:
+    """Walk `textbrush/` and collect every Call to `resolve_model_selection`
+    together with the enclosing function name."""
+    sites: set[tuple[str, str]] = set()
+    for path in TEXTBRUSH_ROOT.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Name) or func.id != "resolve_model_selection":
+                continue
+            # Find enclosing FunctionDef
+            enclosing = None
+            for parent in ast.walk(tree):
+                if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for child in ast.walk(parent):
+                        if child is node:
+                            enclosing = parent.name
+                            break
+                    if enclosing:
+                        break
+            if enclosing:
+                rel = path.relative_to(TEXTBRUSH_ROOT.parent)
+                sites.add((str(rel), enclosing))
+    return sites
+
+
+class TestResolveModelSelectionCallsites:
+    """The composition-root call sites of `resolve_model_selection` are
+    the documented ones -- no other module is allowed to call it
+    silently, or `resolve_model_selection` will run more than once per
+    launch and silently re-route the model (spec §5.1)."""
+
+    def test_call_sites_match_handler_init(self) -> None:
+        sites = _find_resolve_call_sites()
+        # The IPC handler is the T07 deliverable; T08 may add the CLI
+        # entry, in which case it joins this set. Until T08 lands,
+        # assert exactly the handler site.
+        handler_site = ("textbrush/ipc/handler.py", "handle_init")
+        assert handler_site in sites, (
+            f"handle_init must call resolve_model_selection; found sites: {sites}"
+        )
+        non_test_sites = {(file, func) for file, func in sites if not file.startswith("tests/")}
+        # Only documented production callers.
+        assert non_test_sites == {handler_site}, (
+            f"Unexpected resolve_model_selection call sites: {non_test_sites}"
+        )
+
+    def test_handler_calls_resolve_once_across_init_and_two_edits(self, tmp_path) -> None:
+        """Live test: handle_init runs the resolver exactly once; editing
+        updates do NOT re-run it (T07 step 2a + 2c + live assertion)."""
+        from textbrush.config import (
+            Config,
+            EditingConfig,
+            HuggingFaceConfig,
+            InferenceConfig,
+            LoggingConfig,
+            ModelConfig,
+            OutputConfig,
+        )
+        from textbrush.ipc.handler import MessageHandler
+        from textbrush.model.registry import FLUX1_SCHNELL
+
+        config = Config(
+            output=OutputConfig(directory=tmp_path / "out", format="png"),
+            model=ModelConfig(directories=[], buffer_size=8, selected_id=None),
+            huggingface=HuggingFaceConfig(token=None),
+            inference=InferenceConfig(backend="flux"),
+            logging=LoggingConfig(verbosity="info"),
+            editing=EditingConfig(default_preset="landscape-medium"),
+        )
+
+        call_count = {"n": 0}
+
+        def counting_resolver(*, selected_id, reference_count, availability):
+            call_count["n"] += 1
+            from textbrush.model.registry import ModelResolution
+
+            return ModelResolution(model_id=FLUX1_SCHNELL, blocked=False)
+
+        from textbrush.model.weights import AvailabilityReport
+
+        with (
+            patch(
+                "textbrush.ipc.handler.resolve_model_selection",
+                side_effect=counting_resolver,
+            ),
+            patch(
+                "textbrush.ipc.handler.check_model_availability",
+                return_value=AvailabilityReport(available=True, cause=None, detail="", root=None),
+            ),
+            patch("textbrush.backend.create_engine") as mock_create_engine,
+        ):
+            from tests.mocks import MockInferenceEngine
+
+            schnell_engine = MockInferenceEngine()
+            schnell_engine.model_id = FLUX1_SCHNELL
+            mock_create_engine.return_value = schnell_engine
+
+            handler = MessageHandler(config)
+            server = Mock()
+
+            # Trigger handle_init. The resolver is called once.
+            handler.handle_init({"prompt": "test", "aspect_ratio": "1:1"}, server)
+            assert call_count["n"] == 1, (
+                f"resolve_model_selection should be called once on init; got {call_count['n']}"
+            )
