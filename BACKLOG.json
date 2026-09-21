@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "updated_at": "2026-09-21T20:20:00Z",
+  "epics": [],
+  "findings": [
+    {
+      "slug": "cli-aspect-ratio-ignored-for-reference-capable-models",
+      "scope": "any",
+      "anchor": {
+        "path": "textbrush/cli.py"
+      },
+      "text": "`--aspect-ratio` is silently ignored for a reference-capable model on the CLI, and the docs now claim the opposite. `cli.py` calls `backend.start_generation(aspect_ratio=...)` with no width/height (two call sites, the GUI-launch path and the headless path), so `backend.start_generation`'s \"the preset sizes the canvas only when the caller named neither axis\" branch takes `editing.default_preset` and discards the ratio: `--model flux2-klein-4b --aspect-ratio 16:9` generates 768x576. README (\"FLUX.2 with no references at all, at a 16:9 output size\"), docs/reference-editing.md (\"--aspect-ratio selects a ratio for any model\") and docs/configuration.md (\"Valid for every model\") all overstate this; only the desktop UI, which sends explicit pixels with every change, actually behaves that way. Two options. (A) Make the docs honest: on the CLI a reference-capable model sizes its output with `--preset`, and `--aspect-ratio` is the text-to-image control; the CLI has no resolution ladder, and the one-group-for-every-model requirement was about the desktop. (B) Wire it: resolve the ratio through `cli.get_default_resolution` and pass the result as width/height to BOTH `apply_configuration` and `start_generation` -- both, because references are decoded against the acknowledged canvas and the engine refuses an off-canvas reference rather than resizing it, so passing it to only one of the two trades a silent no-op for a generate-time error. (B) costs about six lines but makes one flag mean two different sizes: `4:3` would be 512x384 for an edit (the ladder's first rung) and 1024x768 for text-to-image (FluxInferenceEngine.ASPECT_RATIOS). Whichever is chosen, restore end-to-end coverage: `tests/test_cli.py::test_cli_accepts_any_aspect_ratio_for_editing` replaced a test that drove `main()` with one that calls `validate_selection` directly, which is precisely where this behaviour hides.",
+      "created_at": "2026-09-21"
+    },
+    {
+      "slug": "tauri-generated-schemas-tracked-on-two-platform-tree",
+      "scope": "any",
+      "anchor": {
+        "path": "src-tauri/gen/schemas/"
+      },
+      "text": "Tauri's per-platform generated capability schemas are tracked in git, which guarantees perpetual unauthored churn on this repo's two-machine setup. `src-tauri/gen/schemas/` holds files Tauri regenerates on every build, one per platform; four are tracked (acl-manifests.json, capabilities.json, desktop-schema.json, macOS-schema.json) and have already churned across 1-3 commits each. The upstream Tauri 2 template ships a `src-tauri/.gitignore` containing `/gen/schemas`; this repo has no `src-tauri/.gitignore` at all, so that ignore was never adopted. Because a macOS host and a Linux VM share one mounted tree, each side's build rewrites or adds a schema the other side then sees as a dirty file it did not author -- currently `macOS-schema.json` is modified (+66 lines of `dialog:` plugin permissions, regenerated after the file-dialog plugin landed) and an untracked `linux-schema.json` (~117 KB) exists from a VM build. Recommendation: add `src-tauri/gen/schemas/` to .gitignore and `git rm --cached` the four tracked siblings in a separate housekeeping commit, so neither machine's build dirties the tree again. Untracking affects the other machine and any CI that reads these files, so it needs an explicit decision rather than being folded into an unrelated commit. If they are kept tracked instead, the modified macOS schema should be committed and linux-schema.json added, and the churn accepted as the cost.",
+      "created_at": "2026-09-21"
+    }
+  ],
+  "archive": []
+}
