@@ -98,7 +98,10 @@ CLI arguments override config file values.
    loaded speculatively. A model named on the command line or pinned in
    the config is already a selection and loads at once; otherwise the
    session waits in `awaiting_model` with the selector live
-5. Download the selected model if missing and credentials allow
+5. Refuse a selection whose weights are absent, naming the download
+   command, and leave the selection open. (Automatic download applies to
+   the explicit `--download-model` path; a selection is not a licence to
+   spend a multi-gigabyte download on the user's behalf.)
 6. Start background image generation
 7. Present slideshow review
 8. Exit on Accept or Abort

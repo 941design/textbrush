@@ -14,6 +14,7 @@ from textbrush.backend import TextbrushBackend
 from textbrush.config import Config
 from textbrush.ipc.handler import MessageHandler
 from textbrush.ipc.protocol import MessageType
+from textbrush.validation import TEXT_ASPECT_RATIOS
 
 
 class TestConfigUpdateE2E:
@@ -140,8 +141,13 @@ class TestConfigUpdateE2E:
         assert message.payload["fatal"] is False
 
     def test_invalid_aspect_ratio_rejected(self, handler_with_backend, mock_server):
-        """E2E: Invalid aspect ratio sends error, no restart."""
-        payload = {"prompt": "Test prompt", "aspect_ratio": "4:3"}  # Invalid
+        """E2E: Invalid aspect ratio sends error, no restart.
+
+        "4:3" used to be the example of an unsupported ratio; it is an
+        offered one now, so the example has to be a string no ratio table
+        will ever hold.
+        """
+        payload = {"prompt": "Test prompt", "aspect_ratio": "7:13"}  # Invalid
 
         handler_with_backend.handle_update_config(payload, mock_server)
 
@@ -224,13 +230,14 @@ class TestConfigUpdateProperties:
 
     @given(
         aspect_ratio=st.text(min_size=1, max_size=10).filter(
-            lambda s: s not in ["1:1", "16:9", "9:16", "custom"]
+            lambda s: s not in set(TEXT_ASPECT_RATIOS) | {"custom"}
         )
     )
     def test_invalid_aspect_ratios_always_rejected(self, aspect_ratio):
         """Property: Invalid aspect ratios never trigger restart.
 
-        For any aspect_ratio not in {1:1, 16:9, 9:16, custom}:
+        For any aspect_ratio outside `validation.TEXT_ASPECT_RATIOS` plus
+        "custom":
         - ERROR event sent
         - abort() NOT called
         - start_generation() NOT called

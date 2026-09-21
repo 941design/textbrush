@@ -39,6 +39,7 @@ from textbrush.validation import (
     ValidationVerdict,
     editing_preset_dimensions,
     is_editing_model,
+    preset_for_dimensions,
     resolve_preset,
     validate_selection,
 )
@@ -724,3 +725,30 @@ class TestDefaultEditingPreset:
         # preset table -- a regression where the constant and the table
         # drift apart would surface here.
         assert editing_preset_dimensions(DEFAULT_EDITING_PRESET) is not None
+
+
+# ---------------------------------------------------------------------------
+# preset_for_dimensions (the inverse lookup callers use when they carry
+# explicit pixels rather than a preset identifier)
+# ---------------------------------------------------------------------------
+
+
+class TestPresetForDimensions:
+    """`preset_for_dimensions` labels an acknowledged canvas with the
+    identifier naming it, and answers None for a size no preset names --
+    which is the common case, since the output-size group offers many
+    more sizes than the six presets."""
+
+    @pytest.mark.parametrize("preset", sorted(EDITING_PRESETS))
+    def test_round_trips_every_preset(self, preset: str) -> None:
+        width, height = editing_preset_dimensions(preset)
+        assert preset_for_dimensions(width, height) == preset
+
+    @pytest.mark.parametrize("width,height", [(1920, 1080), (256, 256), (1600, 400), (1, 1)])
+    def test_unnamed_sizes_answer_none(self, width: int, height: int) -> None:
+        assert preset_for_dimensions(width, height) is None
+
+    def test_transposed_dimensions_do_not_match(self) -> None:
+        """landscape-medium is 768x576; 576x768 is portrait-medium, not it."""
+        assert preset_for_dimensions(768, 576) == "landscape-medium"
+        assert preset_for_dimensions(576, 768) == "portrait-medium"

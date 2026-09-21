@@ -1271,6 +1271,13 @@ class TextbrushBackend:
             model_id=self.model_id,
             sampling_settings=sampling,
         )
+        if resolved_width is not None and resolved_height is not None:
+            # Record the canvas this path resolved, exactly as
+            # `start_generation` and `apply_configuration` do. Leaving it
+            # behind let `self.canvas` describe a canvas the worker had
+            # already moved off, which a later rollback `config_ack`
+            # would then report to the UI as the current output size.
+            self.canvas = (resolved_width, resolved_height)
         self._worker.update_config(
             prompt,
             options,

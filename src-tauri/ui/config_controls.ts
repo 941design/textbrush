@@ -160,7 +160,8 @@ interface ConfigValues {
  * Hook the owner of the editing seam installs to claim an output-size
  * change.
  *
- * Return true to say "I sent this update myself". A model that takes
+ * Return true to say "this one is mine" -- and then own its outcome
+ * completely, including whether `state` moves. A model that takes
  * reference images must route a size change through the acknowledged-
  * configuration seam, because its references are decoded against the
  * canvas and have to be decoded again when the canvas moves; and while
@@ -301,11 +302,12 @@ export function initConfigControls(
     renderRatioDimensions(getResolutionIndex(ratio, dims.width, dims.height));
 
     if (onOutputSizeChange?.(ratio, dims.width, dims.height)) {
-      // Claimed by the editing seam (or deliberately dropped because no
-      // model is selected yet); state comes back from the backend ack.
-      state.aspectRatio = ratio;
-      state.width = dims.width;
-      state.height = dims.height;
+      // The handler owns this one, including the state mutation: it
+      // knows whether the update reached the backend (state comes back
+      // on the ack), was withheld (nothing changes), or had no backend
+      // to reach (it writes state itself). Writing state here regardless
+      // would leave the controls and the state disagreeing on exactly
+      // the withheld path.
       return;
     }
     const config = getCurrentConfig(elements, state);

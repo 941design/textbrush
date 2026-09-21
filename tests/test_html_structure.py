@@ -67,6 +67,40 @@ def parse_html(html: str) -> HTMLStructureParser:
     return parser
 
 
+def test_a11y_harness_html_matches_the_shipped_html():
+    """The headless-browser harness must exercise the real markup.
+
+    `src-tauri/ui/a11y/index.html` is a copy of the shipped page that
+    differs only in its title and its script tag (it loads the aliased
+    a11y bundle). Any other difference means the accessibility suite is
+    asserting against a page the user never sees -- which no other test
+    would notice, because each file is only ever parsed on its own.
+    """
+    shipped = load_html().splitlines()
+    harness = (
+        (Path(__file__).parent.parent / "src-tauri" / "ui" / "a11y" / "index.html")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+
+    def significant(lines: list[str]) -> list[str]:
+        return [
+            line
+            for line in lines
+            if "<title>" not in line
+            and "<script" not in line
+            and line.strip()
+            and not line.strip().startswith("<!--")
+        ]
+
+    shipped_body = significant(shipped)
+    harness_body = significant(harness)
+    assert shipped_body == harness_body, (
+        "index.html and a11y/index.html have diverged beyond their title and "
+        "script tag; the accessibility suite would be testing different markup"
+    )
+
+
 def test_reference_editing_controls_have_semantic_ids_and_live_regions():
     parser = parse_html(load_html())
     for element_id, tag in {

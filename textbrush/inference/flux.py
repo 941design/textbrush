@@ -91,9 +91,22 @@ class FluxInferenceEngine(InferenceEngine):
 
     # Aspect ratio to dimensions mapping (default resolutions for each ratio)
     # Values must be divisible by 16 (FLUX model requirement)
+    # The dimensions each ratio resolves to when a caller names a ratio
+    # but leaves an axis unspecified -- the CLI's path, since it sends no
+    # explicit width/height. Every key of `cli.SUPPORTED_RATIOS` MUST
+    # appear here or that caller gets a KeyError at generation time;
+    # `tests/test_flux_inference.py::TestAspectRatioTableCoversTheCLI`
+    # fails the moment a ratio is added to one table and not the other.
+    #
+    # The values are one large size per ratio and are deliberately NOT
+    # the CLI ladder's first rung: the ladder's smallest entries exist
+    # for the desktop stepper, which always sends explicit pixels and
+    # never reaches this table.
     ASPECT_RATIOS = {
         "1:1": (1024, 1024),
         "16:9": (1280, 720),
+        "4:3": (1024, 768),
+        "3:4": (768, 1024),
         "3:1": (1536, 512),
         "4:1": (1600, 400),
         "4:5": (1024, 1280),

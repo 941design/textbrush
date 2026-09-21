@@ -147,6 +147,29 @@ class TestSupportedRatios:
         expected = {"1:1", "16:9", "4:3", "3:4", "3:1", "4:1", "4:5", "9:16"}
         assert set(SUPPORTED_RATIOS.keys()) == expected
 
+    def test_every_ratio_resolves_through_the_inference_engine(self):
+        """Every offered ratio must be resolvable by the engine.
+
+        `--aspect-ratio` reaches `FluxInferenceEngine.generate` as a ratio
+        with both axes None (the CLI sends no explicit pixels), and the
+        engine looks it up in its own ASPECT_RATIOS table. A ratio added
+        to SUPPORTED_RATIOS but not to that table passes argparse and
+        then raises KeyError at generation time -- which is exactly what
+        happened when 4:3 and 3:4 were added.
+        """
+        from textbrush.inference.flux import FluxInferenceEngine
+
+        missing = [
+            ratio for ratio in SUPPORTED_RATIOS if ratio not in FluxInferenceEngine.ASPECT_RATIOS
+        ]
+        assert not missing, (
+            f"ratios offered by the CLI but unresolvable by the engine: {missing}; "
+            f"add them to FluxInferenceEngine.ASPECT_RATIOS"
+        )
+        for ratio in SUPPORTED_RATIOS:
+            width, height = FluxInferenceEngine._resolve_dimensions(ratio)
+            assert width > 0 and height > 0
+
     def test_each_ratio_has_at_least_one_resolution(self):
         """Each aspect ratio has at least one resolution."""
         for ratio, resolutions in SUPPORTED_RATIOS.items():

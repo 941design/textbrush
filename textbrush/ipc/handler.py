@@ -35,6 +35,7 @@ from textbrush.model.weights import (
 )
 from textbrush.paths import display_path
 from textbrush.references import ReferenceImageError
+from textbrush.validation import TEXT_ASPECT_RATIOS
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +374,12 @@ class MessageHandler:
                     ack = self.backend.apply_configuration(
                         reference_paths=init_refs,
                         preset=init_preset,
+                        # The same canvas `start_generation` is about to
+                        # run at, below. Without it the references decode
+                        # against the preset canvas and the engine then
+                        # refuses them at the launch canvas.
+                        width=start_width,
+                        height=start_height,
                     )
                 except ReferenceImageError as exc:
                     server.send(
@@ -875,9 +882,14 @@ class MessageHandler:
                 self._signal_action()
             return
 
-        # Only validate aspect_ratio if using preset (not "custom") and no explicit dimensions
+        # Only validate aspect_ratio if using a ratio (not "custom") and no
+        # explicit dimensions. The vocabulary comes from `validation`, not
+        # from a literal here: this branch carried a three-entry set that
+        # had already drifted from the eight ratios the rest of the app
+        # offers, and only stayed harmless because every caller sends
+        # explicit pixels and skips it.
         if cmd.aspect_ratio != "custom" and cmd.width is None and cmd.height is None:
-            valid_aspect_ratios = {"1:1", "16:9", "9:16"}
+            valid_aspect_ratios = set(TEXT_ASPECT_RATIOS)
             if cmd.aspect_ratio not in valid_aspect_ratios:
                 valid_values = ", ".join(sorted(valid_aspect_ratios))
                 error_msg = (
@@ -982,10 +994,15 @@ class MessageHandler:
         `_start_selected_model` runs the same resolve/create/load
         sequence a pinned model would have run at INIT.
 
-        A second selection arriving while the first is still loading is
-        ignored rather than racing it: `self.backend` is set
-        synchronously by `_start_selected_model`, so only the first call
-        can reach this method.
+        A second selection arriving while the first is still loading
+        cannot race it: `self.backend` is set synchronously by
+        `_start_selected_model`, so only the first call reaches this
+        method. The second takes the editing branch instead and is
+        rejected there for an unsettled worker -- with that branch's own
+        wording ("model and reference changes require paused, settled
+        generation"), which describes the situation only loosely. The UI
+        disables the model radios for the whole of `loading`, so this is
+        a backstop rather than a path a user can walk.
         """
         from dataclasses import replace
 
@@ -1387,6 +1404,13 @@ class MessageHandler:
               THAT model, then calls backend.initialize()
             - If model missing without credentials: emits fatal error naming
               that model and returns
+            - Both "missing" branches are near-unreachable in practice:
+              `resolve_model_selection` blocks an unavailable explicit
+              selection before any backend is constructed, so this
+              method only sees a model that discovery just reported as
+              available. They survive as a guard for the window between
+              the two checks, not as the working download path -- that
+              is `textbrush --download-model <slug>`.
             - If discovery logic fails unexpectedly: falls back to direct
               backend.initialize() call (graceful degradation)
             - If backend.initialize() fails: logs error, sends fatal ERROR event

@@ -268,9 +268,6 @@ function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, ini
     updateResolutionButtons(ratio, dims.width, dims.height);
     renderRatioDimensions(getResolutionIndex(ratio, dims.width, dims.height));
     if (onOutputSizeChange?.(ratio, dims.width, dims.height)) {
-      state2.aspectRatio = ratio;
-      state2.width = dims.width;
-      state2.height = dims.height;
       return;
     }
     const config = getCurrentConfig(elements2, state2);
@@ -9308,6 +9305,12 @@ function renderEditingControls() {
     label?.classList.toggle("model-unavailable", capability?.available === false);
   });
   if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
+  const sizeLocked = isEditingModel(state.modelId) && !editable;
+  elements.aspectRatioRadios?.forEach((radio) => {
+    radio.disabled = sizeLocked;
+  });
+  if (elements.resolutionDecrease) elements.resolutionDecrease.disabled ||= sizeLocked;
+  if (elements.resolutionIncrease) elements.resolutionIncrease.disabled ||= sizeLocked;
   const referenceLimit = maxReferencesFor(state.modelId);
   const canAddReference = editable && referenceLimit > 0 && activeReferencePaths().length < referenceLimit;
   if (elements.referenceAdd) elements.referenceAdd.disabled = !canAddReference;
@@ -9363,8 +9366,8 @@ function renderReferenceList() {
   });
 }
 function sendEditingUpdate(modelId, references, size) {
-  if (!modelId || state.configUpdateInFlight) return;
-  if (!state.settled && !isAwaitingModel()) return;
+  if (!modelId || state.configUpdateInFlight) return false;
+  if (!state.settled && !isAwaitingModel()) return false;
   state.pendingReferences = references;
   state.pendingModelId = modelId;
   state.configUpdateInFlight = true;
@@ -9391,11 +9394,20 @@ function sendEditingUpdate(modelId, references, size) {
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = String(error);
   });
+  return true;
 }
 function claimOutputSizeChange(aspectRatio, width, height) {
-  if (!state.modelId) return true;
+  if (!state.modelId) {
+    state.aspectRatio = aspectRatio;
+    state.width = width;
+    state.height = height;
+    return true;
+  }
   if (!isEditingModel(state.modelId)) return false;
-  sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  const sent = sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  if (!sent) {
+    syncOutputSizeControls(state);
+  }
   return true;
 }
 function setupEditingControls() {

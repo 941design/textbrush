@@ -28,6 +28,7 @@ from textbrush.model.registry import (
     DiscoveryCause,
     get_model_spec,
 )
+from textbrush.validation import TEXT_ASPECT_RATIOS
 
 
 def _available() -> AvailabilityReport:
@@ -1449,9 +1450,15 @@ class TestUpdateConfigCommand:
         ]
         assert len(error_events) == 0
 
-    @given(invalid_aspect=st.text().filter(lambda x: x not in {"1:1", "16:9", "9:16", "custom"}))
+    @given(invalid_aspect=st.text().filter(lambda x: x not in set(TEXT_ASPECT_RATIOS) | {"custom"}))
     def test_update_config_invalid_aspect_ratio_sends_error(self, invalid_aspect):
-        """Invalid aspect ratio (not preset or 'custom') sends non-fatal error."""
+        """A ratio outside the shared vocabulary sends a non-fatal error.
+
+        The excluded set is read from `validation.TEXT_ASPECT_RATIOS`, not
+        restated: it was a literal three-entry set here, so every ratio
+        added since (3:1, 4:1, 4:5, and later 4:3 and 3:4) was being
+        generated as "invalid" input for a handler that should accept it.
+        """
         config = get_default_config()
         handler = MessageHandler(config)
         mock_server = Mock()
@@ -1883,6 +1890,134 @@ class TestInitBackendChecksResolvedModel:
         assert spec.license_url in errors[0]["message"]
         assert "FLUX.1 schnell" not in errors[0]["message"]
         mock_backend.initialize.assert_not_called()
+
+
+class TestDeferredModelSelection:
+    """Deferred loading: INIT loads nothing, and the first UPDATE_CONFIG
+    carrying a model_id is what starts the session.
+
+    The point is that the UI stays responsive rather than spending tens
+    of seconds (or a multi-gigabyte download) on a model the user may not
+    want, so "no backend is constructed" is the load-bearing assertion
+    here, not an implementation detail.
+    """
+
+    def test_init_without_a_selection_constructs_no_backend(self, handler, mock_server):
+        handler.handle_init({"prompt": "cat", "aspect_ratio": "1:1"}, mock_server)
+
+        assert handler.backend is None
+        states = _state_changed(mock_server, "awaiting_model")
+        assert states, "INIT with no model selected must park in awaiting_model"
+
+    def test_update_config_with_a_model_id_starts_the_session(self, handler, mock_server):
+        """The selection arrives as UPDATE_CONFIG and creates the backend
+        that INIT deliberately did not."""
+        mock_backend = Mock(spec=TextbrushBackend)
+        mock_backend.buffer = Mock()
+        mock_backend.buffer.max_size = 8
+        mock_backend.is_paused.return_value = True
+        mock_backend.is_settled.return_value = True
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (512, 512)
+
+        handler.handle_init({"prompt": "cat", "aspect_ratio": "1:1"}, mock_server)
+        assert handler.backend is None
+
+        with (
+            patch("textbrush.ipc.handler.check_model_availability", return_value=_available()),
+            patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend),
+            patch("textbrush.ipc.handler.threading.Thread", side_effect=_ImmediateThread),
+            patch.object(handler, "_init_backend", side_effect=lambda on_ready, server: on_ready()),
+            patch.object(handler, "_start_image_delivery"),
+        ):
+            handler.handle_update_config(
+                {
+                    "prompt": "cat",
+                    "aspect_ratio": "1:1",
+                    "width": 512,
+                    "height": 512,
+                    "model_id": FLUX1_SCHNELL,
+                },
+                mock_server,
+            )
+
+        assert handler.backend is mock_backend
+        mock_backend.start_generation.assert_called_once()
+        start_kwargs = mock_backend.start_generation.call_args.kwargs
+        assert start_kwargs["width"] == 512 and start_kwargs["height"] == 512
+
+    def test_update_config_without_a_model_id_still_reports_no_backend(self, handler, mock_server):
+        """Only a model_id counts as the selection; a prompt-only update
+        while awaiting has nothing to act on."""
+        handler.handle_init({"prompt": "cat", "aspect_ratio": "1:1"}, mock_server)
+        mock_server.send.reset_mock()
+
+        handler.handle_update_config({"prompt": "dog", "aspect_ratio": "1:1"}, mock_server)
+
+        assert handler.backend is None
+        errors = [
+            call[0][0].payload
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.ERROR
+        ]
+        assert errors and errors[0]["fatal"] is False
+
+    def test_an_unavailable_selection_is_non_fatal_and_reopens_the_selection(
+        self, handler, mock_server
+    ):
+        """A model whose weights are absent must not end the session:
+        with deferred loading there is always another model to pick."""
+        handler.handle_init({"prompt": "cat", "aspect_ratio": "1:1"}, mock_server)
+        mock_server.send.reset_mock()
+
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_absent()):
+            handler.handle_update_config(
+                {"prompt": "cat", "aspect_ratio": "1:1", "model_id": FLUX2_KLEIN_4B},
+                mock_server,
+            )
+
+        assert handler.backend is None
+        errors = [
+            call[0][0].payload
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.ERROR
+        ]
+        assert errors, "a blocked selection must be reported"
+        assert errors[0]["fatal"] is False, (
+            "an unavailable model is a rejected pick, not a dead app"
+        )
+        assert get_model_spec(FLUX2_KLEIN_4B).display_name in errors[0]["message"]
+        assert _state_changed(mock_server, "awaiting_model"), (
+            "the session must return to awaiting_model so another model can be chosen"
+        )
+
+    def test_model_list_names_every_registered_model_with_its_cardinality(
+        self, handler, mock_server
+    ):
+        """The UI renders its selector from this event, including which
+        models take reference images and which are installed."""
+        from textbrush.model.registry import iter_model_slugs
+
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
+            handler._emit_model_list(mock_server)
+
+        payloads = [
+            call[0][0].payload
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.MODEL_LIST
+        ]
+        assert len(payloads) == 1
+        listed = {entry["model_id"]: entry for entry in payloads[0]["models"]}
+        assert list(listed) == list(iter_model_slugs()), "registry order, every model"
+        for slug, entry in listed.items():
+            spec = get_model_spec(slug)
+            assert entry["display_name"] == spec.display_name
+            assert entry["min_references"] == spec.min_references
+            assert entry["max_references"] == spec.max_references
+            assert entry["available"] is True
 
 
 class TestLaunchSettledSignal:

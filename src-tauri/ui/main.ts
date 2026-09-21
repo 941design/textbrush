@@ -337,6 +337,18 @@ function renderEditingControls(): void {
   // never hidden -- only the prompt waits for a settled worker.
   if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
 
+  // A model that takes references sizes its output through the
+  // acknowledged-configuration seam (its references must be re-decoded
+  // onto the new canvas), and that seam is shut unless the worker has
+  // parked. Disable the group rather than letting a click move the
+  // controls while the backend keeps generating at the old canvas.
+  const sizeLocked = isEditingModel(state.modelId) && !editable;
+  elements.aspectRatioRadios?.forEach(radio => {
+    radio.disabled = sizeLocked;
+  });
+  if (elements.resolutionDecrease) elements.resolutionDecrease.disabled ||= sizeLocked;
+  if (elements.resolutionIncrease) elements.resolutionIncrease.disabled ||= sizeLocked;
+
   // The reference picker is always present. A model that takes no
   // references greys it out rather than making it disappear, so the
   // capability is visible instead of merely absent.
@@ -407,7 +419,9 @@ function renderReferenceList(): void {
 
 /**
  * Send one acknowledged-configuration update: model, references, and the
- * output canvas in explicit pixels.
+ * output canvas in explicit pixels. Returns whether it actually sent --
+ * it withholds while a worker is unsettled or an update is in flight,
+ * and the caller has to undo any display it moved ahead of the send.
  *
  * This is also the command that starts a deferred session: when no model
  * has been selected yet there is no backend, and the backend the user
@@ -419,9 +433,9 @@ function sendEditingUpdate(
   modelId: string | null,
   references: string[],
   size?: { aspectRatio: string; width: number; height: number },
-): void {
-  if (!modelId || state.configUpdateInFlight) return;
-  if (!state.settled && !isAwaitingModel()) return;
+): boolean {
+  if (!modelId || state.configUpdateInFlight) return false;
+  if (!state.settled && !isAwaitingModel()) return false;
   state.pendingReferences = references;
   state.pendingModelId = modelId;
   state.configUpdateInFlight = true;
@@ -448,21 +462,37 @@ function sendEditingUpdate(
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = String(error);
   });
+  return true;
 }
 
 /**
  * Claim an output-size change for the acknowledged-configuration seam.
  *
- * Returns true when this module sent (or deliberately withheld) the
- * update; see `OutputSizeHandler` in config_controls.ts for the
+ * Returns true when this module owns the update -- whether it sent it or
+ * withheld it; see `OutputSizeHandler` in config_controls.ts for the
  * contract. A model that takes references must go through
  * `apply_configuration` so its references are re-decoded onto the new
  * canvas, and with no model selected there is nothing to send at all.
  */
 function claimOutputSizeChange(aspectRatio: string, width: number, height: number): boolean {
-  if (!state.modelId) return true;
+  if (!state.modelId) {
+    // Nothing is loaded yet, so there is no backend to acknowledge this
+    // and no ack to reconcile against: the local state IS the truth
+    // until a model is selected, and it travels with that selection.
+    state.aspectRatio = aspectRatio;
+    state.width = width;
+    state.height = height;
+    return true;
+  }
   if (!isEditingModel(state.modelId)) return false;
-  sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  const sent = sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  if (!sent) {
+    // The seam withheld the update (unsettled worker, or one already in
+    // flight). Nothing reached the backend, so no ack will come back to
+    // reconcile against -- put the controls back where they were rather
+    // than leaving them showing a size that is not being generated.
+    ConfigControls.syncOutputSizeControls(state);
+  }
   return true;
 }
 
