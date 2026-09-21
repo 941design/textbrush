@@ -2,48 +2,28 @@
 //
 // Responsibilities:
 // 1. Replace read-only prompt display with editable text input
-// 2. Add radio button group for aspect ratio selection
-// 3. Add width/height input fields for custom dimensions
-// 4. Handle blur/Enter events to trigger configuration update
-// 5. Manage local state synchronization
+// 2. Own the single output-size group: one radio per aspect ratio, each
+//    labelled with the pixel dimensions it currently produces, plus the
+//    -/+ ladder step shared by all of them
+// 3. Handle blur/Enter events to trigger configuration update
+// 4. Manage local state synchronization
 
 import { invoke } from '@tauri-apps/api/core';
 import type { AppState, Elements } from './types';
-import { EDITING_PRESETS, isEditingModel } from './reference_picker';
 
 interface Resolution {
   width: number;
   height: number;
 }
 
-// Documented fallback when no editing preset is selected. Mirrors the default in
-// textbrush/config.py.
-const DEFAULT_EDITING_PRESET = 'landscape-medium';
-
-// Preset ids already reported as unknown, so the warning is emitted once per id
-// instead of on every prompt blur.
-const warnedPresets = new Set<string>();
-
-/**
- * Resolve an editing preset id to its dimensions.
- *
- * The backend does not validate the configured preset, so an id absent from
- * EDITING_PRESETS can reach the UI. Degrade to the documented default instead of
- * throwing inside the prompt handlers, but say so on the console.
- */
-export function resolveEditingPreset(presetId: string | null): { id: string; width: number; height: number } {
-  const requested = presetId ?? DEFAULT_EDITING_PRESET;
-  const match = EDITING_PRESETS.find(entry => entry.id === requested);
-  if (match) return match;
-  if (!warnedPresets.has(requested)) {
-    warnedPresets.add(requested);
-    console.warn(`Unknown editing preset "${requested}"; falling back to "${DEFAULT_EDITING_PRESET}"`);
-  }
-  return EDITING_PRESETS.find(entry => entry.id === DEFAULT_EDITING_PRESET) ?? EDITING_PRESETS[0];
-}
-
-// Supported aspect ratios with their available resolutions (smallest to largest)
-// Must match SUPPORTED_RATIOS in textbrush/cli.py
+// The one output-size table: every aspect ratio with its resolution
+// ladder, smallest to largest. Must match SUPPORTED_RATIOS in
+// textbrush/cli.py (key set, order, and every entry).
+//
+// There is no second table for editing models: 4:3 and 3:4 hold exactly
+// the dimensions textbrush/validation.py names landscape-small/medium/
+// large and portrait-small/medium/large, so every model is offered the
+// same group and the backend still recognises those six sizes by name.
 const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
   '1:1': [
     { width: 256, height: 256 },
@@ -54,6 +34,16 @@ const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
     { width: 640, height: 360 },
     { width: 1280, height: 720 },
     { width: 1920, height: 1080 },
+  ],
+  '4:3': [
+    { width: 512, height: 384 },
+    { width: 768, height: 576 },
+    { width: 1024, height: 768 },
+  ],
+  '3:4': [
+    { width: 384, height: 512 },
+    { width: 576, height: 768 },
+    { width: 768, height: 1024 },
   ],
   '3:1': [
     { width: 900, height: 300 },
@@ -77,18 +67,37 @@ const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
 // Get list of supported aspect ratios
 export const SUPPORTED_RATIOS = Object.keys(ASPECT_RATIO_RESOLUTIONS);
 
-// Get default (first) resolution for an aspect ratio
-function getDefaultResolution(ratio: string): Resolution {
+// Resolution at a ladder position, clamped into the ladder. Ladders have
+// different lengths (4:1 has two entries, 1:1 has three), so switching
+// ratios carries the step position across and clamps it rather than
+// dropping back to the smallest size.
+export function resolutionAtStep(ratio: string, step: number): Resolution {
   const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
   if (!resolutions || resolutions.length === 0) {
     return { width: 256, height: 256 };
   }
-  const first = resolutions[0];
-  return first ?? { width: 256, height: 256 };
+  const clamped = Math.min(Math.max(step, 0), resolutions.length - 1);
+  return resolutions[clamped] ?? { width: 256, height: 256 };
+}
+
+/**
+ * The ratio whose ladder holds exactly these dimensions, or null.
+ *
+ * Used to reconcile a backend-acknowledged canvas back onto the group.
+ * A size no ladder holds (a config file can name one) returns null, and
+ * the caller keeps the ratio it had rather than guessing.
+ */
+export function ratioForDimensions(width: number, height: number): string | null {
+  for (const [ratio, resolutions] of Object.entries(ASPECT_RATIO_RESOLUTIONS)) {
+    if (resolutions.some(entry => entry.width === width && entry.height === height)) {
+      return ratio;
+    }
+  }
+  return null;
 }
 
 // Get resolution index for current dimensions
-function getResolutionIndex(ratio: string, width: number, height: number): number {
+export function getResolutionIndex(ratio: string, width: number, height: number): number {
   const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
   if (!resolutions) return 0;
   const index = resolutions.findIndex(r => r.width === width && r.height === height);
@@ -142,6 +151,20 @@ interface ConfigValues {
   height: number;
 }
 
+/**
+ * Hook the owner of the editing seam installs to claim an output-size
+ * change.
+ *
+ * Return true to say "I sent this update myself". A model that takes
+ * reference images must route a size change through the acknowledged-
+ * configuration seam, because its references are decoded against the
+ * canvas and have to be decoded again when the canvas moves; and while
+ * no model is selected at all there is no backend to send anything to.
+ * Returning false leaves the plain prompt/dimension update to this
+ * module, which is the right channel for a text-only model.
+ */
+export type OutputSizeHandler = (ratio: string, width: number, height: number) => boolean;
+
 // Serialize backend config updates to preserve call order under rapid UI interactions.
 let configUpdateQueue: Promise<void> = Promise.resolve();
 
@@ -158,6 +181,35 @@ function updateResolutionButtons(ratio: string, width: number, height: number): 
   }
 }
 
+/**
+ * Write each option's actual pixel dimensions into its label.
+ *
+ * Every ratio is always visible and always carries the size it would
+ * produce at the current ladder step, so the group can be read as one
+ * list of concrete output sizes rather than as ratios whose meaning
+ * depends on a separate control.
+ */
+export function renderRatioDimensions(step: number): void {
+  const labels = document.querySelectorAll<HTMLElement>('.ratio-dimensions');
+  labels.forEach((label) => {
+    const ratio = label.dataset.ratio;
+    if (!ratio) return;
+    const { width, height } = resolutionAtStep(ratio, step);
+    label.textContent = `${width}×${height}`;
+  });
+}
+
+/**
+ * Reconcile the output-size group to `state.aspectRatio/width/height`.
+ *
+ * Exported so the owner of the backend acknowledgement can call it: the
+ * acknowledged canvas is backend truth, and the group must show the size
+ * the next image will actually be generated at.
+ */
+export function syncOutputSizeControls(state: AppState): void {
+  syncControlsFromState(state);
+}
+
 function syncControlsFromState(state: AppState): void {
   const dimensionDisplay = document.getElementById('dimension-display') as HTMLElement | null;
   if (dimensionDisplay) {
@@ -170,6 +222,7 @@ function syncControlsFromState(state: AppState): void {
   });
 
   updateResolutionButtons(state.aspectRatio, state.width, state.height);
+  renderRatioDimensions(getResolutionIndex(state.aspectRatio, state.width, state.height));
 }
 
 /**
@@ -181,7 +234,8 @@ export function initConfigControls(
   initialWidth: number,
   initialHeight: number,
   state: AppState,
-  elements: Elements
+  elements: Elements,
+  onOutputSizeChange?: OutputSizeHandler
 ): void {
   // Validate and set aspect ratio
   state.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : '1:1';
@@ -231,22 +285,37 @@ export function initConfigControls(
     });
   }
 
+  // One channel for every output-size change, whichever control made it.
+  const applyOutputSize = (ratio: string, dims: Resolution): void => {
+    // Optimistically update the controls while the owner of the update
+    // (the handler, or handleConfigUpdate) owns state mutation.
+    if (dimensionDisplay) {
+      dimensionDisplay.textContent = `${dims.width}×${dims.height}`;
+    }
+    updateResolutionButtons(ratio, dims.width, dims.height);
+    renderRatioDimensions(getResolutionIndex(ratio, dims.width, dims.height));
+
+    if (onOutputSizeChange?.(ratio, dims.width, dims.height)) {
+      // Claimed by the editing seam (or deliberately dropped because no
+      // model is selected yet); state comes back from the backend ack.
+      state.aspectRatio = ratio;
+      state.width = dims.width;
+      state.height = dims.height;
+      return;
+    }
+    const config = getCurrentConfig(elements, state);
+    void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state);
+  };
+
   // Aspect ratio radio event listeners
   radios.forEach(radio => {
     radio.addEventListener('change', () => {
       const ratio = radio.value;
-      const dims = getDefaultResolution(ratio);
-
-      // Optimistically update control display while handleConfigUpdate owns state mutation.
-      if (dimensionDisplay) {
-        dimensionDisplay.textContent = `${dims.width}×${dims.height}`;
-      }
-
-      // Update button states
-      updateResolutionButtons(ratio, dims.width, dims.height);
-
-      const config = getCurrentConfig(elements, state);
-      void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state);
+      // Carry the ladder position across the switch: the user picked a
+      // shape, not a size, and dropping to the smallest entry of the new
+      // ladder would silently undo the size they had set.
+      const step = getResolutionIndex(state.aspectRatio, state.width, state.height);
+      applyOutputSize(ratio, resolutionAtStep(ratio, step));
     });
   });
 
@@ -255,18 +324,7 @@ export function initConfigControls(
     decreaseBtn.addEventListener('click', () => {
       const prevRes = getPreviousResolution(state.aspectRatio, state.width, state.height);
       if (prevRes) {
-        // Update UI immediately with new resolution
-        if (dimensionDisplay) {
-          dimensionDisplay.textContent = `${prevRes.width}×${prevRes.height}`;
-        }
-        updateResolutionButtons(state.aspectRatio, prevRes.width, prevRes.height);
-
-        // Get current prompt and aspect ratio
-        const config = getCurrentConfig(elements, state);
-
-        // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
-        // (Don't update state.width/height here, as handleConfigUpdate compares against state)
-        void handleConfigUpdate(config.prompt, config.aspectRatio, prevRes.width, prevRes.height, state);
+        applyOutputSize(state.aspectRatio, prevRes);
       }
     });
   }
@@ -276,18 +334,7 @@ export function initConfigControls(
     increaseBtn.addEventListener('click', () => {
       const nextRes = getNextResolution(state.aspectRatio, state.width, state.height);
       if (nextRes) {
-        // Update UI immediately with new resolution
-        if (dimensionDisplay) {
-          dimensionDisplay.textContent = `${nextRes.width}×${nextRes.height}`;
-        }
-        updateResolutionButtons(state.aspectRatio, nextRes.width, nextRes.height);
-
-        // Get current prompt and aspect ratio
-        const config = getCurrentConfig(elements, state);
-
-        // Pass new dimensions directly - state will be updated by handleConfigUpdate if successful
-        // (Don't update state.width/height here, as handleConfigUpdate compares against state)
-        void handleConfigUpdate(config.prompt, config.aspectRatio, nextRes.width, nextRes.height, state);
+        applyOutputSize(state.aspectRatio, nextRes);
       }
     });
   }
@@ -413,16 +460,11 @@ export function showValidationError(message: string, inputElement: Element): voi
 export function getCurrentConfig(elements: Elements, state: AppState): ConfigValues {
   const promptValue = elements.promptInput ? elements.promptInput.value : '';
 
-  if (isEditingModel(state.modelId)) {
-    const preset = resolveEditingPreset(state.preset);
-    return {
-      prompt: promptValue,
-      aspectRatio: 'custom',
-      width: preset.width,
-      height: preset.height,
-    };
-  }
-
+  // One vocabulary for every model: the checked ratio plus the explicit
+  // pixel dimensions the ladder resolved. Editing models used to answer
+  // with 'custom' and preset dimensions here; they no longer need to,
+  // because they are offered the same output-size group as text models
+  // and the backend accepts any ratio alongside explicit dimensions.
   let aspectRatioValue = '1:1';
   if (elements.aspectRatioRadios) {
     const radios = Array.from(elements.aspectRatioRadios);

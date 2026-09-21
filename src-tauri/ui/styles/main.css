@@ -406,52 +406,120 @@ body {
     flex-shrink: 0;
 }
 
+/* Row 2 is three side-by-side groups: model, output size, references.
+   Every model sees all three; a group a model cannot use is disabled,
+   never hidden, so the layout never jumps when the model changes. */
 .header-bar .header-row-2 {
-    gap: var(--spacing-lg);
-}
-
-.header-bar .aspect-ratio-control,
-.header-bar .resolution-control {
-    flex-shrink: 0;
-}
-
-.editing-controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--spacing-sm);
-    min-width: 0;
-    overflow: visible;
+    align-items: stretch;
+    gap: var(--spacing-md);
     font-size: calc(var(--font-scale) * 12px);
     color: var(--text-primary);
 }
 
-.editing-controls fieldset {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
+.header-bar .header-row-2 > * {
     min-width: 0;
     margin: 0;
-    padding: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm);
     border: 1px solid var(--border-subtle);
     border-radius: 4px;
 }
 
-.editing-controls fieldset.hidden,
-.aspect-ratio-control.hidden,
-.resolution-control.hidden {
-    display: none;
+.header-bar .header-row-2 legend,
+.reference-legend {
+    padding: 0 var(--spacing-xs);
+    color: var(--text-muted);
+    font-size: calc(var(--font-scale) * 11px);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
-.editing-controls label { white-space: nowrap; }
-.editing-controls label.recommended::after { content: " recommended"; font-weight: 700; }
-.editing-controls small { color: var(--text-muted); }
-.reference-picker { min-width: 0; flex: 1 1 280px; }
-.reference-picker button { font-size: inherit; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 4px; }
-#reference-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); padding: 0; margin: var(--spacing-xs) 0; list-style: none; }
-#reference-list li { display: flex; align-items: center; gap: var(--spacing-xs); min-width: 0; max-width: 220px; }
-#reference-list img { max-width: 72px; max-height: 72px; object-fit: contain; }
-#reference-list span { overflow-wrap: anywhere; }
+/* Model selection reads top to bottom: one model per line, so the name
+   and its reference capability stay on the same row and comparing the
+   models is a vertical scan rather than a horizontal one. */
+.model-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+.model-option {
+    justify-content: flex-start;
+    gap: var(--spacing-xs);
+    white-space: nowrap;
+}
+
+.model-option .model-name {
+    font-family: var(--font-mono);
+}
+
+.model-option .model-note {
+    color: var(--text-muted);
+}
+
+.model-option.model-unavailable .model-name,
+.model-option.model-unavailable .model-note {
+    opacity: 0.55;
+}
+
+.model-option .recommended-badge {
+    font-weight: 700;
+}
+
+/* Output size: every ratio, always, each labelled with the pixels it
+   currently produces; the -/+ step moves all of them together. */
+.output-size-control {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    flex: 0 1 auto;
+}
+
+.aspect-ratio-group {
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    gap: 2px var(--spacing-md);
+}
+
+.ratio-dimensions {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: calc(var(--font-scale) * 10px);
+}
+
+.output-size-control .resolution-control {
+    justify-content: flex-end;
+}
+
+.reference-picker {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+    flex: 1 1 260px;
+}
+
+.reference-picker.disabled {
+    opacity: 0.5;
+}
+
+.reference-picker button {
+    font-size: inherit;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 2px var(--spacing-sm);
+}
+
+.reference-picker button:disabled {
+    cursor: not-allowed;
+}
+
+#reference-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); padding: 0; margin: 0; list-style: none; }
+#reference-list li { display: flex; align-items: center; gap: var(--spacing-xs); min-width: 0; max-width: 260px; }
+#reference-list img { max-width: 56px; max-height: 56px; object-fit: contain; }
+#reference-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #reference-error { color: var(--text-primary); font-size: inherit; }
 
 /* ============================================================================
@@ -705,6 +773,10 @@ body {
     gap: var(--spacing-sm);
 }
 
+.aspect-ratio-control {
+    align-items: flex-start;
+}
+
 .prompt-input {
     flex: 1;
     width: 100%;
@@ -725,11 +797,6 @@ body {
 
 .prompt-input::placeholder {
     color: var(--text-muted);
-}
-
-.aspect-ratio-group {
-    display: flex;
-    gap: var(--spacing-md);
 }
 
 .dimension-group {

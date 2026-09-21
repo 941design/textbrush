@@ -44,6 +44,7 @@ class MessageType(str, Enum):
     IMAGE_LIST = "image_list"
     GET_IMAGE_LIST = "get_image_list"
     CONFIG_ACK = "config_ack"
+    MODEL_LIST = "model_list"
 
 
 @dataclass
@@ -101,6 +102,45 @@ class ConfigAckEvent:
     incompatibility_reason: str | None = None
     required_model: str | None = None
     settled: bool = False
+    # The acknowledged output canvas in pixels. `preset` names it only
+    # when a preset identifier happens to, and the UI offers every
+    # registered size to every model -- so the dimensions, not the
+    # identifier, are what the UI reconciles its output-size group to.
+    # None before the first generation has been configured.
+    width: int | None = None
+    height: int | None = None
+
+
+@dataclass
+class ModelInfo:
+    """One registered model as the desktop UI needs to render it.
+
+    Carries the registry's identity and cardinality data plus the result
+    of a local availability check, so the UI can show which models can
+    be selected without loading anything, and how many reference images
+    each one takes. `min_references == 0 and max_references > 0` is the
+    "references optional" case.
+    """
+
+    model_id: str
+    display_name: str
+    min_references: int
+    max_references: int
+    available: bool
+    cause: str | None = None
+    detail: str = ""
+
+
+@dataclass
+class ModelListEvent:
+    """Event carrying every registered model and its local availability.
+
+    Emitted once per session, right after INIT and BEFORE any model is
+    loaded, so the UI can offer the selection while nothing is blocking
+    it. `models` is in registry declaration order.
+    """
+
+    models: list[dict]  # List of ModelInfo dicts
 
 
 @dataclass
@@ -284,6 +324,10 @@ class BackendState(str, Enum):
 
     CONTRACT:
       States:
+        - AWAITING_MODEL: No model selected yet, so nothing is loaded and
+          nothing is generating. The session sits here until a model is
+          chosen (deferred loading: a model the user may not want is
+          never loaded just because the app started).
         - LOADING: Model initializing, not ready for generation
         - IDLE: Model ready, not generating
         - GENERATING: Actively generating an image
@@ -291,6 +335,8 @@ class BackendState(str, Enum):
         - ERROR: Error occurred (fatal or non-fatal)
 
       Transitions:
+        - AWAITING_MODEL → LOADING (user selects a model)
+        - AWAITING_MODEL → ERROR (selected model cannot be resolved)
         - LOADING → IDLE (model load success, not paused)
         - LOADING → PAUSED (if start_paused=true, overrides for display)
         - LOADING → ERROR (model load failure)
@@ -306,6 +352,7 @@ class BackendState(str, Enum):
         - Single state: backend is in exactly one state at any time
     """
 
+    AWAITING_MODEL = "awaiting_model"
     LOADING = "loading"
     IDLE = "idle"
     GENERATING = "generating"
@@ -330,7 +377,8 @@ class StateChangedEvent:
           (T07); controls whether editing controls are enabled.
 
       Invariants:
-        - state is one of: loading, idle, generating, paused, error
+        - state is one of: awaiting_model, loading, idle, generating,
+          paused, error
         - If state = GENERATING: prompt field is non-empty string
         - If state = ERROR: message field is non-empty string, fatal is boolean
         - If state ≠ GENERATING: prompt field is None

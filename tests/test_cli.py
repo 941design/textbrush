@@ -144,7 +144,7 @@ class TestSupportedRatios:
 
     def test_supported_ratios_contains_expected_ratios(self):
         """SUPPORTED_RATIOS contains all expected aspect ratios."""
-        expected = {"1:1", "16:9", "3:1", "4:1", "4:5", "9:16"}
+        expected = {"1:1", "16:9", "4:3", "3:4", "3:1", "4:1", "4:5", "9:16"}
         assert set(SUPPORTED_RATIOS.keys()) == expected
 
     def test_each_ratio_has_at_least_one_resolution(self):
@@ -654,26 +654,33 @@ def test_cli_model_reference_cardinality_before_backend(model_id, count, valid, 
     assert model_id in output.err
 
 
-def test_cli_rejects_text_aspect_ratio_for_editing_before_backend(tmp_path, capsys):
+def test_cli_accepts_any_aspect_ratio_for_editing(tmp_path):
+    """An aspect ratio is valid for a reference-capable model.
+
+    There is one output-size vocabulary now, offered to every model, so
+    `--aspect-ratio 16:9 --reference ...` is a legitimate request rather
+    than a mode error. Validation is checked directly here (rather than
+    through `main`) so the assertion is about the rule, not about whether
+    the model's weights happen to be installed.
+    """
+    from textbrush.validation import validate_selection
+
     reference = tmp_path / "reference.png"
     reference.write_bytes(b"not decoded")
-    with patch("textbrush.backend.TextbrushBackend") as backend_class:
-        with pytest.raises(SystemExit) as error:
-            main(
-                [
-                    "--prompt",
-                    "edit",
-                    "--model",
-                    "flux2-klein-4b",
-                    "--reference",
-                    str(reference),
-                    "--aspect-ratio",
-                    "16:9",
-                ]
-            )
-    assert error.value.code == 1
-    assert backend_class.call_count == 0
-    assert "text-only aspect ratio" in capsys.readouterr().err
+    args = build_parser().parse_args(
+        [
+            "--prompt",
+            "edit",
+            "--model",
+            "flux2-klein-4b",
+            "--reference",
+            str(reference),
+            "--aspect-ratio",
+            "16:9",
+        ]
+    )
+    validate_args(args)
+    assert validate_selection("flux2-klein-4b", 1, None, "16:9").valid is True
 
 
 def test_cli_accepts_uppercase_jpg_without_decoding(tmp_path):

@@ -12,7 +12,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { fetchAndParsePngMetadata } from './png-metadata';
 import {
   applyPickedPaths, removeReference, replaceReference, previewLabel,
-  isEditingModel, compatibilityMessage, EDITING_PRESETS,
+  isEditingModel, compatibilityMessage, adoptModelCapabilities,
+  maxReferencesFor, modelCapability, referenceCapabilityLabel,
 } from './reference_picker';
 import type {
   AppState,
@@ -26,6 +27,7 @@ import type {
   DeleteAckPayload,
   ErrorPayload,
   ConfigAckPayload,
+  ModelListPayload,
   ImageRecord,
 } from './types';
 
@@ -49,6 +51,7 @@ const state: AppState = {
   imageList: [],
   currentIndex: -1,
   modelId: null,
+  pendingModelId: null,
   references: [],
   pendingReferences: null,
   preset: null,
@@ -74,8 +77,6 @@ const elements: Elements = {
   promptDisplay: null,
   promptInput: null,
   aspectRatioRadios: null,
-  aspectRatioControls: null,
-  resolutionControls: null,
   dimensionDisplay: null,
   resolutionDecrease: null,
   resolutionIncrease: null,
@@ -101,8 +102,8 @@ const elements: Elements = {
   referenceAdd: null,
   referenceList: null,
   referenceError: null,
-  editingPresets: null,
-  presetRadios: null,
+  outputSize: null,
+  referenceLegend: null,
 };
 
 // Magnifier state
@@ -147,8 +148,6 @@ function cacheElements(): void {
   elements.promptDisplay = document.getElementById('prompt-display');
   elements.promptInput = document.getElementById('prompt-input') as HTMLInputElement | null;
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
-  elements.aspectRatioControls = document.querySelector('.aspect-ratio-control');
-  elements.resolutionControls = document.querySelector('.resolution-control');
   elements.dimensionDisplay = document.getElementById('dimension-display');
   elements.resolutionDecrease = document.getElementById('resolution-decrease') as HTMLButtonElement | null;
   elements.resolutionIncrease = document.getElementById('resolution-increase') as HTMLButtonElement | null;
@@ -174,8 +173,8 @@ function cacheElements(): void {
   elements.referenceAdd = document.getElementById('reference-add') as HTMLButtonElement | null;
   elements.referenceList = document.getElementById('reference-list') as HTMLUListElement | null;
   elements.referenceError = document.getElementById('reference-error');
-  elements.editingPresets = document.getElementById('editing-presets') as HTMLFieldSetElement | null;
-  elements.presetRadios = document.querySelectorAll('input[name="editing-preset"]');
+  elements.outputSize = document.getElementById('output-size') as HTMLFieldSetElement | null;
+  elements.referenceLegend = document.getElementById('reference-legend');
 }
 
 function allElementsPresent(): boolean {
@@ -231,7 +230,8 @@ async function init(): Promise<void> {
       launchArgs.width,
       launchArgs.height,
       state,
-      elements
+      elements,
+      claimOutputSizeChange
     );
 
     // Setup event listeners
@@ -288,11 +288,31 @@ function activeReferencePaths(): string[] {
   return state.pendingReferences ?? state.references;
 }
 
+/** True while no model has been selected, so nothing is loading. */
+function isAwaitingModel(): boolean {
+  return state.backendState?.state === 'awaiting_model';
+}
+
+/**
+ * True when the model selector may be operated.
+ *
+ * Deferred loading is the point of the `awaiting_model` case: at launch
+ * nothing is loaded, so the selector is live immediately rather than
+ * waiting for a settled worker that no one asked for.
+ */
+function canSelectModel(): boolean {
+  return (state.settled || isAwaitingModel()) && !state.configUpdateInFlight;
+}
+
 function renderEditingControls(): void {
   const editable = state.settled && !state.configUpdateInFlight;
+  const selectable = canSelectModel();
   elements.modelRadios?.forEach(radio => {
+    // Backend truth only: a click does not check the radio, the
+    // acknowledgement does (FR9, no optimistic updates). While a
+    // selection is in flight the viewer names the model being loaded.
     radio.checked = radio.value === state.modelId;
-    radio.disabled = !editable;
+    radio.disabled = !selectable;
     const label = radio.closest('label');
     label?.querySelector('.recommended-badge')?.remove();
     if (label && radio.value === state.compatibility?.requiredModel) {
@@ -301,17 +321,38 @@ function renderEditingControls(): void {
       badge.textContent = ' recommended';
       label.append(badge);
     }
+    const capability = modelCapability(radio.value);
+    const note = label?.querySelector('.model-note');
+    if (note && capability) {
+      const unavailable = capability.available === false ? ' — not installed' : '';
+      note.textContent = `${referenceCapabilityLabel(capability)}${unavailable}`;
+    }
+    label?.classList.toggle('model-unavailable', capability?.available === false);
   });
-  const editing = isEditingModel(state.modelId);
-  if (elements.promptInput) elements.promptInput.disabled = editing && !editable;
-  elements.editingPresets?.classList.toggle('hidden', !editing);
-  elements.aspectRatioControls?.classList.toggle('hidden', editing);
-  elements.resolutionControls?.classList.toggle('hidden', editing);
-  elements.presetRadios?.forEach(radio => {
-    radio.checked = radio.value === state.preset;
-    radio.disabled = !editable || !editing;
-  });
-  if (elements.referenceAdd) elements.referenceAdd.disabled = !editable;
+
+  // The output-size group is the same group for every model, so it is
+  // never hidden -- only the prompt waits for a settled worker.
+  if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
+
+  // The reference picker is always present. A model that takes no
+  // references greys it out rather than making it disappear, so the
+  // capability is visible instead of merely absent.
+  const referenceLimit = maxReferencesFor(state.modelId);
+  const canAddReference =
+    editable && referenceLimit > 0 && activeReferencePaths().length < referenceLimit;
+  if (elements.referenceAdd) elements.referenceAdd.disabled = !canAddReference;
+  elements.referencePicker?.classList.toggle('disabled', referenceLimit === 0);
+  if (elements.referenceLegend) {
+    // Before a model is acknowledged there is nothing to say about its
+    // capability -- saying "not supported" while one is still loading
+    // would describe the absence of an answer as an answer.
+    elements.referenceLegend.textContent =
+      state.modelId === null
+        ? 'Reference images'
+        : referenceLimit === 0
+          ? 'Reference images (not supported by this model)'
+          : `Reference images (up to ${referenceLimit})`;
+  }
   if (elements.referenceError) {
     elements.referenceError.textContent = state.compatibility?.reason ?? '';
   }
@@ -339,7 +380,7 @@ function renderReferenceList(): void {
     remove.setAttribute('aria-label', `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
     remove.disabled = !editable;
     remove.addEventListener('click', () => {
-      sendEditingUpdate(state.modelId, removeReference(state.references, index), state.preset);
+      sendEditingUpdate(state.modelId, removeReference(state.references, index));
     });
     const replace = document.createElement('button');
     replace.type = 'button';
@@ -354,36 +395,72 @@ function renderReferenceList(): void {
         if (elements.referenceError) elements.referenceError.textContent = result.errors.join(' ');
         return;
       }
-      sendEditingUpdate(state.modelId, result.references, state.preset);
+      sendEditingUpdate(state.modelId, result.references);
     });
     item.append(preview, name, remove, replace);
     list.append(item);
   });
 }
 
-function sendEditingUpdate(modelId: string | null, references: string[], preset: string | null): void {
-  if (!state.settled || state.configUpdateInFlight || !modelId) return;
+/**
+ * Send one acknowledged-configuration update: model, references, and the
+ * output canvas in explicit pixels.
+ *
+ * This is also the command that starts a deferred session: when no model
+ * has been selected yet there is no backend, and the backend the user
+ * just picked is created from exactly this message (see `handle_init`
+ * in textbrush/ipc/handler.py). Hence the `awaiting_model` branch --
+ * waiting for a settled worker there would wait forever.
+ */
+function sendEditingUpdate(
+  modelId: string | null,
+  references: string[],
+  size?: { aspectRatio: string; width: number; height: number },
+): void {
+  if (!modelId || state.configUpdateInFlight) return;
+  if (!state.settled && !isAwaitingModel()) return;
   state.pendingReferences = references;
+  state.pendingModelId = modelId;
   state.configUpdateInFlight = true;
   renderEditingControls();
-  const selectedPreset = preset ?? (isEditingModel(modelId) ? 'landscape-medium' : null);
-  const dimensions = EDITING_PRESETS.find(entry => entry.id === selectedPreset);
+  const aspectRatio = size?.aspectRatio ?? state.aspectRatio;
+  const width = size?.width ?? state.width;
+  const height = size?.height ?? state.height;
   const localReason = compatibilityMessage(modelId, references.length);
   if (localReason && elements.referenceError) elements.referenceError.textContent = localReason;
   void invoke('update_generation_config', {
     prompt: elements.promptInput?.value || state.prompt,
-    aspectRatio: dimensions ? 'custom' : state.aspectRatio,
-    width: dimensions?.width ?? state.width,
-    height: dimensions?.height ?? state.height,
+    aspectRatio,
+    width,
+    height,
     modelId,
     references,
-    preset: selectedPreset,
+    // The backend derives the preset identifier from the dimensions;
+    // sending one here would override the size the user just picked.
+    preset: null,
   }).catch(error => {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
+    state.pendingModelId = null;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = String(error);
   });
+}
+
+/**
+ * Claim an output-size change for the acknowledged-configuration seam.
+ *
+ * Returns true when this module sent (or deliberately withheld) the
+ * update; see `OutputSizeHandler` in config_controls.ts for the
+ * contract. A model that takes references must go through
+ * `apply_configuration` so its references are re-decoded onto the new
+ * canvas, and with no model selected there is nothing to send at all.
+ */
+function claimOutputSizeChange(aspectRatio: string, width: number, height: number): boolean {
+  if (!state.modelId) return true;
+  if (!isEditingModel(state.modelId)) return false;
+  sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  return true;
 }
 
 function setupEditingControls(): void {
@@ -391,25 +468,29 @@ function setupEditingControls(): void {
     radio.addEventListener('change', () => {
       const requested = radio.value;
       renderEditingControls(); // Selection changes only after config_ack.
-      sendEditingUpdate(requested, state.references, state.preset);
-    });
-  });
-  elements.presetRadios?.forEach(radio => {
-    radio.addEventListener('change', () => {
-      renderEditingControls();
-      sendEditingUpdate(state.modelId, state.references, radio.value);
+      // A model that takes no references cannot carry the ones the
+      // previous model held; dropping them here keeps the update the
+      // backend acknowledges the same one the user can see.
+      const references = maxReferencesFor(requested) > 0 ? state.references : [];
+      sendEditingUpdate(requested, references, {
+        aspectRatio: state.aspectRatio,
+        width: state.width,
+        height: state.height,
+      });
     });
   });
   elements.referenceAdd?.addEventListener('click', async () => {
     if (!state.settled || state.configUpdateInFlight) return;
+    const limit = maxReferencesFor(state.modelId);
+    if (limit === 0) return;
     try {
       const picked = await invoke<string[]>('pick_reference_files');
-      const result = applyPickedPaths(state.references, picked);
+      const result = applyPickedPaths(state.references, picked, limit);
       if (result.errors.length && elements.referenceError) {
         elements.referenceError.textContent = result.errors.join(' ');
       }
       if (result.references.length !== state.references.length) {
-        sendEditingUpdate(state.modelId, result.references, state.preset);
+        sendEditingUpdate(state.modelId, result.references);
       }
     } catch (error) {
       if (elements.referenceError) elements.referenceError.textContent = String(error);
@@ -427,12 +508,45 @@ function handleConfigAck(payload: ConfigAckPayload): void {
     requiredModel: payload.required_model,
   };
   state.pendingReferences = null;
+  state.pendingModelId = null;
   state.configUpdateInFlight = false;
+  // The acknowledged canvas is backend truth; the output-size group must
+  // show the size the next image is actually generated at, not the one
+  // the UI last asked for.
+  if (typeof payload.width === 'number' && typeof payload.height === 'number') {
+    const ratio = ConfigControls.ratioForDimensions(payload.width, payload.height);
+    if (ratio) state.aspectRatio = ratio;
+    state.width = payload.width;
+    state.height = payload.height;
+    ConfigControls.syncOutputSizeControls(state);
+  }
   // config_ack is the second channel of truth for the settled gate. An omitted
   // value leaves whatever state_changed last reported intact.
   if (typeof payload.settled === 'boolean') {
     state.settled = payload.settled;
   }
+  renderEditingControls();
+}
+
+/**
+ * Adopt the backend's model catalogue.
+ *
+ * This is the registry's own answer to "which models exist, how many
+ * references does each take, and are its weights here" -- it replaces
+ * the mirror table in reference_picker.ts, so the greying-out of the
+ * reference picker follows the backend rather than a second copy of the
+ * cardinality rules.
+ */
+function handleModelList(payload: ModelListPayload): void {
+  adoptModelCapabilities(
+    payload.models.map(entry => ({
+      id: entry.model_id,
+      displayName: entry.display_name,
+      minReferences: entry.min_references,
+      maxReferences: entry.max_references,
+      available: entry.available,
+    })),
+  );
   renderEditingControls();
 }
 
@@ -478,6 +592,10 @@ function handleMessage(msg: SidecarMessage): void {
 
     case 'config_ack':
       handleConfigAck(msg.payload as ConfigAckPayload);
+      break;
+
+    case 'model_list':
+      handleModelList(msg.payload as ModelListPayload);
       break;
 
     default: {
@@ -606,6 +724,7 @@ function handleErrorMessage(payload: ErrorPayload): void {
   if (state.configUpdateInFlight) {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
+    state.pendingModelId = null;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = payload.message;
   }
@@ -821,9 +940,14 @@ function updateLoadingOverlayForState(): void {
   if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains('hidden')) {
     let labelText: string;
     switch (state.backendState.state) {
-      case "loading":
-        labelText = "loading model";
+      case "awaiting_model":
+        labelText = "select a model to begin";
         break;
+      case "loading": {
+        const pending = modelCapability(state.pendingModelId);
+        labelText = pending ? `loading ${pending.displayName}` : "loading model";
+        break;
+      }
       case "idle":
         labelText = "ready";
         break;

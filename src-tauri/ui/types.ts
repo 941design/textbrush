@@ -9,6 +9,13 @@ export interface ImagePayload {
 }
 
 // Discriminated union for StateChangedPayload - provides type safety for state-specific fields
+// No model has been selected yet, so nothing is loaded and nothing is
+// generating. Deferred loading parks here at launch: the model selector
+// is live immediately instead of waiting out a load nobody asked for.
+export interface StateChangedAwaitingModel {
+  state: "awaiting_model";
+}
+
 export interface StateChangedLoading {
   state: "loading";
 }
@@ -34,6 +41,7 @@ export interface StateChangedError {
 }
 
 export type StateChangedPayload =
+  | StateChangedAwaitingModel
   | StateChangedLoading
   | StateChangedIdle
   | StateChangedGenerating
@@ -113,11 +121,39 @@ export interface ConfigAckPayload {
   // must leave the settled gate as state_changed last reported it rather than
   // silently disabling every editing control.
   settled?: boolean;
+  // The acknowledged output canvas in pixels; null before the first
+  // generation has been configured. The output-size group reconciles to
+  // this rather than to `preset`, which names only some of the sizes.
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface ConfigAckMessage {
   type: 'config_ack';
   payload: ConfigAckPayload;
+}
+
+// One registered model as the backend's registry describes it, including
+// whether its weights are present locally. Emitted once per session,
+// before anything is loaded, so the selector can be rendered and offered
+// while no model is loading.
+export interface ModelListEntry {
+  model_id: string;
+  display_name: string;
+  min_references: number;
+  max_references: number;
+  available: boolean;
+  cause: string | null;
+  detail: string;
+}
+
+export interface ModelListPayload {
+  models: ModelListEntry[];
+}
+
+export interface ModelListMessage {
+  type: 'model_list';
+  payload: ModelListPayload;
 }
 
 export interface ErrorMessage {
@@ -133,6 +169,7 @@ export type SidecarMessage =
   | AbortedMessage
   | DeleteAckMessage
   | ConfigAckMessage
+  | ModelListMessage
   | ErrorMessage;
 
 // Launch args from Rust backend
@@ -169,6 +206,10 @@ export interface ImageRecord {
 
 // Backend state object (replaces multiple boolean flags)
 // Uses discriminated union for type-safe state-specific field access
+export interface BackendStateAwaitingModel {
+  state: "awaiting_model";
+}
+
 export interface BackendStateLoading {
   state: "loading";
 }
@@ -193,6 +234,7 @@ export interface BackendStateError {
 }
 
 export type BackendState =
+  | BackendStateAwaitingModel
   | BackendStateLoading
   | BackendStateIdle
   | BackendStateGenerating
@@ -216,6 +258,11 @@ export interface AppState {
   imageList: ImageRecord[];
   currentIndex: number;
   modelId: string | null;
+  // The model the user just clicked, until the backend acknowledges or
+  // rejects it. It never checks a radio -- selection stays backend truth
+  // (FR9) -- it only lets the viewer name the model being loaded, which
+  // is the one action slow enough that silence reads as a hang.
+  pendingModelId: string | null;
   references: string[];
   pendingReferences: string[] | null;
   preset: string | null;
@@ -241,8 +288,6 @@ export interface Elements {
   promptDisplay: HTMLElement | null;
   promptInput: HTMLInputElement | null;
   aspectRatioRadios: NodeListOf<HTMLInputElement> | null;
-  aspectRatioControls: HTMLElement | null;
-  resolutionControls: HTMLElement | null;
   dimensionDisplay: HTMLElement | null;
   resolutionDecrease: HTMLButtonElement | null;
   resolutionIncrease: HTMLButtonElement | null;
@@ -268,6 +313,6 @@ export interface Elements {
   referenceAdd: HTMLButtonElement | null;
   referenceList: HTMLUListElement | null;
   referenceError: HTMLElement | null;
-  editingPresets: HTMLFieldSetElement | null;
-  presetRadios: NodeListOf<HTMLInputElement> | null;
+  outputSize: HTMLFieldSetElement | null;
+  referenceLegend: HTMLElement | null;
 }

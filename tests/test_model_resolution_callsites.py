@@ -52,15 +52,18 @@ class TestResolveModelSelectionCallsites:
 
     def test_call_sites_match_handler_init(self) -> None:
         sites = _find_resolve_call_sites()
-        # T08 lands the CLI call site. Both `handle_init` and `main`
-        # are the documented production callers; no other production
-        # module is allowed to call `resolve_model_selection` (running
-        # the resolver silently elsewhere would re-route the model
-        # selection and silently violate AC-MODEL-5b).
-        handler_site = ("textbrush/ipc/handler.py", "handle_init")
+        # T08 lands the CLI call site. Both `_start_selected_model` (the
+        # handler's single entry to starting a model, reached from
+        # `handle_init` for a pinned model and from the deferred
+        # selection) and `main` are the documented production callers;
+        # no other production module is allowed to call
+        # `resolve_model_selection` (running the resolver silently
+        # elsewhere would re-route the model selection and silently
+        # violate AC-MODEL-5b).
+        handler_site = ("textbrush/ipc/handler.py", "_start_selected_model")
         cli_site = ("textbrush/cli.py", "main")
         assert handler_site in sites, (
-            f"handle_init must call resolve_model_selection; found sites: {sites}"
+            f"_start_selected_model must call resolve_model_selection; found sites: {sites}"
         )
         assert cli_site in sites, (
             f"cli.main must call resolve_model_selection; found sites: {sites}"
@@ -86,8 +89,15 @@ class TestResolveModelSelectionCallsites:
         headless.assert_called_once()
 
     def test_handler_calls_resolve_once_across_init_and_two_edits(self, tmp_path) -> None:
-        """Live test: handle_init runs the resolver exactly once; editing
-        updates do NOT re-run it (T07 step 2a + 2c + live assertion)."""
+        """Live test: selecting a model runs the resolver exactly once;
+        editing updates do NOT re-run it (T07 step 2a + 2c + live
+        assertion).
+
+        With deferred loading the selection can arrive at INIT (a pinned
+        model, as here) or later as an UPDATE_CONFIG; either way it is
+        resolved once, and every subsequent edit goes through
+        `apply_configuration`, which does not resolve at all.
+        """
         from textbrush.config import (
             Config,
             EditingConfig,
@@ -139,8 +149,11 @@ class TestResolveModelSelectionCallsites:
             handler = MessageHandler(config)
             server = Mock()
 
-            # Trigger handle_init. The resolver is called once.
-            handler.handle_init({"prompt": "test", "aspect_ratio": "1:1"}, server)
+            # Trigger handle_init with the model already selected. The
+            # resolver is called once.
+            handler.handle_init(
+                {"prompt": "test", "aspect_ratio": "1:1", "model_id": FLUX1_SCHNELL}, server
+            )
             assert call_count["n"] == 1, (
                 f"resolve_model_selection should be called once on init; got {call_count['n']}"
             )

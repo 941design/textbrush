@@ -179,23 +179,23 @@ class TestCardinalityTable:
         assert f"no supported model accepts more than {max_supported}" in verdict.reason
 
     def test_range_spanning_generic_message_does_not_satisfy_rule(self) -> None:
-        """VQ-S4-007: a generic "1-4 references required" message does not
+        """VQ-S4-007: a generic "0-4 references required" message does not
         satisfy AC-MODEL-4 -- the message must name the model and its
-        EXACT rule. The FLUX.2 cell for count=0 carries "between 1 and 4"
+        EXACT rule. The FLUX.2 cell for count=5 carries "between 0 and 4"
         because that is the model-specific band, and the slug/display_name
         prefixes are what disambiguate which model's band is meant."""
-        verdict = validate_selection(FLUX2_KLEIN_4B, 0)
+        verdict = validate_selection(FLUX2_KLEIN_4B, 5)
 
         assert verdict.valid is False
         assert verdict.reason is not None
         assert FLUX2_KLEIN_4B in verdict.reason
         assert "FLUX.2 [klein] 4B" in verdict.reason
-        assert "between 1 and 4 reference images" in verdict.reason
-        # Negative assertion: a bare "1-4 references required" (without
+        assert "between 0 and 4 reference images" in verdict.reason
+        # Negative assertion: a bare "0-4 references required" (without
         # model name) would NOT satisfy AC-MODEL-4 because it doesn't name
         # the model. Verify that such a bare phrase is absent here so a
         # regression toward a generic message would be caught.
-        assert not re.search(r"^\s*1-4 references required", verdict.reason)
+        assert not re.search(r"^\s*0-4 references required", verdict.reason)
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ class TestUnknownSlug:
 # ---------------------------------------------------------------------------
 
 
-class TestBidirectionalPresetRules:
+class TestPresetAndAspectRatioRules:
     """Editing preset direction 1 (preset in EDITING_PRESETS on a text
     model): invalid. Aspect-ratio direction (text ratio on editing model):
     invalid. Editing preset on editing model with valid cardinality: valid."""
@@ -244,27 +244,21 @@ class TestBidirectionalPresetRules:
         "aspect_ratio",
         sorted(TEXT_ASPECT_RATIOS),
     )
-    def test_text_aspect_ratio_on_editing_model_is_invalid(
+    def test_every_aspect_ratio_is_valid_on_an_editing_model(
         self, model_id: str, aspect_ratio: str
     ) -> None:
-        """Editing-capable model + valid cardinality + a text-only aspect
-        ratio: the aspect-ratio rule rejects the ratio and points the
-        caller at the editing-preset alternatives. Cardinality is set to
-        1 (Kontext) or 1 (FLUX.2 lower bound) so this test isolates the
-        aspect-ratio check, not the cardinality check."""
+        """Every ratio in the vocabulary is valid for a reference-capable
+        model.
+
+        There is one output-size group, offered to every model, and its
+        callers pair the ratio with explicit pixel dimensions -- so a
+        per-mode ratio rule has nothing left to protect. Cardinality is
+        set to 1, which is valid for both models, so this test isolates
+        the aspect-ratio question from the cardinality one.
+        """
         verdict = validate_selection(model_id, 1, aspect_ratio=aspect_ratio)
 
-        assert verdict.valid is False
-        assert verdict.reason is not None
-        assert (
-            f"text-only aspect ratio {aspect_ratio} is not valid for "
-            f"editing model {model_id}" in verdict.reason
-        )
-        assert "choose one of " in verdict.reason
-        # The list of editing presets is included verbatim so the UI can
-        # surface them without re-importing EDITING_PRESETS.
-        for preset in EDITING_PRESETS:
-            assert preset in verdict.reason
+        assert verdict.valid is True, verdict.reason
 
     def test_aspect_ratio_custom_is_accepted_on_editing_model(self) -> None:
         """`aspect_ratio="custom"` is the bridge for editing models that
@@ -299,18 +293,24 @@ class TestBidirectionalPresetRules:
         assert verdict.valid is True
 
     @pytest.mark.parametrize(
-        "model_id",
-        [FLUX1_KONTEXT_DEV, FLUX2_KLEIN_4B],
+        "model_id,count",
+        [
+            # Kontext requires exactly one reference, so zero fails.
+            # FLUX.2 accepts zero to four, so only a count above its
+            # maximum fails -- zero is a valid text-to-image request.
+            (FLUX1_KONTEXT_DEV, 0),
+            (FLUX2_KLEIN_4B, 5),
+        ],
     )
     @pytest.mark.parametrize("preset", sorted(EDITING_PRESETS))
     def test_editing_preset_on_editing_model_with_invalid_cardinality_is_invalid(
-        self, model_id: str, preset: str
+        self, model_id: str, count: int, preset: str
     ) -> None:
         """Editing-capable model + invalid cardinality + a recognised
         editing preset: cardinality is the first-failure rule, so the
         preset value never reaches the preset-direction check. The
         reason therefore names the cardinality band, not the preset."""
-        verdict = validate_selection(model_id, 0, preset=preset)
+        verdict = validate_selection(model_id, count, preset=preset)
 
         assert verdict.valid is False
         assert "reference" in (verdict.reason or "")
@@ -409,13 +409,14 @@ class TestEditingPresetDimensions:
 
 
 class TestTextAspectRatiosTable:
-    """The text-only aspect-ratio vocabulary must be exactly the six
-    keys of cli.py's SUPPORTED_RATIOS, in the order cli.py declares them.
-    validation is the canonical owner of "what is text-only"; cli keeps
-    the resolution choices but does NOT redefine the vocabulary."""
+    """The aspect-ratio vocabulary must be exactly the eight keys of
+    cli.py's SUPPORTED_RATIOS, in the order cli.py declares them.
+    validation is the canonical owner of which identifiers exist; cli
+    keeps the resolution choices but does NOT redefine the vocabulary.
+    Every model is offered every one of them."""
 
-    def test_six_entries(self) -> None:
-        assert len(TEXT_ASPECT_RATIOS) == 6
+    def test_eight_entries(self) -> None:
+        assert len(TEXT_ASPECT_RATIOS) == 8
 
     def test_matches_cli_supported_ratios(self) -> None:
         # Imported lazily so the leaf-boundary test below does not falsely

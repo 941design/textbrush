@@ -156,10 +156,12 @@ default_preset = "landscape-medium"
 #### `[editing]`
 
 **`default_preset`** (string)
-- Fallback editing preset. It applies only when an editing-capable model is
-  active and no editing preset has been explicitly selected; it is never
-  used as the fallback for a text-to-image model (the text-only
-  aspect-ratio default applies there instead).
+- Fallback output size. It applies only when a reference-capable model is
+  active and no size has been explicitly selected; it is never used as
+  the fallback for a text-to-image model (the aspect-ratio default
+  applies there instead).
+- These six identifiers are names for six entries of the one output-size
+  table — the `4:3` and `3:4` ladders — not a separate vocabulary.
 - Choices (canonical identifiers, `<orientation>-<tier>`):
   `"landscape-small"`, `"landscape-medium"`, `"landscape-large"`,
   `"portrait-small"`, `"portrait-medium"`, `"portrait-large"`
@@ -239,7 +241,9 @@ All options can be overridden on the command line (highest priority).
 
 **`--aspect-ratio CHOICE`**
 - Image aspect ratio preset
-- Choices: `1:1`, `16:9`, `3:1`, `4:1`, `4:5`, `9:16`
+- Choices: `1:1`, `16:9`, `4:3`, `3:4`, `3:1`, `4:1`, `4:5`, `9:16`
+- Valid for every model. `4:3` and `3:4` hold the same sizes the
+  `landscape-*` and `portrait-*` presets name
 - Each ratio has multiple available resolutions (smallest selected by default)
 - Default: `1:1` (defaults to 256×256, smallest 1:1 resolution)
 - Example: `--aspect-ratio 16:9`

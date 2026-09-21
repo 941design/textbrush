@@ -115,9 +115,12 @@ class TestCardinalityMetadata:
         spec = get_model_spec(FLUX1_KONTEXT_DEV)
         assert (spec.min_references, spec.max_references) == (1, 1)
 
-    def test_klein_accepts_one_to_four_references(self):
+    def test_klein_accepts_zero_to_four_references(self):
+        """References are OPTIONAL for FLUX.2 klein: it is a text-to-image
+        model that also accepts up to four references, so its lower bound
+        is zero, not one."""
         spec = get_model_spec(FLUX2_KLEIN_4B)
-        assert (spec.min_references, spec.max_references) == (1, 4)
+        assert (spec.min_references, spec.max_references) == (0, 4)
 
 
 class TestComponentOverrideTableAgreesWithInference:

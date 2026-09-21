@@ -161,11 +161,12 @@ class TestConfigControlsStructure:
         assert ("invoke", "core") in imports, "invoke must be imported from window.__TAURI__.core"
 
     def test_init_function_signature(self):
-        """initConfigControls must have exactly 6 parameters."""
+        """initConfigControls must have exactly 7 parameters."""
         js_code = load_config_controls_js()
-        assert function_has_parameter_count(js_code, "initConfigControls", 6), (
-            "initConfigControls must accept 6 parameters "
-            "(initialPrompt, initialAspectRatio, initialWidth, initialHeight, state, elements)"
+        assert function_has_parameter_count(js_code, "initConfigControls", 7), (
+            "initConfigControls must accept 7 parameters (initialPrompt, "
+            "initialAspectRatio, initialWidth, initialHeight, state, elements, "
+            "onOutputSizeChange)"
         )
 
     def test_handle_update_signature(self):

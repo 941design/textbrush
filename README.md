@@ -23,14 +23,18 @@ Text-to-image generation tool with customizable workflows and local model infere
 
 ## Reference editing
 
-Textbrush can edit local images with locally installed FLUX models. `flux1-schnell`
-is text-to-image only and accepts no references; `flux1-kontext-dev` accepts
-exactly one; `flux2-klein-4b` accepts one to four and is required for two or
-more. References are local PNG, JPG, or JPEG files (including `.JPG`); up to
-four per request, order preserved, duplicates allowed. See
+Textbrush can edit local images with locally installed FLUX models. Reference
+images are **optional for the models that support them at all**:
+`flux1-schnell` is text-to-image only and accepts none; `flux1-kontext-dev`
+requires exactly one; `flux2-klein-4b` generates from a prompt alone and also
+accepts up to four, and is required for two or more. References are local PNG,
+JPG, or JPEG files (including `.JPG`); order preserved, duplicates allowed. See
 [Reference Editing](docs/reference-editing.md) for the full guide — model
-capabilities, output presets, CLI and desktop flows, credentials, hardware,
+capabilities, output sizes, CLI and desktop flows, credentials, hardware,
 privacy, and limitations.
+
+In the desktop app the reference control is always on screen; for a model that
+takes no references it is greyed out rather than hidden.
 
 ```bash
 # One reference with Kontext
@@ -41,7 +45,25 @@ uv run textbrush --model flux1-kontext-dev --reference portrait.jpg \
 uv run textbrush --model flux2-klein-4b \
   --reference subject.png --reference palette.jpg --reference lighting.png \
   --preset landscape-large --prompt "render the subject in the palette and lighting"
+
+# FLUX.2 with no references at all, at a 16:9 output size
+uv run textbrush --model flux2-klein-4b --aspect-ratio 16:9 \
+  --prompt "a wide shot of a harbour at dawn"
 ```
+
+## Choosing a model in the desktop app
+
+No model is loaded when the window opens. The app lists every registered model
+with its reference capability and whether its weights are installed, and loads
+one only once you pick it — loading takes tens of seconds, so nothing is loaded
+on the chance that you wanted it. A model pinned in the config
+(`[model] selected_id`) or passed on the command line counts as that choice and
+loads at launch.
+
+Output size is one group, shared by every model: each aspect ratio shows the
+pixel dimensions it currently produces, and the `−`/`+` step moves all of them
+up or down the ladder together. The `4:3` and `3:4` options are the same sizes
+the `landscape-*` and `portrait-*` preset names refer to.
 
 ## Requirements
 
@@ -167,7 +189,7 @@ uv run textbrush --prompt "sunset over mountains" --out ~/Desktop/sunset.png
 # Set format and seed for reproducibility
 uv run textbrush --prompt "abstract art" --format jpg --seed 42
 
-# Specify aspect ratio
+# Specify aspect ratio (1:1, 16:9, 4:3, 3:4, 3:1, 4:1, 4:5, 9:16)
 uv run textbrush --prompt "portrait" --aspect-ratio 9:16
 
 # Use custom config file

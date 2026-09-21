@@ -29,6 +29,7 @@ from textbrush.validation import (
     EDITING_PRESETS,
     editing_preset_dimensions,
     is_editing_model,
+    preset_for_dimensions,
     resolve_preset,
     validate_selection,
 )
@@ -224,6 +225,12 @@ class TextbrushBackend:
         # from the root that was validated for the PREVIOUS model when
         # the incoming load fails.
         self._engine_root: Path | None = None
+        # The acknowledged output canvas in pixels, or None before the
+        # first acknowledgement. References are decoded against it, so a
+        # change to it must re-decode them exactly as a model change does
+        # -- `preset` alone no longer answers "did the canvas move?" now
+        # that callers may name any size directly.
+        self.canvas: tuple[int, int] | None = None
         self.buffer = ImageBuffer(max_size=config.model.buffer_size)
         self._worker: GenerationWorker | None = None
 
@@ -297,6 +304,8 @@ class TextbrushBackend:
         model_id: str | None = None,
         reference_paths: list[str] | tuple[str, ...] | None = None,
         preset: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
     ) -> ConfigurationAck:
         """Acknowledge a (model, references, preset) configuration.
 
@@ -324,6 +333,14 @@ class TextbrushBackend:
             - preset: optional editing preset identifier (None keeps the
               current preset, with mode-switch preset semantics per
               spec §5.5)
+            - width/height: optional explicit output canvas in pixels.
+              When BOTH are given they are authoritative: they size the
+              canvas directly and `preset` is re-derived from them (the
+              identifier naming exactly those dimensions, or None when
+              no preset names them). This is the path the desktop UI
+              takes -- it offers one output-size group to every model,
+              so most of its sizes have no preset name at all. When
+              either is None the preset decides, as before.
 
           Outputs:
             - ConfigurationAck with the acknowledged state.
@@ -352,7 +369,7 @@ class TextbrushBackend:
               * target model is text-only -> dropped (a text engine
                 reports `reference_input_size() is None` and MUST be
                 given an empty tuple);
-              * model or preset changed -> the held PATHS are re-decoded,
+              * model or canvas changed -> the held PATHS are re-decoded,
                 because the engine's reference canvas moved with them;
               * otherwise (the no-change case) -> the already-decoded
                 references, their paths AND their ids are retained
@@ -396,6 +413,15 @@ class TextbrushBackend:
             # (None for text mode, last editing preset for editing mode).
             candidate_preset = explicit_preset
 
+        # Explicit dimensions win over the preset resolution above: the
+        # caller named the canvas in pixels, so the preset becomes a
+        # label for it rather than its source (and is None for a size no
+        # preset names). Resolved before the unknown-preset guard so a
+        # caller that sends dimensions can never be rejected over a
+        # preset identifier it did not choose.
+        if width is not None and height is not None:
+            candidate_preset = preset_for_dimensions(width, height)
+
         # Reject an unknown preset identifier here, while nothing has been
         # touched yet, and through the same typed channel as the other
         # rejections. `_canvas_dimensions` would otherwise discover it
@@ -405,6 +431,13 @@ class TextbrushBackend:
             raise ConfigurationRejectedError(
                 f"unknown editing preset: {candidate_preset}", model_id=candidate_model
             )
+
+        # The canvas every later step uses: references are decoded to it,
+        # the worker generates at it, and the commit remembers it.
+        if width is not None and height is not None:
+            candidate_canvas = (width, height)
+        else:
+            candidate_canvas = self._canvas_dimensions(candidate_preset)
 
         # c. Engine swap (if the model changed).
         swapped = candidate_model != self.model_id
@@ -427,8 +460,12 @@ class TextbrushBackend:
         elif candidate_model != self.model_id and self.reference_paths:
             # New model: its reference canvas may differ, so re-decode.
             paths_to_decode = self.reference_paths
-        elif candidate_preset != self.preset and self.reference_paths:
-            # New preset: the canvas moves with it, so re-decode.
+        elif candidate_canvas != self.canvas and self.reference_paths:
+            # New canvas: references are normalised to it, so re-decode.
+            # Compared on the dimensions rather than on the preset
+            # identifier: a caller sending explicit pixel sizes moves the
+            # canvas between two sizes that both have preset None, and a
+            # preset-identity test would miss exactly that change.
             paths_to_decode = self.reference_paths
         else:
             # Nothing that determines the reference canvas changed.
@@ -437,7 +474,7 @@ class TextbrushBackend:
             paths_to_decode = self.reference_paths
             retained_references = self.references
 
-        canvas = self.engine.reference_input_size(*self._canvas_dimensions(candidate_preset))
+        canvas = self.engine.reference_input_size(*candidate_canvas)
         if retained_references is not None:
             decoded_references = retained_references
             reference_ids = self.reference_ids
@@ -481,6 +518,7 @@ class TextbrushBackend:
         self.reference_paths = paths_to_decode
         self.reference_ids = reference_ids
         self.preset = candidate_preset
+        self.canvas = candidate_canvas
         # Per-mode preset memory (spec §5.5) is the memory of the last
         # EDITING preset. A preset acknowledged against a text-only model
         # is not one: the verdict below reports it incompatible but the
@@ -491,12 +529,12 @@ class TextbrushBackend:
             self._last_editing_preset = candidate_preset
 
         if self._worker is not None:
-            width, height = self._canvas_dimensions(candidate_preset)
+            canvas_width, canvas_height = candidate_canvas
             sampling = dict(self.engine.default_sampling_settings())
             options = GenerationOptions(
                 seed=None,
-                width=width,
-                height=height,
+                width=canvas_width,
+                height=canvas_height,
                 aspect_ratio="custom",
                 references=decoded_references,
                 model_id=candidate_model,
@@ -684,14 +722,15 @@ class TextbrushBackend:
           Inputs:
             - prompt: non-empty string, text description
             - seed: optional integer seed (None = auto-generate)
-            - aspect_ratio: aspect-ratio string. Default is "custom";
-              editing models always use "custom" (the preset owns the
-              dimensions). For text mode the caller can pass any of
-              `cli.py`'s `SUPPORTED_RATIOS` keys.
-            - width: optional int, image width in pixels (ignored for
-              editing-capable models; for text mode overrides
-              aspect_ratio). None means "not specified" and is forwarded
-              to the engine as None, so `aspect_ratio` decides the axis.
+            - aspect_ratio: aspect-ratio string. Default is "custom",
+              which means "the explicit width/height own the canvas".
+              Any of `cli.py`'s `SUPPORTED_RATIOS` keys is accepted for
+              any model.
+            - width: optional int, image width in pixels. Explicit
+              dimensions win over the resolved preset for every model;
+              the preset sizes the canvas only when neither axis was
+              given. None means "not specified" and is forwarded to the
+              engine as None, so `aspect_ratio` decides the axis.
             - height: optional int, image height in pixels (same).
             - on_generation_start: optional callback invoked before each
               generation with (seed, queue_position) args.
@@ -703,7 +742,8 @@ class TextbrushBackend:
             - Engine must be loaded (initialize() called) before start_generation()
             - Validates the acknowledged state; raises `ValueError` if
               the (model, references, preset) tuple is incompatible.
-            - Editing-capable models force width/height from the preset.
+            - Editing-capable models take width/height from the preset
+              only when the caller named neither axis.
             - For text mode this method applies NO dimension default of
               its own. `aspect_ratio` is meaningful only for an axis the
               caller left unspecified, so substituting a number here
@@ -722,9 +762,10 @@ class TextbrushBackend:
             1. Check engine.is_loaded(), raise RuntimeError if not loaded
             2. Resolve active preset via `resolve_preset` (explicit else
                default-else-None, per the `validation` module).
-            3. If the preset is editing-capable: width/height from the
-               preset; otherwise the caller's arguments verbatim (None
-               included -- the engine resolves those from aspect_ratio).
+            3. If the caller named neither axis and the preset is
+               editing-capable: width/height from the preset; otherwise
+               the caller's arguments verbatim (None included -- the
+               engine resolves those from aspect_ratio).
             4. Validate the resolved tuple; raise ValueError if invalid.
             5. Build GenerationOptions with references, model_id, and
                sampling_settings from the engine's defaults.
@@ -739,8 +780,23 @@ class TextbrushBackend:
         active_preset = resolve_preset(
             active_model, self.preset, self.config.editing.default_preset
         )
-        if active_preset is not None and is_editing_model(active_model):
+        if (
+            width is None
+            and height is None
+            and active_preset is not None
+            and is_editing_model(active_model)
+        ):
+            # The preset sizes the canvas only when the caller named
+            # neither axis. Explicit dimensions win: the desktop UI sends
+            # them for every output size it offers, and most of those
+            # sizes have no preset name at all, so letting the resolved
+            # default preset overwrite them would silently collapse the
+            # whole output-size group onto `editing.default_preset`.
             width, height = editing_preset_dimensions(active_preset)
+        if width is not None and height is not None:
+            # Remember the canvas this generation runs at, so a later
+            # `apply_configuration` can tell whether the canvas moved.
+            self.canvas = (width, height)
         # Otherwise width/height travel to the engine exactly as the
         # caller gave them, INCLUDING None. Defaulting them here (which
         # this method did, to 1024x1024) made `--aspect-ratio` a no-op:
@@ -1141,12 +1197,14 @@ class TextbrushBackend:
         CONTRACT:
           Inputs:
             - prompt: non-empty string, text description
-            - aspect_ratio: aspect-ratio string (default "custom";
-              editing models keep their preset dimensions regardless).
-            - width: optional int; for editing-capable models the
-              preset's width wins. For text mode this overrides
-              aspect_ratio when supplied; None leaves the axis to
-              aspect_ratio (no default is substituted here).
+            - aspect_ratio: aspect-ratio string (default "custom").
+            - width: optional int, and authoritative when given --
+              EXCEPT while references are held, where the acknowledged
+              canvas wins (a canvas move needs the re-decode only
+              `apply_configuration` does). With neither axis given, an
+              editing-capable model falls back to its preset. None
+              leaves the axis to aspect_ratio; no default is
+              substituted here.
             - height: same as width.
             - on_generation_start: optional callback; if None the
               existing callback is kept.
@@ -1168,7 +1226,8 @@ class TextbrushBackend:
               changed
 
           Algorithm:
-            1. Resolve dimensions (preset wins for editing models).
+            1. Resolve dimensions (acknowledged canvas wins while
+               references are held; else explicit axes; else preset).
             2. Build a new GenerationOptions with the resolved
                dimensions and the existing acknowledged state.
             3. Call worker.update_config(prompt, options,
@@ -1181,7 +1240,20 @@ class TextbrushBackend:
         active_preset = resolve_preset(
             self.model_id, self.preset, self.config.editing.default_preset
         )
-        if active_preset is not None and is_editing_model(self.model_id):
+        if self.references and self.canvas is not None:
+            # References are decoded against the acknowledged canvas, and
+            # the engine refuses an off-canvas reference rather than
+            # resizing it. Moving the canvas therefore requires a
+            # re-decode, which only `apply_configuration` performs -- so
+            # this prompt-only path keeps the acknowledged canvas instead
+            # of honouring dimensions that would fail at generate() time.
+            resolved_width, resolved_height = self.canvas
+        elif (
+            width is None
+            and height is None
+            and active_preset is not None
+            and is_editing_model(self.model_id)
+        ):
             resolved_width, resolved_height = editing_preset_dimensions(active_preset)
         else:
             # Pass the caller's axes through untouched, None included, so

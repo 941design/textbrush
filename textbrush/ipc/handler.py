@@ -26,6 +26,7 @@ from textbrush.model.registry import (
     FLUX1_SCHNELL,
     DiscoveryCause,
     get_model_spec,
+    iter_model_slugs,
     resolve_model_selection,
 )
 from textbrush.model.weights import (
@@ -126,19 +127,39 @@ class MessageHandler:
         self._init_preset: str | None = None  # Preset from init command (T07)
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle INIT command: load model and start generation.
+        """Handle INIT command: publish the model catalogue, and load a
+        model only once one has been selected.
+
+        Loading is DEFERRED. A model takes tens of seconds (and, when the
+        weights are missing, a multi-gigabyte download) to load, and the
+        desktop UI cannot offer a different choice while that runs -- so
+        a session that starts with no model selected must not load one
+        speculatively. INIT therefore publishes `model_list` and parks in
+        `state_changed(awaiting_model)`; the load starts from the
+        UPDATE_CONFIG that carries the user's chosen `model_id`
+        (`handle_update_config` -> `_start_deferred_model`).
+
+        A model pinned in the config (`model.selected_id`) or passed on
+        the INIT command IS a selection -- it is loaded immediately, as
+        before, because the user already said which model they want.
 
         CONTRACT:
           Inputs:
             - payload: dict with keys: prompt (str), output_path (str|None),
                        seed (int|None), aspect_ratio (str), format (str),
-                       width (int|None), height (int|None)
+                       width (int|None), height (int|None), model_id
+                       (str|None), references (list|None), preset (str|None)
             - server: IPCServer instance for sending events
 
           Outputs: none (starts background processes, sends events)
 
           Invariants:
-            - Creates TextbrushBackend instance
+            - Emits exactly one `model_list` event, from a background
+              thread (availability discovery reads the filesystem and
+              must not delay the UI), before any model is loaded
+            - With no model selected: emits state_changed(awaiting_model)
+              and constructs NO backend
+            - With a model selected: creates TextbrushBackend instance
             - Loads model in background thread
             - After model loads: sends READY event
             - After READY: starts generation via backend.start_generation()
@@ -177,7 +198,7 @@ class MessageHandler:
                f. Wait for skip/accept action before delivering next
             2. Exit on shutdown or error
         """
-        from textbrush.ipc.protocol import ConfigAckEvent, ErrorEvent, InitCommand
+        from textbrush.ipc.protocol import InitCommand
 
         cmd = InitCommand(**payload)
         logger.info(
@@ -185,17 +206,86 @@ class MessageHandler:
             f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"
         )
         self._current_prompt = cmd.prompt  # Store prompt for state_changed events
+        self._init_command = cmd
 
-        # AC-MODEL-5b: run the default-model resolver exactly once at
-        # launch (T07 step 1). If the resolver is blocked, surface the
-        # discovery cause via a fatal ErrorEvent so the UI can render
-        # the download hint; do not construct a backend.
+        # Publish the catalogue first and off-thread: the UI renders its
+        # model selector from this event, and discovery touches the
+        # filesystem once per registered model.
+        threading.Thread(target=self._emit_model_list, args=(server,), daemon=True).start()
+
+        selected_id = cmd.model_id or self.config.model.selected_id
+        if selected_id is None:
+            logger.info("No model selected; parking in awaiting_model (deferred loading)")
+            self._emit_state_changed(server, "awaiting_model")
+            return
+
+        self._start_selected_model(selected_id, cmd, server)
+
+    def _emit_model_list(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Emit one `model_list` event describing every registered model.
+
+        Runs on its own thread (see `handle_init`). A discovery failure
+        for one model is reported as that model being unavailable with
+        cause `unknown`, never as a failure of the whole catalogue: the
+        UI must still be able to offer the other models.
+        """
+        from textbrush.ipc.protocol import ModelInfo, ModelListEvent
+
+        models: list[dict] = []
+        for slug in iter_model_slugs():
+            spec = get_model_spec(slug)
+            try:
+                report = check_model_availability(slug, custom_dirs=self.config.model.directories)
+                available = report.available
+                cause = report.cause.value if report.cause else None
+                detail = report.detail
+            except Exception as exc:  # noqa: BLE001 - reported, never raised
+                logger.warning("availability check failed for %r: %s", slug, exc)
+                available, cause, detail = False, DiscoveryCause.UNKNOWN.value, str(exc)
+            models.append(
+                dataclass_to_dict(
+                    ModelInfo(
+                        model_id=slug,
+                        display_name=spec.display_name,
+                        min_references=spec.min_references,
+                        max_references=spec.max_references,
+                        available=available,
+                        cause=cause,
+                        detail=detail,
+                    )
+                )
+            )
+        server.send(Message(MessageType.MODEL_LIST, dataclass_to_dict(ModelListEvent(models))))
+
+    def _start_selected_model(
+        self,
+        selected_id: str,
+        cmd,  # InitCommand
+        server: "IPCServer",  # type: ignore  # noqa: F821
+    ) -> None:
+        """Resolve, commit, and begin loading `selected_id`.
+
+        The tail of the original `handle_init`, extracted so the deferred
+        path (`_start_deferred_model`, driven by the user's selection)
+        and the pinned-model path run exactly the same sequence.
+        """
+        from textbrush.ipc.protocol import ConfigAckEvent, ErrorEvent
+
+        self._current_prompt = cmd.prompt
+
+        # AC-MODEL-5b: run the default-model resolver exactly once per
+        # model start (T07 step 1). A blocked resolution surfaces the
+        # discovery cause so the UI can render the download hint, and no
+        # backend is constructed. It is reported NON-fatally and the
+        # session returns to `awaiting_model`: with deferred loading
+        # there is always another model the user can pick, so an
+        # unavailable one is a rejected selection, not a dead session.
         def availability(slug):
             return check_model_availability(slug, custom_dirs=self.config.model.directories)
 
         try:
             resolution = resolve_model_selection(
-                selected_id=cmd.model_id or self.config.model.selected_id,
+                selected_id=selected_id,
                 reference_count=len(cmd.references or []),
                 availability=availability,
             )
@@ -204,27 +294,37 @@ class MessageHandler:
                 Message(
                     MessageType.ERROR,
                     dataclass_to_dict(
-                        ErrorEvent(message=str(exc), fatal=True, cause=DiscoveryCause.UNKNOWN.value)
+                        ErrorEvent(
+                            message=str(exc), fatal=False, cause=DiscoveryCause.UNKNOWN.value
+                        )
                     ),
                 )
             )
+            self._emit_state_changed(server, "awaiting_model")
             return
 
         if resolution.blocked:
             cause_value = resolution.cause.value if resolution.cause else None
+            message = resolution.reason or "model resolution failed"
+            if resolution.cause is DiscoveryCause.ABSENT:
+                # Name the concrete install step rather than only the
+                # cause: "not available" without it leaves the user with
+                # nowhere to go.
+                message = f"{message} {_missing_model_message(selected_id)}"
             server.send(
                 Message(
                     MessageType.ERROR,
                     dataclass_to_dict(
                         ErrorEvent(
-                            message=resolution.reason or "model resolution failed",
-                            fatal=True,
+                            message=message,
+                            fatal=False,
                             cause=cause_value,
                             required_model=resolution.required_model,
                         )
                     ),
                 )
             )
+            self._emit_state_changed(server, "awaiting_model")
             return
 
         # Resolution succeeded -- commit the chosen model and create the
@@ -294,6 +394,8 @@ class MessageHandler:
                                     incompatibility_reason=str(exc),
                                     required_model=None,
                                     settled=True,
+                                    width=self.backend.canvas[0] if self.backend.canvas else None,
+                                    height=self.backend.canvas[1] if self.backend.canvas else None,
                                 )
                             ),
                         )
@@ -313,6 +415,8 @@ class MessageHandler:
                                     incompatibility_reason=ack.incompatibility_reason,
                                     required_model=ack.required_model,
                                     settled=True,
+                                    width=self.backend.canvas[0] if self.backend.canvas else None,
+                                    height=self.backend.canvas[1] if self.backend.canvas else None,
                                 )
                             ),
                         )
@@ -350,21 +454,11 @@ class MessageHandler:
             # editing commands.
             settled = self.backend.is_paused() and self.backend.is_settled()
             if not init_refs and not init_preset:
-                server.send(
-                    Message(
-                        MessageType.CONFIG_ACK,
-                        dataclass_to_dict(
-                            ConfigAckEvent(
-                                model_id=resolution.model_id,
-                                reference_count=0,
-                                reference_paths=[],
-                                preset=None,
-                                compatible=True,
-                                settled=settled,
-                            )
-                        ),
-                    )
-                )
+                # Report the backend's own acknowledged state rather than
+                # a hand-built "nothing selected" ack: `start_generation`
+                # has by now recorded the launch canvas, and the preset
+                # naming it (if any) belongs in the ack.
+                self._emit_config_ack(server, settled=settled)
             self._generation_started = True
             self._current_prompt = start_prompt
             if start_paused:
@@ -649,6 +743,13 @@ class MessageHandler:
         cmd = UpdateConfigCommand(**payload)
 
         if not self.backend:
+            if cmd.model_id is not None:
+                # Deferred loading: no backend exists because no model had
+                # been selected yet (see `handle_init`). This command IS
+                # the selection, so it starts the session rather than
+                # failing against a backend that was never meant to exist.
+                self._start_deferred_model(cmd, server)
+                return
             server.send(
                 Message(
                     MessageType.ERROR,
@@ -680,6 +781,8 @@ class MessageHandler:
                     model_id=cmd.model_id,
                     reference_paths=cmd.references,
                     preset=cmd.preset,
+                    width=cmd.width,
+                    height=cmd.height,
                 )
             except (ReferenceImageError, ModelUnavailableError, ModelSwitchError) as exc:
                 cause = getattr(exc, "cause", None)
@@ -864,6 +967,43 @@ class MessageHandler:
         with self._state_lock:
             self._current_image = None
         self._signal_action()
+
+    def _start_deferred_model(
+        self,
+        cmd,  # UpdateConfigCommand
+        server: "IPCServer",  # type: ignore  # noqa: F821
+    ) -> None:
+        """Begin the session with the model this UPDATE_CONFIG selected.
+
+        Deferred loading (see `handle_init`) leaves the session in
+        `awaiting_model` with no backend. The first UPDATE_CONFIG that
+        names a `model_id` is the user's selection: its prompt, output
+        size, references, and preset become the launch configuration, and
+        `_start_selected_model` runs the same resolve/create/load
+        sequence a pinned model would have run at INIT.
+
+        A second selection arriving while the first is still loading is
+        ignored rather than racing it: `self.backend` is set
+        synchronously by `_start_selected_model`, so only the first call
+        can reach this method.
+        """
+        from dataclasses import replace
+
+        from textbrush.ipc.protocol import InitCommand
+
+        base = self._init_command or InitCommand(prompt=cmd.prompt)
+        launch = replace(
+            base,
+            prompt=cmd.prompt or base.prompt,
+            aspect_ratio=cmd.aspect_ratio,
+            width=cmd.width,
+            height=cmd.height,
+            model_id=cmd.model_id,
+            references=cmd.references,
+            preset=cmd.preset,
+        )
+        logger.info(f"Deferred model selection: starting {cmd.model_id}")
+        self._start_selected_model(cmd.model_id, launch, server)
 
     def handle_pause(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle PAUSE command: toggle pause/resume generation.
@@ -1440,7 +1580,8 @@ class MessageHandler:
         CONTRACT:
           Inputs:
             - server: IPCServer instance for sending events
-            - state: BackendState enum value as string (loading, idle, generating, paused, error)
+            - state: BackendState enum value as string (awaiting_model,
+              loading, idle, generating, paused, error)
             - prompt: string, present only when state = generating
             - message: string, present only when state = error
             - fatal: boolean, present only when state = error
@@ -1448,7 +1589,8 @@ class MessageHandler:
           Outputs: none (sends STATE_CHANGED event)
 
           Invariants:
-            - state is one of: loading, idle, generating, paused, error
+            - state is one of: awaiting_model, loading, idle, generating,
+              paused, error
             - If state = generating: prompt must be non-None
             - If state = error: message must be non-None
             - StateChangedEvent payload matches state requirements
@@ -1511,6 +1653,7 @@ class MessageHandler:
         verdict = validate_selection(
             self.backend.model_id, len(self.backend.references), self.backend.preset
         )
+        canvas = self.backend.canvas
         ack = ConfigAckEvent(
             model_id=self.backend.model_id,
             reference_count=len(self.backend.references),
@@ -1520,6 +1663,8 @@ class MessageHandler:
             incompatibility_reason=verdict.reason,
             required_model=verdict.required_model,
             settled=settled,
+            width=canvas[0] if canvas else None,
+            height=canvas[1] if canvas else None,
         )
         server.send(Message(MessageType.CONFIG_ACK, dataclass_to_dict(ack)))
 

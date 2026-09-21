@@ -10,6 +10,19 @@ import * as ButtonFlash from './button-flash.js';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 
+// Dimensions default to the landscape-medium canvas, which is what the
+// backend acknowledges for the presets these tests name. The canvas -- not
+// the preset identifier -- is what the output-size group reconciles to,
+// because the group offers sizes no preset names.
+const PRESET_CANVAS = {
+  'landscape-small': [512, 384],
+  'landscape-medium': [768, 576],
+  'landscape-large': [1024, 768],
+  'portrait-small': [384, 512],
+  'portrait-medium': [576, 768],
+  'portrait-large': [768, 1024],
+};
+
 const ack = (model, paths, preset = null, compatible = true, reason = null, required = null,
   settled = true) => ({
   type: 'config_ack',
@@ -22,6 +35,8 @@ const ack = (model, paths, preset = null, compatible = true, reason = null, requ
     incompatibility_reason: reason,
     required_model: required,
     settled,
+    width: (PRESET_CANVAS[preset] ?? [])[0] ?? null,
+    height: (PRESET_CANVAS[preset] ?? [])[1] ?? null,
   },
 });
 
@@ -101,7 +116,10 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
     promptInput.dispatchEvent(new window.Event('blur'));
     await new Promise(resolve => setTimeout(resolve, 0));
     const promptUpdate = calls.filter(call => call.command === 'update_generation_config').at(-1);
-    assert.equal(promptUpdate.args.aspectRatio, 'custom');
+    // The acknowledged canvas (landscape-medium = 768x576) is the 4:3
+    // option of the one output-size group, and that is what the UI sends
+    // back -- for this model exactly as it would for a text-only one.
+    assert.equal(promptUpdate.args.aspectRatio, '4:3');
     assert.equal(promptUpdate.args.width, 768);
     assert.equal(promptUpdate.args.height, 576);
     const paths = ['/tmp/one.png', '/tmp/two.jpg', '/tmp/three.jpeg', '/tmp/four.JPG'];
@@ -114,13 +132,16 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
     assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
     assert.equal(document.getElementById('pause-btn').disabled, true);
     emit(ack('flux2-klein-4b', paths, 'landscape-medium'));
-    assert.equal(add.disabled, false);
+    // Four references is this model's maximum, so there is nothing left
+    // to add and the button says so.
+    assert.equal(add.disabled, true);
     assert.equal(document.getElementById('pause-btn').disabled, false);
 
     document.querySelectorAll('#reference-list button[aria-label^="Remove"]')[1].click();
     const afterRemove = [paths[0], paths[2], paths[3]];
     emit(ack('flux2-klein-4b', afterRemove, 'landscape-medium'));
     assert.equal(document.querySelectorAll('#reference-list img').length, 3);
+    assert.equal(add.disabled, false, 'a freed slot re-opens the add button');
     app.setPicked(['/tmp/replacement.png']);
     document.querySelectorAll('#reference-list button[aria-label^="Replace"]')[2].click();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -174,27 +195,97 @@ test('config_ack opens the editing controls without a preceding state_changed', 
   }
 });
 
-test('an unknown editing preset falls back instead of breaking prompt submission', async () => {
+test('an unnamed acknowledged canvas does not break prompt submission', async () => {
   const app = await renderedApp();
   try {
     const { window, calls, emit } = app;
     const document = window.document;
 
-    // textbrush/config.py does not validate the preset, so an unknown id can
-    // reach the UI verbatim through config_ack.
-    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'not-a-preset'));
+    // Most sizes in the output-size group have no preset identifier at
+    // all, and textbrush/config.py does not validate the preset, so an
+    // unknown id can reach the UI verbatim through config_ack. The
+    // dimensions are what matter; the identifier is decoration.
+    const message = ack('flux2-klein-4b', ['/tmp/one.png'], 'not-a-preset');
+    message.payload.width = 1920;
+    message.payload.height = 1080;
+    emit(message);
     emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
 
+    assert.equal(document.getElementById('dimension-display').textContent, '1920×1080');
+    assert.equal(document.querySelector('input[name="aspect-ratio"]:checked').value, '16:9');
+
     const promptInput = document.getElementById('prompt-input');
-    promptInput.value = 'prompt with an unknown preset';
+    promptInput.value = 'prompt with an unnamed canvas';
     promptInput.dispatchEvent(new window.Event('blur'));
     await new Promise(resolve => setTimeout(resolve, 0));
 
     const update = calls.filter(call => call.command === 'update_generation_config').at(-1);
     assert.ok(update, 'prompt blur still reaches the backend');
-    assert.equal(update.args.aspectRatio, 'custom');
-    assert.equal(update.args.width, 768);
-    assert.equal(update.args.height, 576);
+    assert.equal(update.args.aspectRatio, '16:9');
+    assert.equal(update.args.width, 1920);
+    assert.equal(update.args.height, 1080);
+  } finally {
+    app.close();
+  }
+});
+
+test('the output-size group is the same group for a model that takes references', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+
+    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+
+    // Every ratio is offered, and each one shows the pixels it produces.
+    const ratios = [...document.querySelectorAll('input[name="aspect-ratio"]')]
+      .map(input => input.value);
+    assert.deepEqual(ratios, ['1:1', '16:9', '4:3', '3:4', '3:1', '4:1', '4:5', '9:16']);
+    assert.equal(document.querySelector('.ratio-dimensions[data-ratio="16:9"]').textContent,
+      '1280×720');
+
+    // Picking one routes through the acknowledged-configuration seam,
+    // because the held references have to be decoded onto the new canvas.
+    const before = calls.filter(call => call.command === 'update_generation_config').length;
+    const wide = document.querySelector('input[name="aspect-ratio"][value="16:9"]');
+    wide.checked = true;
+    wide.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const update = calls.filter(call => call.command === 'update_generation_config').at(-1);
+    assert.equal(calls.filter(call => call.command === 'update_generation_config').length,
+      before + 1);
+    assert.equal(update.args.aspectRatio, '16:9');
+    assert.equal(update.args.width, 1280);
+    assert.equal(update.args.height, 720);
+    assert.deepEqual([...update.args.references], ['/tmp/one.png']);
+    assert.equal(update.args.modelId, 'flux2-klein-4b');
+  } finally {
+    app.close();
+  }
+});
+
+test('a model that takes no references keeps the picker visible but disabled', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, emit } = app;
+    const document = window.document;
+
+    emit(ack('flux1-schnell', []));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+
+    const add = document.getElementById('reference-add');
+    assert.ok(add, 'the reference control is always present');
+    assert.equal(add.disabled, true, 'and disabled for a model that takes none');
+    assert.match(document.getElementById('reference-legend').textContent, /not supported/);
+
+    // FLUX.2 accepts references without requiring them, so selecting it
+    // opens the picker again.
+    emit(ack('flux2-klein-4b', []));
+    assert.equal(add.disabled, false);
+    assert.match(document.getElementById('reference-legend').textContent, /up to 4/);
+    assert.equal(document.getElementById('reference-error').textContent, '',
+      'zero references is a valid FLUX.2 configuration');
   } finally {
     app.close();
   }

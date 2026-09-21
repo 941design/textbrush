@@ -25,9 +25,19 @@ from .validation import (
 
 # Supported aspect ratios with their available resolutions (smallest to largest)
 # Each ratio maps to a list of (width, height) tuples
+# The one output-size table: every ratio, with its resolution ladder from
+# smallest to largest. Ordering and key set mirror
+# `validation.TEXT_ASPECT_RATIOS` and the desktop UI's
+# ASPECT_RATIO_RESOLUTIONS (src-tauri/ui/config_controls.ts); the 4:3 and
+# 3:4 ladders are, entry for entry, the dimensions
+# `validation.EDITING_PRESETS` names landscape-small/medium/large and
+# portrait-small/medium/large. Every model is offered every entry --
+# there is no separate editing size vocabulary any more.
 SUPPORTED_RATIOS: dict[str, list[tuple[int, int]]] = {
     "1:1": [(256, 256), (512, 512), (1024, 1024)],
     "16:9": [(640, 360), (1280, 720), (1920, 1080)],
+    "4:3": [(512, 384), (768, 576), (1024, 768)],
+    "3:4": [(384, 512), (576, 768), (768, 1024)],
     "3:1": [(900, 300), (1500, 500), (1800, 600)],
     "4:1": [(1200, 300), (1600, 400)],
     "4:5": [(540, 675), (1080, 1350)],

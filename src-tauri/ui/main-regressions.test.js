@@ -10,18 +10,19 @@ function createDom() {
       <body>
         <main id="app">
           <header class="header-bar">
-            <div class="aspect-ratio-control">
-              <input type="radio" name="aspect-ratio" value="1:1" checked />
-              <input type="radio" name="aspect-ratio" value="16:9" />
-            </div>
-            <div class="resolution-control">
-              <button id="resolution-decrease" type="button">-</button>
-              <span id="dimension-display">256×256</span>
-              <button id="resolution-increase" type="button">+</button>
-            </div>
-            <fieldset id="model-selector"><input type="radio" name="model" value="flux1-schnell" /></fieldset>
-            <div id="reference-picker"><button id="reference-add"></button><ul id="reference-list"></ul><div id="reference-error"></div></div>
-            <fieldset id="editing-presets"><input type="radio" name="editing-preset" value="landscape-medium" /></fieldset>
+            <fieldset id="output-size">
+              <div class="aspect-ratio-control">
+                <label><input type="radio" name="aspect-ratio" value="1:1" checked /><span class="ratio-dimensions" data-ratio="1:1"></span></label>
+                <label><input type="radio" name="aspect-ratio" value="16:9" /><span class="ratio-dimensions" data-ratio="16:9"></span></label>
+              </div>
+              <div class="resolution-control">
+                <button id="resolution-decrease" type="button">-</button>
+                <span id="dimension-display">256×256</span>
+                <button id="resolution-increase" type="button">+</button>
+              </div>
+            </fieldset>
+            <fieldset id="model-selector"><label><input type="radio" name="model" value="flux1-schnell" /><small class="model-note"></small></label></fieldset>
+            <div id="reference-picker"><span id="reference-legend"></span><button id="reference-add"></button><ul id="reference-list"></ul><div id="reference-error"></div></div>
             <input id="prompt-input" type="text" />
             <div id="validation-error"></div>
           </header>
@@ -129,6 +130,35 @@ function countCalls(calls, cmd) {
   return calls.filter((entry) => entry.cmd === cmd);
 }
 
+/**
+ * Put the app in the state it reaches once a text-only model has been
+ * selected and its worker has parked.
+ *
+ * Loading is deferred, so until a model is acknowledged there is no
+ * backend and an output-size change is a local edit with nothing to
+ * send. The acknowledgement carries no width/height here, which leaves
+ * the launch size in place.
+ */
+function selectTextModel(window) {
+  window.textbrushApp.handleMessage({
+    type: 'config_ack',
+    payload: {
+      model_id: 'flux1-schnell',
+      reference_count: 0,
+      reference_paths: [],
+      preset: null,
+      compatible: true,
+      incompatibility_reason: null,
+      required_model: null,
+      settled: true,
+    },
+  });
+  window.textbrushApp.handleMessage({
+    type: 'state_changed',
+    payload: { state: 'paused', settled: true },
+  });
+}
+
 afterEach(() => {
   clearMocks();
   delete global.window;
@@ -143,6 +173,7 @@ describe('Main UI regression tests', () => {
 
     await window.textbrushApp.init();
     await window.textbrushApp.init();
+    selectTextModel(window);
 
     const beforeUpdates = countCalls(calls, 'update_generation_config').length;
     const increaseBtn = document.getElementById('resolution-increase');
@@ -253,7 +284,8 @@ describe('Main UI regression tests', () => {
   });
 
   test('resolution controls roll back visual state when config update fails', async () => {
-    const { document, calls } = await setupMain({ failConfigUpdates: true });
+    const { window, document, calls } = await setupMain({ failConfigUpdates: true });
+    selectTextModel(window);
 
     const increaseBtn = document.getElementById('resolution-increase');
     const decreaseBtn = document.getElementById('resolution-decrease');
@@ -273,7 +305,8 @@ describe('Main UI regression tests', () => {
   });
 
   test('aspect ratio controls roll back selection and size when config update fails', async () => {
-    const { document } = await setupMain({ failConfigUpdates: true });
+    const { window, document } = await setupMain({ failConfigUpdates: true });
+    selectTextModel(window);
 
     const ratio11 = document.querySelector('input[name="aspect-ratio"][value="1:1"]');
     const ratio169 = document.querySelector('input[name="aspect-ratio"][value="16:9"]');

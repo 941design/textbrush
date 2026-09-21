@@ -75,7 +75,10 @@ def test_reference_editing_controls_have_semantic_ids_and_live_regions():
         "reference-add": "button",
         "reference-list": "ul",
         "reference-error": "div",
-        "editing-presets": "fieldset",
+        # One output-size group, shared by every model. It replaced the
+        # editing-only "editing-presets" fieldset: the landscape and
+        # portrait preset sizes are the 4:3 and 3:4 options in here.
+        "output-size": "fieldset",
     }.items():
         assert parser.elements_by_id[element_id] == tag
     assert any(
@@ -94,13 +97,16 @@ def test_reference_editing_controls_have_semantic_ids_and_live_regions():
         )
         == 3
     )
-    assert (
-        sum(
-            1
-            for tag, attrs in parser.all_elements
-            if tag == "input" and attrs.get("name") == "editing-preset"
-        )
-        == 6
+    # No second size vocabulary: the editing-only preset radios are gone.
+    assert not any(
+        tag == "input" and attrs.get("name") == "editing-preset"
+        for tag, attrs in parser.all_elements
+    )
+    # The reference picker is always in the DOM -- a model that takes no
+    # references disables it rather than removing it, so the capability
+    # stays visible.
+    assert any(
+        tag == "button" and attrs.get("id") == "reference-add" for tag, attrs in parser.all_elements
     )
 
 

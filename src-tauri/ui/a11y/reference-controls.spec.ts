@@ -19,12 +19,28 @@ type ConfigAckPayload = {
   incompatibility_reason: string | null;
   required_model: string | null;
   settled: boolean;
+  width: number | null;
+  height: number | null;
+};
+
+// The acknowledged canvas for the preset identifiers these tests name.
+// The output-size group reconciles to the dimensions, not the
+// identifier: it offers every registered size to every model, and most
+// of those sizes have no preset name.
+const PRESET_CANVAS: Record<string, [number, number]> = {
+  'landscape-small': [512, 384],
+  'landscape-medium': [768, 576],
+  'landscape-large': [1024, 768],
+  'portrait-small': [384, 512],
+  'portrait-medium': [576, 768],
+  'portrait-large': [768, 1024],
 };
 
 function configAck(partial: Partial<ConfigAckPayload> & { model_id: string; reference_paths: string[]; preset: string | null }): {
   type: 'config_ack';
   payload: ConfigAckPayload;
 } {
+  const canvas = partial.preset ? PRESET_CANVAS[partial.preset] : undefined;
   return {
     type: 'config_ack',
     payload: {
@@ -36,6 +52,8 @@ function configAck(partial: Partial<ConfigAckPayload> & { model_id: string; refe
       incompatibility_reason: partial.incompatibility_reason ?? null,
       required_model: partial.required_model ?? null,
       settled: partial.settled ?? true,
+      width: canvas?.[0] ?? null,
+      height: canvas?.[1] ?? null,
     },
   };
 }
@@ -85,11 +103,10 @@ async function loadPageWithSettledEditingModel(
   }, [stateChangedPausedSettled(true)]);
 }
 
-// AC-ACCESS-1 (keyboard reachability): The model radios, add button, remove and
-// replace buttons, and preset radios must all be reachable in that order from
-// the prompt input. The DOM also contains aspect-ratio radios and resolution
-// buttons between the prompt and the model radios, so we record the full tab
-// order and verify the expected elements appear as a subsequence.
+// AC-ACCESS-1 (keyboard reachability): The model radios, the output-size
+// radios, the resolution steppers, and the add / remove / replace buttons must
+// all be reachable from the prompt input. We record the full tab order and
+// verify the expected elements appear as a subsequence.
 async function recordTabOrderFromPrompt(
   page: Page,
   maxTabs = 50,
@@ -126,7 +143,7 @@ function expectSubsequence(haystack: string[], needle: string[]): void {
 }
 
 test.describe('AC-ACCESS-1: keyboard reachability', () => {
-  test('Tab from the prompt input reaches model radio group, add button, per-preview remove/replace, and preset radio group', async ({
+  test('Tab from the prompt input reaches the model radio group, the output-size radio group, and the reference add button', async ({
     page,
   }) => {
     await loadPageWithSettledEditingModel(page);
@@ -138,13 +155,15 @@ test.describe('AC-ACCESS-1: keyboard reachability', () => {
     const tabOrder = await recordTabOrderFromPrompt(page);
 
     // HTML radio groups expose the checked option to Tab and hide the
-    // unchecked siblings (arrow keys navigate within the group). The checked
-    // values are flux2-klein-4b and landscape-medium because that is what
-    // loadPageWithSettledEditingModel acknowledges.
+    // unchecked siblings (arrow keys navigate within the group). The
+    // checked model is flux2-klein-4b because that is what
+    // loadPageWithSettledEditingModel acknowledges, and the checked
+    // output size is 4:3 because that is the ratio holding the
+    // acknowledged landscape-medium canvas (768x576).
     expectSubsequence(tabOrder, [
       'input[name="model"][value="flux2-klein-4b"]',
+      'input[name="aspect-ratio"][value="4:3"]',
       '#reference-add',
-      'input[name="editing-preset"][value="landscape-medium"]',
     ]);
   });
 
@@ -224,13 +243,15 @@ test.describe('AC-ACCESS-1: keyboard reachability', () => {
 
     const expectedLabels = [
       'FLUX.2 [klein] 4B',
-      'Add reference images',
       ...paths.map((path, index) => `Remove reference ${index + 1} of 4: ${path.split('/').pop()}`),
       ...paths.map((path, index) => `Replace reference ${index + 1} of 4: ${path.split('/').pop()}`),
     ];
     for (const label of expectedLabels) {
       expect(tabOrder).toContain(label);
     }
+    // The add button is out of the tab order here because four
+    // references is this model's maximum: there is nothing left to add.
+    await expect(page.locator('#reference-add')).toBeDisabled();
   });
 
   test('Remove button is activatable with Enter and Space (keyboard operability)', async ({ page }) => {
@@ -452,8 +473,14 @@ test.describe('AC-ACCESS-1: four-preview layout at supported window sizes', () =
         'input[name="model"][value="flux1-kontext-dev"]',
         'input[name="model"][value="flux2-klein-4b"]',
         '#reference-add',
-        'input[name="editing-preset"][value="landscape-small"]',
-        'input[name="editing-preset"][value="portrait-large"]',
+        // The one output-size group, shown to every model: the extremes
+        // of the ratio list plus the two that carry the former editing
+        // presets.
+        'input[name="aspect-ratio"][value="1:1"]',
+        'input[name="aspect-ratio"][value="4:3"]',
+        'input[name="aspect-ratio"][value="3:4"]',
+        'input[name="aspect-ratio"][value="9:16"]',
+        '#resolution-increase',
       ];
       for (const selector of controlSelectors) {
         const box = await page.locator(selector).boundingBox();
@@ -510,8 +537,64 @@ test.describe('AC-ACCESS-1: theme and font-size applied to new controls', () => 
   });
 });
 
+test.describe('deferred model loading: the selector is live before anything loads', () => {
+  test('model radios are operable in awaiting_model, and the reference control stays visible but disabled for a text-only model', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__a11yPaths = [] as string[];
+      (window as unknown as Record<string, unknown>).__a11yInvokeCalls = [];
+    });
+    await page.goto('/');
+    await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__a11yEmit));
+
+    await page.evaluate(() => {
+      (window as unknown as (type: string, payload: unknown) => void).__a11yEmit('model_list', {
+        models: [
+          { model_id: 'flux1-schnell', display_name: 'FLUX.1 [schnell]', min_references: 0, max_references: 0, available: true, cause: null, detail: '' },
+          { model_id: 'flux1-kontext-dev', display_name: 'FLUX.1 Kontext [dev]', min_references: 1, max_references: 1, available: false, cause: 'absent', detail: '' },
+          { model_id: 'flux2-klein-4b', display_name: 'FLUX.2 [klein] 4B', min_references: 0, max_references: 4, available: true, cause: null, detail: '' },
+        ],
+      });
+      (window as unknown as (type: string, payload: unknown) => void).__a11yEmit('state_changed', {
+        state: 'awaiting_model',
+      });
+    });
+
+    // No model is loaded and none is loading, yet every model radio is
+    // operable: that is the whole point of deferring the load.
+    for (const value of ['flux1-schnell', 'flux1-kontext-dev', 'flux2-klein-4b']) {
+      await expect(page.locator(`input[name="model"][value="${value}"]`)).toBeEnabled();
+    }
+
+    // Selecting one is what starts the session.
+    const before = await page.evaluate(
+      () => ((window as unknown as { __a11yInvokeCalls?: string[] }).__a11yInvokeCalls ?? []).length,
+    );
+    await page.locator('input[name="model"][value="flux1-schnell"]').click();
+    const after = await page.evaluate(
+      () => (window as unknown as { __a11yInvokeCalls?: string[] }).__a11yInvokeCalls ?? [],
+    );
+    expect(after.length).toBeGreaterThan(before);
+    expect(after).toContain('update_generation_config');
+
+    // A model that takes no reference images greys the control out
+    // rather than removing it, so the capability stays visible.
+    await page.evaluate(([msg]) => {
+      (window as unknown as (type: string, payload: unknown) => void).__a11yEmit(msg.type, msg.payload);
+    }, [configAck({ model_id: 'flux1-schnell', reference_paths: [], preset: null })]);
+    await page.evaluate(([msg]) => {
+      (window as unknown as (type: string, payload: unknown) => void).__a11yEmit(msg.type, msg.payload);
+    }, [stateChangedPausedSettled(true)]);
+
+    await expect(page.locator('#reference-add')).toBeVisible();
+    await expect(page.locator('#reference-add')).toBeDisabled();
+    await expect(page.locator('#reference-legend')).toContainText('not supported');
+  });
+});
+
 test.describe('AC-ACCESS-1: disabled state before settled signal', () => {
-  test('add button and model radios are disabled until state_changed(paused, settled=true)', async ({
+  test('add button and model radios are disabled until the backend reports a state', async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -523,6 +606,9 @@ test.describe('AC-ACCESS-1: disabled state before settled signal', () => {
     await page.goto('/');
     await page.waitForFunction(() => Boolean((window as unknown as Record<string, unknown>).__a11yEmit));
 
+    // Nothing has been reported yet -- not even awaiting_model -- so the
+    // controls stay shut. (Once awaiting_model arrives the model radios
+    // open; see the deferred-loading suite above.)
     const addButton = page.locator('#reference-add');
     await expect(addButton).toBeDisabled();
     for (const value of ['flux1-schnell', 'flux1-kontext-dev', 'flux2-klein-4b']) {

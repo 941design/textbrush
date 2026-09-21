@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- **Reference images are optional for every model that supports them at
+  all.** `flux2-klein-4b` now declares `min_references=0`: it generates
+  from a prompt alone as readily as it edits one to four references.
+  `flux1-kontext-dev` still requires exactly one. The desktop UI always
+  shows the reference control and greys it out for a model that accepts
+  none, so the capability is visible rather than absent.
+- **Model loading is deferred until a model is selected.** The desktop
+  app no longer loads a model at launch: it publishes the model
+  catalogue (new `model_list` IPC event, carrying each model's display
+  name, reference cardinality, and local availability), parks in the new
+  `awaiting_model` state, and loads only what the user picks. A model
+  pinned in `[model] selected_id` or passed on the command line is
+  already a selection and still loads at launch. An unavailable
+  selection is reported non-fatally and leaves the selection open.
+- **One output-size vocabulary for every model.** `4:3` and `3:4` join
+  the aspect-ratio table with exactly the dimensions the `landscape-*`
+  and `portrait-*` presets name, and the editing-only "Output size"
+  preset fieldset is gone: every model sees the same group, each option
+  labelled with the pixel dimensions it currently produces, with one
+  `−`/`+` ladder step shared across ratios. Aspect ratios are no longer
+  rejected for reference-capable models, `apply_configuration` and
+  `config_ack` carry explicit width/height, and `--preset` keeps working
+  as a name for six of those sizes.
+- Desktop header rearranged into three side-by-side groups — model
+  (vertical), output size, reference images — under the prompt.
+
 ### Added
 - Local multi-reference FLUX editing workflow, additive to the existing
   FLUX.1 [schnell] text-to-image path. Three registered models:

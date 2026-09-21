@@ -17,11 +17,12 @@ roots and the desktop UI):
   identifier reproduces pre-epic FLUX.1 schnell text-to-image behavior
   so config files predating this epic load unchanged (AC-COMPAT-1).
 
-- `TEXT_ASPECT_RATIOS`: the text-only aspect-ratio vocabulary, copied
-  here from `cli.py`'s `SUPPORTED_RATIOS` keys so validation can name
-  the set when rejecting text ratios against editing-capable models.
-  The CLI resolution table (`SUPPORTED_RATIOS`) stays in `cli.py` --
-  this module owns the *vocabulary*, not the resolutions.
+- `TEXT_ASPECT_RATIOS`: the aspect-ratio vocabulary, copied here from
+  `cli.py`'s `SUPPORTED_RATIOS` keys so validation owns the set of
+  identifiers that exist. Every model accepts every one of them; the
+  name is historical (see the table's own comment). The CLI resolution
+  table (`SUPPORTED_RATIOS`) stays in `cli.py` -- this module owns the
+  *vocabulary*, not the resolutions.
 
 - `ValidationVerdict`: the verdict dataclass. `valid=False` always
   carries `reason` (AC-MODEL-4); `required_model` is populated only
@@ -41,7 +42,9 @@ roots and the desktop UI):
   codebase.
 
 - `editing_preset_dimensions(preset) -> tuple[int, int]`: lookup helper
-  for the preset table.
+  for the preset table, and `preset_for_dimensions(width, height) ->
+  str | None`, its inverse, for callers that carry explicit pixel
+  dimensions and want the identifier naming them (if any).
 
 `validation` is a leaf, but it does depend on `textbrush.model.registry`
 (S2). Per architecture.md boundary rule 2, that is the one legal
@@ -74,14 +77,29 @@ EDITING_PRESETS: dict[str, tuple[int, int]] = {
 }
 DEFAULT_EDITING_PRESET = "landscape-medium"
 
-# The text-only aspect-ratio vocabulary. Order and contents mirror
-# `cli.py`'s `SUPPORTED_RATIOS` keys exactly -- this module owns the
-# vocabulary (which identifiers are text-only), cli owns the per-ratio
-# resolution choices. They cannot drift without a deliberate edit
-# because `tests/test_validation.py::TestTextAspectRatiosTable` compares
-# the two and fails if either is reordered or extended without the
-# other.
-TEXT_ASPECT_RATIOS: tuple[str, ...] = ("1:1", "16:9", "3:1", "4:1", "4:5", "9:16")
+# The aspect-ratio vocabulary. Order and contents mirror `cli.py`'s
+# `SUPPORTED_RATIOS` keys exactly -- this module owns the vocabulary
+# (which identifiers exist), cli owns the per-ratio resolution choices.
+# They cannot drift without a deliberate edit because
+# `tests/test_validation.py::TestTextAspectRatiosTable` compares the two
+# and fails if either is reordered or extended without the other.
+#
+# The name is historical: these ratios were once refused for editing-
+# capable models, which had to use `EDITING_PRESETS` instead. They no
+# longer are -- the desktop UI offers one output-size group to every
+# model (4:3 and 3:4 are the same ladders the landscape-* / portrait-*
+# presets name) and always sends explicit pixel dimensions alongside the
+# ratio, so there is nothing left for a per-mode ratio rule to protect.
+TEXT_ASPECT_RATIOS: tuple[str, ...] = (
+    "1:1",
+    "16:9",
+    "4:3",
+    "3:4",
+    "3:1",
+    "4:1",
+    "4:5",
+    "9:16",
+)
 
 # Computed once at module load from the per-model registry so the upper
 # cardinality bound follows the registry, not a literal in this file.
@@ -156,6 +174,30 @@ def editing_preset_dimensions(preset: str) -> tuple[int, int]:
         raise ValueError(f"unknown editing preset: {preset}") from exc
 
 
+def preset_for_dimensions(width: int, height: int) -> str | None:
+    """Return the preset identifier naming exactly `(width, height)`.
+
+    The inverse of `editing_preset_dimensions`. Callers that carry
+    explicit pixel dimensions (the desktop UI sends them for every
+    output-size choice) use this to label an acknowledged canvas with
+    the preset identifier config files and `--preset` speak, and get
+    None for a size no preset names -- which is not an error, only the
+    absence of a name.
+
+    CONTRACT:
+      Inputs:
+        width, height: pixel dimensions.
+      Outputs:
+        The matching key of `EDITING_PRESETS`, or None when no preset
+        names those dimensions. The first match wins; `EDITING_PRESETS`
+        holds no duplicate dimension pairs.
+    """
+    for identifier, dimensions in EDITING_PRESETS.items():
+        if dimensions == (width, height):
+            return identifier
+    return None
+
+
 def resolve_preset(model_id: str, preset: str | None, default_preset: str) -> str | None:
     """Resolve the active editing preset for a (model, requested preset) pair.
 
@@ -196,11 +238,11 @@ def validate_selection(
 
     First-failure-wins ordering: unknown slug, then cardinality, then
     preset direction 1 (preset-in-EDITING_PRESETS-on-text-model),
-    then preset direction 2 (unknown preset identifier), then
-    aspect-ratio direction (text ratio on editing-capable model), then
-    valid. Cardinality runs before the preset and aspect-ratio checks
-    so a request that fails cardinality surfaces a cardinality message,
-    not a confusing preset/ratio message (VQ-S4-005).
+    then preset direction 2 (unknown preset identifier), then valid.
+    Cardinality runs before the preset checks so a request that fails
+    cardinality surfaces a cardinality message, not a confusing preset
+    message (VQ-S4-005). `aspect_ratio` carries no rule of its own any
+    more -- see the final step of the implementation for why.
 
     CONTRACT:
       Inputs:
@@ -216,11 +258,11 @@ def validate_selection(
           EDITING_PRESETS) are reported here so callers do not need to
           re-implement the rule (architecture.md "Why `validation` is a
           module rather than duplicated logic").
-        aspect_ratio: a text-only aspect-ratio identifier, or None, or
-          the literal "custom". Text-only ratios on editing-capable
-          models are rejected; "custom" is the bridge editing models
-          use to carry explicit width/height (T10 wires the UI to send
-          "custom" for that path).
+        aspect_ratio: an aspect-ratio identifier from
+          `TEXT_ASPECT_RATIOS`, or None, or the literal "custom".
+          Accepted for every model: the desktop UI offers one
+          output-size group to all of them and sends explicit pixel
+          dimensions alongside the ratio.
 
       Outputs:
         ValidationVerdict.
@@ -294,19 +336,13 @@ def validate_selection(
     if preset is not None and preset not in EDITING_PRESETS:
         return ValidationVerdict(False, f"unknown editing preset: {preset}")
 
-    # Aspect-ratio direction: text-only ratio on an editing-capable model.
-    # The literal "custom" is the bridge editing models use to carry
-    # explicit width/height (T10), so it must not trip this rule.
-    if aspect_ratio is not None and aspect_ratio != "custom" and editing_capable:
-        return ValidationVerdict(
-            False,
-            (
-                f"text-only aspect ratio {aspect_ratio} is not valid for "
-                f"editing model {model_id}; "
-                f"choose one of {', '.join(EDITING_PRESETS)}"
-            ),
-        )
-
+    # Aspect ratio: no per-mode rule. Every registered model accepts every
+    # ratio in TEXT_ASPECT_RATIOS as well as the literal "custom", because
+    # the callers that pass a ratio for an editing-capable model also pass
+    # the explicit pixel dimensions that size its canvas. `aspect_ratio` is
+    # kept in the signature: it is part of the documented selection tuple
+    # and a future model with a genuine ratio restriction would be
+    # rejected here rather than in each composition root.
     return ValidationVerdict(True)
 
 

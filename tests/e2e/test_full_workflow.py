@@ -134,17 +134,23 @@ class TestBackendLoadingStateEmission:
 
     @pytest.mark.e2e_smoke
     def test_handle_init_emits_loading_before_idle(self):
-        """Backend emits state_changed(loading) as first STATE_CHANGED via IPC before idle.
+        """Selecting a model emits state_changed(loading) as its first event.
 
         This is a subprocess-style in-process E2E test that creates a real IPCServer and
         MessageHandler, patches only TextbrushBackend to avoid the torch dependency, then
         drives the full handle_init → _init_backend path and verifies that the first
         STATE_CHANGED event carries state='loading'.
+
+        Loading is deferred, so the model has to be selected for a load to
+        happen at all; INIT carries the selection here. The no-selection
+        case is covered by
+        `test_handle_init_without_a_model_loads_nothing` below.
         """
         from textbrush.backend import TextbrushBackend
         from textbrush.config import get_default_config
         from textbrush.ipc.handler import MessageHandler
         from textbrush.ipc.protocol import MessageType
+        from textbrush.model.registry import FLUX1_SCHNELL, AvailabilityReport
 
         config = get_default_config()
         handler = MessageHandler(config)
@@ -155,11 +161,16 @@ class TestBackendLoadingStateEmission:
             "prompt": "e2e loading state test",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
         }
 
-        with patch.object(TextbrushBackend, "__init__", return_value=None):
-            with patch.object(handler, "_init_backend"):
-                handler.handle_init(payload, mock_server)
+        with patch(
+            "textbrush.ipc.handler.check_model_availability",
+            return_value=AvailabilityReport(True, None, "installed"),
+        ):
+            with patch.object(TextbrushBackend, "__init__", return_value=None):
+                with patch.object(handler, "_init_backend"):
+                    handler.handle_init(payload, mock_server)
 
         state_changed_calls = [
             call
@@ -173,6 +184,40 @@ class TestBackendLoadingStateEmission:
         assert first_state == "loading", (
             f"First STATE_CHANGED from handle_init must be 'loading', got '{first_state}'"
         )
+
+    @pytest.mark.e2e_smoke
+    def test_handle_init_without_a_model_loads_nothing(self):
+        """With no model selected, INIT constructs no backend at all.
+
+        The whole point of deferred loading: the UI must come up live
+        instead of spending tens of seconds loading a model the user may
+        not want. The selection arrives later, as an UPDATE_CONFIG
+        carrying `model_id`.
+        """
+        from textbrush.backend import TextbrushBackend
+        from textbrush.config import get_default_config
+        from textbrush.ipc.handler import MessageHandler
+        from textbrush.ipc.protocol import MessageType
+
+        config = get_default_config()
+        handler = MessageHandler(config)
+        mock_server = Mock()
+        mock_server.send = Mock()
+
+        with patch.object(TextbrushBackend, "__init__", return_value=None) as constructed:
+            handler.handle_init(
+                {"prompt": "nothing loads yet", "seed": None, "aspect_ratio": "1:1"},
+                mock_server,
+            )
+
+        assert constructed.call_count == 0
+        assert handler.backend is None
+        state_changed_calls = [
+            call[0][0]
+            for call in mock_server.send.call_args_list
+            if call[0][0].type == MessageType.STATE_CHANGED
+        ]
+        assert state_changed_calls[0].payload["state"] == "awaiting_model"
 
 
 @pytest.mark.integration

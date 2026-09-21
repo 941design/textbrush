@@ -73,7 +73,7 @@ CLI arguments override config file values.
 * `--out PATH` - Output file path (default: auto-generated in configured directory)
 * `--config PATH` - Config file path (default: `~/.config/textbrush/config.toml`)
 * `--seed INT` - Random seed for reproducibility (must be non-negative)
-* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, `3:1`, `4:1`, `4:5`, or `9:16`
+* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, `4:3`, `3:4`, `3:1`, `4:1`, `4:5`, or `9:16`
 * `--format CHOICE` - Output format: `png` or `jpg`
 * `--verbose` - Enable debug logging (overrides config `logging.verbosity` to `debug`)
 * `--headless` - Run without UI (for CI/CD and automated testing)
@@ -90,12 +90,18 @@ CLI arguments override config file values.
 
 **UI Mode (Default):**
 1. Parse CLI + config
-2. Discover local models
-3. Download required model(s) if missing and credentials allow
-4. Launch UI immediately
-5. Start background image generation
-6. Present slideshow review
-7. Exit on Accept or Abort
+2. Launch UI immediately
+3. Discover local models and publish the catalogue to the UI
+4. **Defer model loading until a model is selected.** Loading a model
+   takes tens of seconds (and a multi-gigabyte download when the weights
+   are missing) during which no other model can be chosen, so no model is
+   loaded speculatively. A model named on the command line or pinned in
+   the config is already a selection and loads at once; otherwise the
+   session waits in `awaiting_model` with the selector live
+5. Download the selected model if missing and credentials allow
+6. Start background image generation
+7. Present slideshow review
+8. Exit on Accept or Abort
 
 **Headless Mode (`--headless`):**
 1. Parse CLI + config
@@ -275,10 +281,17 @@ This distinction is enforced at compile time using Rust's `#[cfg(debug_assertion
 * Aspect ratio presets with predefined resolutions (first entry is the default):
   - 1:1: 256×256, 512×512, 1024×1024
   - 16:9: 640×360, 1280×720, 1920×1080
+  - 4:3: 512×384, 768×576, 1024×768
+  - 3:4: 384×512, 576×768, 768×1024
   - 3:1: 900×300, 1500×500, 1800×600
   - 4:1: 1200×300, 1600×400
   - 4:5: 540×675, 1080×1350
   - 9:16: 360×640, 1080×1920
+* This is the **single output-size vocabulary**: every model is offered
+  every entry. There is no separate size list for models that take
+  reference images — the 4:3 and 3:4 ladders are exactly the sizes the
+  `landscape-*` and `portrait-*` preset identifiers name, so config files
+  and `--preset` keep working while the UI shows one group
 * UI provides +/- buttons to cycle through available resolutions per ratio
 * PNG images include metadata: aspect ratio, dimensions, prompt, model, seed
 
@@ -301,8 +314,12 @@ This distinction is enforced at compile time using Rust's `#[cfg(debug_assertion
   - `UPDATE_CONFIG`: Update prompt and aspect ratio
   - `GET_IMAGE_LIST`: Request full image list for recovery
 * Events:
-  - `state_changed`: Unified state notification (loading, idle, generating, paused, error)
-    * State machine with 5 states tracking backend status
+  - `model_list`: Every registered model with its display name, reference
+    cardinality (`min_references`/`max_references`), and local
+    availability. Emitted once per session, before any model is loaded,
+    so the UI can offer the selection while nothing blocks it
+  - `state_changed`: Unified state notification (awaiting_model, loading, idle, generating, paused, error)
+    * State machine with 6 states tracking backend status
     * Includes prompt when generating, error message when error
     * Frontend reflects received state without inference or optimistic updates
   - `image_ready`: New image available with metadata
@@ -398,7 +415,8 @@ The backend maintains an explicit state machine broadcast to the frontend via `s
 
 | State | Description | Payload Fields |
 |-------|-------------|----------------|
-| `loading` | Model initializing on startup | — |
+| `awaiting_model` | No model selected, so nothing is loaded | — |
+| `loading` | Model initializing after selection | — |
 | `idle` | Model ready, not generating | — |
 | `generating` | Actively generating image | `prompt: string` |
 | `paused` | Generation paused by user | — |
@@ -406,6 +424,9 @@ The backend maintains an explicit state machine broadcast to the frontend via `s
 
 **State Transitions:**
 
+- `awaiting_model` → `loading` (user selects a model)
+- `awaiting_model` → `awaiting_model` (selected model unavailable; a
+  non-fatal error names the cause and the selection stays open)
 - `loading` → `idle` (model loaded successfully)
 - `loading` → `paused` (if start_paused=true; overrides loading for display)
 - `loading` → `error` (model load failed)
@@ -421,6 +442,7 @@ The backend maintains an explicit state machine broadcast to the frontend via `s
 
 **Spinner/Status Display:**
 The spinner is always the last item in navigation, displaying backend state:
+- `awaiting_model`: "select a model to begin" with spinner hidden
 - `loading`: "loading model" with spinner visible
 - `idle`: "ready" with spinner hidden
 - `generating`: Shows `prompt` from payload with spinner visible
@@ -431,19 +453,32 @@ The spinner is always the last item in navigation, displaying backend state:
 
 ### 6. Local Model Management
 
-#### 6.1 Supported Model
+#### 6.1 Supported Models
 
-* **FLUX.1 schnell** (default)
+* **FLUX.1 schnell** — text to image; takes no reference images
+* **FLUX.1 Kontext [dev]** — requires exactly one reference image
+* **FLUX.2 [klein] 4B** — text to image, and optionally 1–4 reference
+  images. References are optional, never a precondition
 * Local-only inference
 * No bundled weights
 
+Reference-image support is a per-model property (`min_references` /
+`max_references` in the model registry), not a property of the app mode.
+The UI always shows the reference-image control and disables it for a
+model whose maximum is zero, so the capability is visible rather than
+merely absent.
+
 #### 6.2 Model Discovery
 
-On startup:
+On startup, for every registered model:
 
 1. Check Hugging Face cache (respect `HF_HOME`)
 2. Check configured custom model directories
 3. Validate required files
+
+The result is published to the UI as `model_list` before anything is
+loaded, so a model whose weights are absent can be shown as such rather
+than discovered only when the user picks it.
 
 #### 6.3 Model Download
 

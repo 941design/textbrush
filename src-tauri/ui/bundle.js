@@ -99,85 +99,7 @@ var Resource = class {
 };
 _Resource_rid = /* @__PURE__ */ new WeakMap();
 
-// reference_picker.ts
-var MAX_REFERENCES = 4;
-var SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg"];
-var EDITING_PRESETS = [
-  { id: "landscape-small", width: 512, height: 384 },
-  { id: "landscape-medium", width: 768, height: 576 },
-  { id: "landscape-large", width: 1024, height: 768 },
-  { id: "portrait-small", width: 384, height: 512 },
-  { id: "portrait-medium", width: 576, height: 768 },
-  { id: "portrait-large", width: 768, height: 1024 }
-];
-var MODELS = [
-  { id: "flux1-schnell", displayName: "FLUX.1 [schnell]", minReferences: 0, maxReferences: 0 },
-  { id: "flux1-kontext-dev", displayName: "FLUX.1 Kontext [dev]", minReferences: 1, maxReferences: 1 },
-  { id: "flux2-klein-4b", displayName: "FLUX.2 [klein] 4B", minReferences: 1, maxReferences: 4 }
-];
-function basename(path) {
-  return path.split(/[\\/]/).at(-1) || path;
-}
-function supported(path) {
-  const lower = path.toLowerCase();
-  return SUPPORTED_EXTENSIONS.some((extension) => lower.endsWith(extension));
-}
-function applyPickedPaths(current, picked) {
-  const references = [...current];
-  const errors = [];
-  for (const path of picked) {
-    if (!supported(path)) {
-      errors.push(`${basename(path)}: supported formats are PNG, JPG, and JPEG`);
-    } else if (references.length >= MAX_REFERENCES) {
-      errors.push(`${basename(path)}: limit of ${MAX_REFERENCES} reference images`);
-    } else {
-      references.push(path);
-    }
-  }
-  return { references, errors };
-}
-function removeReference(current, index) {
-  return current.filter((_, position) => position !== index);
-}
-function replaceReference(current, index, path) {
-  if (index < 0 || index >= current.length) {
-    return { references: [...current], errors: [`Reference ${index + 1} does not exist`] };
-  }
-  if (!supported(path)) {
-    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, and JPEG`] };
-  }
-  const references = [...current];
-  references[index] = path;
-  return { references, errors: [] };
-}
-function previewLabel(path, position, total = MAX_REFERENCES) {
-  return `Reference ${position + 1} of ${total}: ${basename(path)}`;
-}
-function isEditingModel(modelId) {
-  return (MODELS.find((model) => model.id === modelId)?.maxReferences ?? 0) > 0;
-}
-function compatibilityMessage(modelId, referenceCount) {
-  const model = MODELS.find((entry) => entry.id === modelId);
-  if (!model) return modelId ? `unknown model: ${modelId}` : null;
-  if (referenceCount >= model.minReferences && referenceCount <= model.maxReferences) return null;
-  const rule = model.minReferences === model.maxReferences ? model.minReferences === 0 ? "accepts no reference images" : `requires exactly ${model.minReferences} reference image` : `requires between ${model.minReferences} and ${model.maxReferences} reference images`;
-  const noModel = referenceCount > MAX_REFERENCES ? `; no supported model accepts more than ${MAX_REFERENCES}` : "";
-  return `${model.id} (${model.displayName}) ${rule}; got ${referenceCount}${noModel}`;
-}
-
 // config_controls.ts
-var DEFAULT_EDITING_PRESET = "landscape-medium";
-var warnedPresets = /* @__PURE__ */ new Set();
-function resolveEditingPreset(presetId) {
-  const requested = presetId ?? DEFAULT_EDITING_PRESET;
-  const match = EDITING_PRESETS.find((entry) => entry.id === requested);
-  if (match) return match;
-  if (!warnedPresets.has(requested)) {
-    warnedPresets.add(requested);
-    console.warn(`Unknown editing preset "${requested}"; falling back to "${DEFAULT_EDITING_PRESET}"`);
-  }
-  return EDITING_PRESETS.find((entry) => entry.id === DEFAULT_EDITING_PRESET) ?? EDITING_PRESETS[0];
-}
 var ASPECT_RATIO_RESOLUTIONS = {
   "1:1": [
     { width: 256, height: 256 },
@@ -188,6 +110,16 @@ var ASPECT_RATIO_RESOLUTIONS = {
     { width: 640, height: 360 },
     { width: 1280, height: 720 },
     { width: 1920, height: 1080 }
+  ],
+  "4:3": [
+    { width: 512, height: 384 },
+    { width: 768, height: 576 },
+    { width: 1024, height: 768 }
+  ],
+  "3:4": [
+    { width: 384, height: 512 },
+    { width: 576, height: 768 },
+    { width: 768, height: 1024 }
   ],
   "3:1": [
     { width: 900, height: 300 },
@@ -208,13 +140,21 @@ var ASPECT_RATIO_RESOLUTIONS = {
   ]
 };
 var SUPPORTED_RATIOS = Object.keys(ASPECT_RATIO_RESOLUTIONS);
-function getDefaultResolution(ratio) {
+function resolutionAtStep(ratio, step) {
   const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
   if (!resolutions || resolutions.length === 0) {
     return { width: 256, height: 256 };
   }
-  const first = resolutions[0];
-  return first ?? { width: 256, height: 256 };
+  const clamped = Math.min(Math.max(step, 0), resolutions.length - 1);
+  return resolutions[clamped] ?? { width: 256, height: 256 };
+}
+function ratioForDimensions(width, height) {
+  for (const [ratio, resolutions] of Object.entries(ASPECT_RATIO_RESOLUTIONS)) {
+    if (resolutions.some((entry) => entry.width === width && entry.height === height)) {
+      return ratio;
+    }
+  }
+  return null;
 }
 function getResolutionIndex(ratio, width, height) {
   const resolutions = ASPECT_RATIO_RESOLUTIONS[ratio];
@@ -265,6 +205,18 @@ function updateResolutionButtons(ratio, width, height) {
     increaseBtn.disabled = !canIncreaseResolution(ratio, width, height);
   }
 }
+function renderRatioDimensions(step) {
+  const labels = document.querySelectorAll(".ratio-dimensions");
+  labels.forEach((label) => {
+    const ratio = label.dataset.ratio;
+    if (!ratio) return;
+    const { width, height } = resolutionAtStep(ratio, step);
+    label.textContent = `${width}\xD7${height}`;
+  });
+}
+function syncOutputSizeControls(state2) {
+  syncControlsFromState(state2);
+}
 function syncControlsFromState(state2) {
   const dimensionDisplay = document.getElementById("dimension-display");
   if (dimensionDisplay) {
@@ -275,8 +227,9 @@ function syncControlsFromState(state2) {
     radio.checked = radio.value === state2.aspectRatio;
   });
   updateResolutionButtons(state2.aspectRatio, state2.width, state2.height);
+  renderRatioDimensions(getResolutionIndex(state2.aspectRatio, state2.width, state2.height));
 }
-function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, initialHeight, state2, elements2) {
+function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, initialHeight, state2, elements2, onOutputSizeChange) {
   state2.aspectRatio = SUPPORTED_RATIOS.includes(initialAspectRatio) ? initialAspectRatio : "1:1";
   state2.width = initialWidth;
   state2.height = initialHeight;
@@ -308,28 +261,33 @@ function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, ini
       }
     });
   }
+  const applyOutputSize = (ratio, dims) => {
+    if (dimensionDisplay) {
+      dimensionDisplay.textContent = `${dims.width}\xD7${dims.height}`;
+    }
+    updateResolutionButtons(ratio, dims.width, dims.height);
+    renderRatioDimensions(getResolutionIndex(ratio, dims.width, dims.height));
+    if (onOutputSizeChange?.(ratio, dims.width, dims.height)) {
+      state2.aspectRatio = ratio;
+      state2.width = dims.width;
+      state2.height = dims.height;
+      return;
+    }
+    const config = getCurrentConfig(elements2, state2);
+    void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state2);
+  };
   radios.forEach((radio) => {
     radio.addEventListener("change", () => {
       const ratio = radio.value;
-      const dims = getDefaultResolution(ratio);
-      if (dimensionDisplay) {
-        dimensionDisplay.textContent = `${dims.width}\xD7${dims.height}`;
-      }
-      updateResolutionButtons(ratio, dims.width, dims.height);
-      const config = getCurrentConfig(elements2, state2);
-      void handleConfigUpdate(config.prompt, ratio, dims.width, dims.height, state2);
+      const step = getResolutionIndex(state2.aspectRatio, state2.width, state2.height);
+      applyOutputSize(ratio, resolutionAtStep(ratio, step));
     });
   });
   if (decreaseBtn) {
     decreaseBtn.addEventListener("click", () => {
       const prevRes = getPreviousResolution(state2.aspectRatio, state2.width, state2.height);
       if (prevRes) {
-        if (dimensionDisplay) {
-          dimensionDisplay.textContent = `${prevRes.width}\xD7${prevRes.height}`;
-        }
-        updateResolutionButtons(state2.aspectRatio, prevRes.width, prevRes.height);
-        const config = getCurrentConfig(elements2, state2);
-        void handleConfigUpdate(config.prompt, config.aspectRatio, prevRes.width, prevRes.height, state2);
+        applyOutputSize(state2.aspectRatio, prevRes);
       }
     });
   }
@@ -337,12 +295,7 @@ function initConfigControls(initialPrompt, initialAspectRatio, initialWidth, ini
     increaseBtn.addEventListener("click", () => {
       const nextRes = getNextResolution(state2.aspectRatio, state2.width, state2.height);
       if (nextRes) {
-        if (dimensionDisplay) {
-          dimensionDisplay.textContent = `${nextRes.width}\xD7${nextRes.height}`;
-        }
-        updateResolutionButtons(state2.aspectRatio, nextRes.width, nextRes.height);
-        const config = getCurrentConfig(elements2, state2);
-        void handleConfigUpdate(config.prompt, config.aspectRatio, nextRes.width, nextRes.height, state2);
+        applyOutputSize(state2.aspectRatio, nextRes);
       }
     });
   }
@@ -419,15 +372,6 @@ function showValidationError(message, inputElement) {
 }
 function getCurrentConfig(elements2, state2) {
   const promptValue = elements2.promptInput ? elements2.promptInput.value : "";
-  if (isEditingModel(state2.modelId)) {
-    const preset = resolveEditingPreset(state2.preset);
-    return {
-      prompt: promptValue,
-      aspectRatio: "custom",
-      width: preset.width,
-      height: preset.height
-    };
-  }
   let aspectRatioValue = "1:1";
   if (elements2.aspectRatioRadios) {
     const radios = Array.from(elements2.aspectRatioRadios);
@@ -9046,6 +8990,84 @@ async function fetchAndParsePngMetadata(url) {
   }
 }
 
+// reference_picker.ts
+var MAX_REFERENCES = 4;
+var SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg"];
+var DEFAULT_MODELS = [
+  { id: "flux1-schnell", displayName: "FLUX.1 [schnell]", minReferences: 0, maxReferences: 0 },
+  { id: "flux1-kontext-dev", displayName: "FLUX.1 Kontext [dev]", minReferences: 1, maxReferences: 1 },
+  { id: "flux2-klein-4b", displayName: "FLUX.2 [klein] 4B", minReferences: 0, maxReferences: 4 }
+];
+var models = [...DEFAULT_MODELS];
+function adoptModelCapabilities(catalogue) {
+  if (catalogue.length) {
+    models = catalogue.map((entry) => ({ ...entry }));
+  }
+}
+function modelCapability(modelId) {
+  return models.find((entry) => entry.id === modelId) ?? null;
+}
+function maxReferencesFor(modelId) {
+  return modelCapability(modelId)?.maxReferences ?? 0;
+}
+function referenceCapabilityLabel(model) {
+  if (model.maxReferences === 0) return "text to image, no references";
+  if (model.minReferences === model.maxReferences) {
+    return `${model.minReferences} reference required`;
+  }
+  const optional = model.minReferences === 0 ? "optional: " : "";
+  return `${optional}${model.minReferences} to ${model.maxReferences} references`;
+}
+function basename(path) {
+  return path.split(/[\\/]/).at(-1) || path;
+}
+function supported(path) {
+  const lower = path.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+function applyPickedPaths(current, picked, limit = MAX_REFERENCES) {
+  const references = [...current];
+  const errors = [];
+  for (const path of picked) {
+    if (!supported(path)) {
+      errors.push(`${basename(path)}: supported formats are PNG, JPG, and JPEG`);
+    } else if (references.length >= limit) {
+      errors.push(`${basename(path)}: limit of ${limit} reference images`);
+    } else {
+      references.push(path);
+    }
+  }
+  return { references, errors };
+}
+function removeReference(current, index) {
+  return current.filter((_, position) => position !== index);
+}
+function replaceReference(current, index, path) {
+  if (index < 0 || index >= current.length) {
+    return { references: [...current], errors: [`Reference ${index + 1} does not exist`] };
+  }
+  if (!supported(path)) {
+    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, and JPEG`] };
+  }
+  const references = [...current];
+  references[index] = path;
+  return { references, errors: [] };
+}
+function previewLabel(path, position, total = MAX_REFERENCES) {
+  return `Reference ${position + 1} of ${total}: ${basename(path)}`;
+}
+function isEditingModel(modelId) {
+  return maxReferencesFor(modelId) > 0;
+}
+function compatibilityMessage(modelId, referenceCount) {
+  const model = modelCapability(modelId);
+  if (!model) return modelId ? `unknown model: ${modelId}` : null;
+  if (referenceCount >= model.minReferences && referenceCount <= model.maxReferences) return null;
+  const rule = model.minReferences === model.maxReferences ? model.minReferences === 0 ? "accepts no reference images" : `requires exactly ${model.minReferences} reference image` : model.minReferences === 0 ? `accepts up to ${model.maxReferences} reference images` : `requires between ${model.minReferences} and ${model.maxReferences} reference images`;
+  const noModel = referenceCount > MAX_REFERENCES ? `; no supported model accepts more than ${MAX_REFERENCES}` : "";
+  return `${model.id} (${model.displayName}) ${rule}; got ${referenceCount}${noModel}`;
+}
+
 // main.ts
 var appWindow = getCurrentWindow();
 var state = {
@@ -9066,6 +9088,7 @@ var state = {
   imageList: [],
   currentIndex: -1,
   modelId: null,
+  pendingModelId: null,
   references: [],
   pendingReferences: null,
   preset: null,
@@ -9089,8 +9112,6 @@ var elements = {
   promptDisplay: null,
   promptInput: null,
   aspectRatioRadios: null,
-  aspectRatioControls: null,
-  resolutionControls: null,
   dimensionDisplay: null,
   resolutionDecrease: null,
   resolutionIncrease: null,
@@ -9116,8 +9137,8 @@ var elements = {
   referenceAdd: null,
   referenceList: null,
   referenceError: null,
-  editingPresets: null,
-  presetRadios: null
+  outputSize: null,
+  referenceLegend: null
 };
 var magnifierActive = false;
 var MAGNIFIER_SIZE = 200;
@@ -9156,8 +9177,6 @@ function cacheElements() {
   elements.promptDisplay = document.getElementById("prompt-display");
   elements.promptInput = document.getElementById("prompt-input");
   elements.aspectRatioRadios = document.querySelectorAll('input[name="aspect-ratio"]');
-  elements.aspectRatioControls = document.querySelector(".aspect-ratio-control");
-  elements.resolutionControls = document.querySelector(".resolution-control");
   elements.dimensionDisplay = document.getElementById("dimension-display");
   elements.resolutionDecrease = document.getElementById("resolution-decrease");
   elements.resolutionIncrease = document.getElementById("resolution-increase");
@@ -9183,8 +9202,8 @@ function cacheElements() {
   elements.referenceAdd = document.getElementById("reference-add");
   elements.referenceList = document.getElementById("reference-list");
   elements.referenceError = document.getElementById("reference-error");
-  elements.editingPresets = document.getElementById("editing-presets");
-  elements.presetRadios = document.querySelectorAll('input[name="editing-preset"]');
+  elements.outputSize = document.getElementById("output-size");
+  elements.referenceLegend = document.getElementById("reference-legend");
 }
 function allElementsPresent() {
   return Object.values(elements).every((el) => el !== null);
@@ -9222,7 +9241,8 @@ async function init() {
         launchArgs.width,
         launchArgs.height,
         state,
-        elements
+        elements,
+        claimOutputSizeChange
       );
       setupMessageListener();
       setupButtonListeners();
@@ -9268,11 +9288,18 @@ function setupMessageListener() {
 function activeReferencePaths() {
   return state.pendingReferences ?? state.references;
 }
+function isAwaitingModel() {
+  return state.backendState?.state === "awaiting_model";
+}
+function canSelectModel() {
+  return (state.settled || isAwaitingModel()) && !state.configUpdateInFlight;
+}
 function renderEditingControls() {
   const editable = state.settled && !state.configUpdateInFlight;
+  const selectable = canSelectModel();
   elements.modelRadios?.forEach((radio) => {
     radio.checked = radio.value === state.modelId;
-    radio.disabled = !editable;
+    radio.disabled = !selectable;
     const label = radio.closest("label");
     label?.querySelector(".recommended-badge")?.remove();
     if (label && radio.value === state.compatibility?.requiredModel) {
@@ -9281,17 +9308,22 @@ function renderEditingControls() {
       badge.textContent = " recommended";
       label.append(badge);
     }
+    const capability = modelCapability(radio.value);
+    const note = label?.querySelector(".model-note");
+    if (note && capability) {
+      const unavailable = capability.available === false ? " \u2014 not installed" : "";
+      note.textContent = `${referenceCapabilityLabel(capability)}${unavailable}`;
+    }
+    label?.classList.toggle("model-unavailable", capability?.available === false);
   });
-  const editing = isEditingModel(state.modelId);
-  if (elements.promptInput) elements.promptInput.disabled = editing && !editable;
-  elements.editingPresets?.classList.toggle("hidden", !editing);
-  elements.aspectRatioControls?.classList.toggle("hidden", editing);
-  elements.resolutionControls?.classList.toggle("hidden", editing);
-  elements.presetRadios?.forEach((radio) => {
-    radio.checked = radio.value === state.preset;
-    radio.disabled = !editable || !editing;
-  });
-  if (elements.referenceAdd) elements.referenceAdd.disabled = !editable;
+  if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
+  const referenceLimit = maxReferencesFor(state.modelId);
+  const canAddReference = editable && referenceLimit > 0 && activeReferencePaths().length < referenceLimit;
+  if (elements.referenceAdd) elements.referenceAdd.disabled = !canAddReference;
+  elements.referencePicker?.classList.toggle("disabled", referenceLimit === 0);
+  if (elements.referenceLegend) {
+    elements.referenceLegend.textContent = state.modelId === null ? "Reference images" : referenceLimit === 0 ? "Reference images (not supported by this model)" : `Reference images (up to ${referenceLimit})`;
+  }
   if (elements.referenceError) {
     elements.referenceError.textContent = state.compatibility?.reason ?? "";
   }
@@ -9318,7 +9350,7 @@ function renderReferenceList() {
     remove.setAttribute("aria-label", `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
     remove.disabled = !editable;
     remove.addEventListener("click", () => {
-      sendEditingUpdate(state.modelId, removeReference(state.references, index), state.preset);
+      sendEditingUpdate(state.modelId, removeReference(state.references, index));
     });
     const replace = document.createElement("button");
     replace.type = "button";
@@ -9333,60 +9365,73 @@ function renderReferenceList() {
         if (elements.referenceError) elements.referenceError.textContent = result.errors.join(" ");
         return;
       }
-      sendEditingUpdate(state.modelId, result.references, state.preset);
+      sendEditingUpdate(state.modelId, result.references);
     });
     item.append(preview, name, remove, replace);
     list.append(item);
   });
 }
-function sendEditingUpdate(modelId, references, preset) {
-  if (!state.settled || state.configUpdateInFlight || !modelId) return;
+function sendEditingUpdate(modelId, references, size) {
+  if (!modelId || state.configUpdateInFlight) return;
+  if (!state.settled && !isAwaitingModel()) return;
   state.pendingReferences = references;
+  state.pendingModelId = modelId;
   state.configUpdateInFlight = true;
   renderEditingControls();
-  const selectedPreset = preset ?? (isEditingModel(modelId) ? "landscape-medium" : null);
-  const dimensions = EDITING_PRESETS.find((entry) => entry.id === selectedPreset);
+  const aspectRatio = size?.aspectRatio ?? state.aspectRatio;
+  const width = size?.width ?? state.width;
+  const height = size?.height ?? state.height;
   const localReason = compatibilityMessage(modelId, references.length);
   if (localReason && elements.referenceError) elements.referenceError.textContent = localReason;
   void invoke("update_generation_config", {
     prompt: elements.promptInput?.value || state.prompt,
-    aspectRatio: dimensions ? "custom" : state.aspectRatio,
-    width: dimensions?.width ?? state.width,
-    height: dimensions?.height ?? state.height,
+    aspectRatio,
+    width,
+    height,
     modelId,
     references,
-    preset: selectedPreset
+    // The backend derives the preset identifier from the dimensions;
+    // sending one here would override the size the user just picked.
+    preset: null
   }).catch((error) => {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
+    state.pendingModelId = null;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = String(error);
   });
+}
+function claimOutputSizeChange(aspectRatio, width, height) {
+  if (!state.modelId) return true;
+  if (!isEditingModel(state.modelId)) return false;
+  sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  return true;
 }
 function setupEditingControls() {
   elements.modelRadios?.forEach((radio) => {
     radio.addEventListener("change", () => {
       const requested = radio.value;
       renderEditingControls();
-      sendEditingUpdate(requested, state.references, state.preset);
-    });
-  });
-  elements.presetRadios?.forEach((radio) => {
-    radio.addEventListener("change", () => {
-      renderEditingControls();
-      sendEditingUpdate(state.modelId, state.references, radio.value);
+      const references = maxReferencesFor(requested) > 0 ? state.references : [];
+      sendEditingUpdate(requested, references, {
+        aspectRatio: state.aspectRatio,
+        width: state.width,
+        height: state.height
+      });
     });
   });
   elements.referenceAdd?.addEventListener("click", async () => {
     if (!state.settled || state.configUpdateInFlight) return;
+    const limit = maxReferencesFor(state.modelId);
+    if (limit === 0) return;
     try {
       const picked = await invoke("pick_reference_files");
-      const result = applyPickedPaths(state.references, picked);
+      const result = applyPickedPaths(state.references, picked, limit);
       if (result.errors.length && elements.referenceError) {
         elements.referenceError.textContent = result.errors.join(" ");
       }
       if (result.references.length !== state.references.length) {
-        sendEditingUpdate(state.modelId, result.references, state.preset);
+        sendEditingUpdate(state.modelId, result.references);
       }
     } catch (error) {
       if (elements.referenceError) elements.referenceError.textContent = String(error);
@@ -9403,10 +9448,30 @@ function handleConfigAck(payload) {
     requiredModel: payload.required_model
   };
   state.pendingReferences = null;
+  state.pendingModelId = null;
   state.configUpdateInFlight = false;
+  if (typeof payload.width === "number" && typeof payload.height === "number") {
+    const ratio = ratioForDimensions(payload.width, payload.height);
+    if (ratio) state.aspectRatio = ratio;
+    state.width = payload.width;
+    state.height = payload.height;
+    syncOutputSizeControls(state);
+  }
   if (typeof payload.settled === "boolean") {
     state.settled = payload.settled;
   }
+  renderEditingControls();
+}
+function handleModelList(payload) {
+  adoptModelCapabilities(
+    payload.models.map((entry) => ({
+      id: entry.model_id,
+      displayName: entry.display_name,
+      minReferences: entry.min_references,
+      maxReferences: entry.max_references,
+      available: entry.available
+    }))
+  );
   renderEditingControls();
 }
 function handleMessage(msg) {
@@ -9440,6 +9505,9 @@ function handleMessage(msg) {
       break;
     case "config_ack":
       handleConfigAck(msg.payload);
+      break;
+    case "model_list":
+      handleModelList(msg.payload);
       break;
     default: {
       const unknownMsg = msg;
@@ -9522,6 +9590,7 @@ function handleErrorMessage(payload) {
   if (state.configUpdateInFlight) {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
+    state.pendingModelId = null;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = payload.message;
   }
@@ -9686,9 +9755,14 @@ function updateLoadingOverlayForState() {
   if (elements.loadingLabel && !elements.loadingOverlay?.classList.contains("hidden")) {
     let labelText;
     switch (state.backendState.state) {
-      case "loading":
-        labelText = "loading model";
+      case "awaiting_model":
+        labelText = "select a model to begin";
         break;
+      case "loading": {
+        const pending = modelCapability(state.pendingModelId);
+        labelText = pending ? `loading ${pending.displayName}` : "loading model";
+        break;
+      }
       case "idle":
         labelText = "ready";
         break;

@@ -69,4 +69,8 @@ src-tauri/ui/png-metadata.js
 src-tauri/ui/reference_picker.js
 src-tauri/ui/theme-manager.js
 src-tauri/ui/types.js
+
+# Headless accessibility harness output (npm run test:a11y)
+src-tauri/ui/a11y/bundle.a11y.js
+src-tauri/ui/test-results/
 *~

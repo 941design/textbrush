@@ -15,7 +15,13 @@ from textbrush.inference.base import (
     GenerationResult,
     InferenceEngine,
 )
-from textbrush.model.registry import FLUX1_KONTEXT_DEV, FLUX1_SCHNELL, FLUX2_KLEIN_4B, get_repo_id
+from textbrush.model.registry import (
+    FLUX1_KONTEXT_DEV,
+    FLUX1_SCHNELL,
+    FLUX2_KLEIN_4B,
+    get_model_spec,
+    get_repo_id,
+)
 from textbrush.model.weights import load_local_only
 
 if TYPE_CHECKING:
@@ -34,6 +40,40 @@ def round16(x: int) -> int:
     steps are provably no-ops (T04 design decision).
     """
     return ((x + 15) // 16) * 16
+
+
+# The area above which the FLUX.2 klein pipeline resizes every input image
+# it is given (recorded 2026-09-19 against diffusers 0.39.0). Mirrored in
+# `reference_input_size` so the backend normalises references INTO the
+# pipeline's no-op region rather than letting the pipeline resize them
+# behind our back -- a silent resize is exactly the reference-identity
+# drift S5-BC-1 forbids.
+FLUX2_REFERENCE_MAX_AREA = 1024 * 1024
+
+
+def clamp16_to_area(width: int, height: int, max_area: int) -> tuple[int, int]:
+    """Scale (width, height) down until `width * height <= max_area`, with
+    both axes multiples of 16 and the aspect ratio preserved as closely as
+    the multiple-of-16 grid allows.
+
+    Rounds each axis DOWN to the multiple-of-16 grid (and never below 16),
+    so the result is always inside the area budget rather than one rounding
+    step above it. Returns the inputs unchanged when they already fit.
+    """
+    if width * height <= max_area:
+        return width, height
+    scale = (max_area / (width * height)) ** 0.5
+    scaled_width = max(16, int(width * scale) // 16 * 16)
+    scaled_height = max(16, int(height * scale) // 16 * 16)
+    while scaled_width * scaled_height > max_area:
+        # Only reachable when one axis was clamped up to the 16 floor.
+        if scaled_width >= scaled_height and scaled_width > 16:
+            scaled_width -= 16
+        elif scaled_height > 16:
+            scaled_height -= 16
+        else:
+            break
+    return scaled_width, scaled_height
 
 
 class FluxInferenceEngine(InferenceEngine):
@@ -118,16 +158,24 @@ class FluxInferenceEngine(InferenceEngine):
         - Kontext accepts one reference at the generation canvas. With
           `_auto_resize=False` and `max_area = gw * gh`, both already multiples
           of 16, the pipeline-internal resize is provably a no-op.
-        - FLUX.2 klein 4B accepts 1-4 references at the generation canvas.
-          The pipeline applies an unconditional area-based resize above
-          `1024 * 1024` and rounds each axis to a multiple of 16; the
+        - FLUX.2 klein 4B accepts 0-4 references (references are optional;
+          see its registry entry) at a canvas derived from the generation
+          canvas. The pipeline applies an unconditional area-based resize
+          above `1024 * 1024` and rounds each axis to a multiple of 16; the
           no-op contract is `width * height <= 1024 * 1024` AND both axes
-          multiples of 16. The largest preset canvas (1024x768) is below
-          `1024 * 1024`, so this is satisfied for every preset.
+          multiples of 16. Output sizes above that area are selectable
+          (every output size is offered for every model), so the area
+          clamp is applied HERE -- the backend then normalises references
+          to the already-clamped canvas and the pipeline's own resize is
+          provably a no-op. Kontext needs no clamp: it is called with
+          `_auto_resize=False` and `max_area = gw * gh`.
         """
         if self.model_id == FLUX1_SCHNELL:
             return None
-        return (round16(output_width), round16(output_height))
+        canvas = (round16(output_width), round16(output_height))
+        if self.model_id == FLUX2_KLEIN_4B:
+            return clamp16_to_area(*canvas, FLUX2_REFERENCE_MAX_AREA)
+        return canvas
 
     def default_sampling_settings(self) -> dict[str, float | int]:
         """Per-slug sampling baseline (T04 design decision).
@@ -384,13 +432,19 @@ class FluxInferenceEngine(InferenceEngine):
                         f"references provided but engine {self.model_id!r} accepts none; "
                         f"schnell is a text-to-image pipeline"
                     )
-            elif not references:
+            elif not references and get_model_spec(self.model_id).min_references > 0:
+                # Only a model whose registry entry REQUIRES references
+                # (Kontext: min_references=1) fails here. FLUX.2 klein
+                # accepts references but does not require them
+                # (min_references=0), so an empty tuple is a legitimate
+                # text-to-image request: no `image` kwarg is forwarded and
+                # the pipeline runs in its text-to-image mode.
                 raise ValueError(
                     f"engine {self.model_id!r} requires at least one reference image; "
                     f"a cardinality check upstream of this engine should have rejected "
                     f"the request before generate() was called"
                 )
-            else:
+            elif references:
                 gw, gh = canvas
                 for index, reference in enumerate(references):
                     if (reference.width, reference.height) != (gw, gh):

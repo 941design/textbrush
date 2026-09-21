@@ -97,7 +97,12 @@ class TestHTMLConfigControls:
         assert "aria-label" in prompt_input, "prompt-input must have aria-label for accessibility"
 
     def test_aspect_ratio_radio_buttons_exist(self):
-        """Aspect ratio radio buttons must exist for all six preset values."""
+        """One output-size group holds every ratio, for every model.
+
+        4:3 and 3:4 are the landscape and portrait ladders that used to
+        live in a separate, editing-only "Output size" fieldset; they are
+        offered here on the same terms as every other ratio.
+        """
         html = load_html()
         parser = parse_html(html)
 
@@ -107,19 +112,28 @@ class TestHTMLConfigControls:
             if attrs.get("type") == "radio" and attrs.get("name") == "aspect-ratio"
         ]
 
-        assert len(radio_inputs) == 6, "Must have exactly 6 aspect ratio radio buttons"
-
         values = [attrs.get("value") for attrs in radio_inputs]
-        assert "1:1" in values, "Must have 1:1 aspect ratio option"
-        assert "16:9" in values, "Must have 16:9 aspect ratio option"
-        assert "3:1" in values, "Must have 3:1 aspect ratio option"
-        assert "4:1" in values, "Must have 4:1 aspect ratio option"
-        assert "4:5" in values, "Must have 4:5 aspect ratio option"
-        assert "9:16" in values, "Must have 9:16 aspect ratio option"
+        assert values == ["1:1", "16:9", "4:3", "3:4", "3:1", "4:1", "4:5", "9:16"], (
+            "The output-size group must offer every ratio, in the order "
+            "textbrush/cli.py declares them"
+        )
 
         checked_radios = [attrs for attrs in radio_inputs if "checked" in attrs]
         assert len(checked_radios) == 1, "Exactly one radio button should be checked by default"
         assert checked_radios[0].get("value") == "1:1", "1:1 should be checked by default"
+
+    def test_every_output_size_option_shows_its_pixel_dimensions(self):
+        """Each ratio carries a dimensions slot, so the group reads as a
+        list of concrete output sizes rather than of bare ratios."""
+        html = load_html()
+        parser = parse_html(html)
+
+        labelled = {
+            attrs.get("data-ratio")
+            for tag, attrs in parser.all_elements
+            if attrs.get("class") == "ratio-dimensions"
+        }
+        assert labelled == {"1:1", "16:9", "4:3", "3:4", "3:1", "4:1", "4:5", "9:16"}
 
     def test_validation_error_element_exists(self):
         """Validation error display element must exist."""

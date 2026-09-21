@@ -26,6 +26,8 @@ fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
     match aspect_ratio {
         "1:1" => (256, 256),
         "16:9" => (640, 360),
+        "4:3" => (512, 384),
+        "3:4" => (384, 512),
         "3:1" => (900, 300),
         "4:1" => (1200, 300),
         "4:5" => (540, 675),
@@ -236,6 +238,11 @@ mod tests {
         assert_eq!(get_default_resolution("3:1"), (900, 300));
         assert_eq!(get_default_resolution("4:1"), (1200, 300));
         assert_eq!(get_default_resolution("4:5"), (540, 675));
+        // 4:3 and 3:4 are the landscape and portrait ladders that used to
+        // be reachable only as editing presets; they are ordinary ratios
+        // in the one output-size group now.
+        assert_eq!(get_default_resolution("4:3"), (512, 384));
+        assert_eq!(get_default_resolution("3:4"), (384, 512));
         assert_eq!(get_default_resolution("9:16"), (360, 640));
         // Unknown aspect ratios fall back to 256x256
         assert_eq!(get_default_resolution("unknown"), (256, 256));

@@ -282,7 +282,14 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         slug=FLUX2_KLEIN_4B,
         repo_id="black-forest-labs/FLUX.2-klein-4B",
         display_name="FLUX.2 [klein] 4B",
-        min_references=1,
+        # min_references=0: FLUX.2 klein is a text-to-image model that
+        # ALSO accepts 1-4 references; references are optional, not a
+        # precondition. `max_references > 0` (the `is_editing_model`
+        # predicate) therefore means "accepts references", never
+        # "requires them" -- every consumer that needs the stricter
+        # question must read `min_references` itself. The engine-side
+        # guard in `textbrush/inference/flux.py` does exactly that.
+        min_references=0,
         max_references=4,
         gated=False,
         components=_FLUX2_COMPONENTS,

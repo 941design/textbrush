@@ -61,6 +61,18 @@ def handler(config):
     return MessageHandler(config)
 
 
+@pytest.fixture
+def installed_models():
+    """Report every registered model as installed locally.
+
+    Deferred loading resolves the SELECTED model through
+    `check_model_availability` before constructing a backend, so a test
+    that wants INIT to reach the load must say the weights are there.
+    """
+    with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
+        yield
+
+
 class TestInitialization:
     """Property-based tests for handler initialization."""
 
@@ -97,21 +109,26 @@ class TestInitCommand:
             "aspect_ratio": aspect_ratio,
             "output_path": None,
             "format": "png",
+            # Deferred loading: a backend exists only once a model has
+            # been selected. INIT carries the selection here.
+            "model_id": FLUX1_SCHNELL,
         }
 
-        with patch.object(TextbrushBackend, "__init__", return_value=None):
-            with patch.object(handler, "_init_backend"):
-                handler.handle_init(payload, mock_server)
+        with patch("textbrush.ipc.handler.check_model_availability", return_value=_available()):
+            with patch.object(TextbrushBackend, "__init__", return_value=None):
+                with patch.object(handler, "_init_backend"):
+                    handler.handle_init(payload, mock_server)
 
         assert handler.backend is not None
         assert isinstance(handler.backend, TextbrushBackend)
 
-    def test_init_creates_backend(self, handler, mock_server):
+    def test_init_creates_backend(self, handler, mock_server, installed_models):
         """Init command creates TextbrushBackend instance."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
         }
 
         with patch.object(TextbrushBackend, "__init__", return_value=None):
@@ -120,12 +137,13 @@ class TestInitCommand:
 
         assert handler.backend is not None
 
-    def test_init_starts_background_thread(self, handler, mock_server):
+    def test_init_starts_background_thread(self, handler, mock_server, installed_models):
         """Init command starts background initialization thread."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
         }
 
         init_called = threading.Event()
@@ -138,12 +156,13 @@ class TestInitCommand:
                 handler.handle_init(payload, mock_server)
                 assert init_called.wait(timeout=1.0)
 
-    def test_init_emits_loading_state_first(self, handler, mock_server):
+    def test_init_emits_loading_state_first(self, handler, mock_server, installed_models):
         """handle_init emits state_changed(loading) as first STATE_CHANGED event."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
         }
 
         with patch.object(TextbrushBackend, "__init__", return_value=None):
@@ -161,7 +180,7 @@ class TestInitCommand:
             f"First STATE_CHANGED must be 'loading', got '{first_state}'"
         )
 
-    def test_init_emits_loading_unconditionally(self, handler, mock_server):
+    def test_init_emits_loading_unconditionally(self, handler, mock_server, installed_models):
         """handle_init emits state_changed(loading) unconditionally for all payload variations."""
         # Test with a non-default aspect ratio to confirm no conditional branching skips loading
         payload = {
@@ -170,6 +189,7 @@ class TestInitCommand:
             "aspect_ratio": "16:9",
             "output_path": "/tmp/out.png",
             "format": "png",
+            "model_id": FLUX1_SCHNELL,
         }
 
         with patch.object(TextbrushBackend, "__init__", return_value=None):
@@ -187,12 +207,13 @@ class TestInitCommand:
             f"First STATE_CHANGED must be 'loading' for all payload variations, got '{first_state}'"
         )
 
-    def test_pause_during_loading_toggles_to_running(self, handler, mock_server):
+    def test_pause_during_loading_toggles_to_running(self, handler, mock_server, installed_models):
         """PAUSE during loading toggles pending startup state from paused to running."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
             "width": 256,
             "height": 256,
         }
@@ -201,6 +222,11 @@ class TestInitCommand:
         mock_backend.start_generation = Mock()
         mock_backend.initialize = Mock()
         mock_backend.is_paused.return_value = False
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (256, 256)
 
         class ImmediateThread:
             def __init__(self, target=None, args=(), daemon=None):
@@ -233,12 +259,13 @@ class TestInitCommand:
         ]
         assert state_changed_calls[-1].payload["state"] == "idle"
 
-    def test_init_starts_worker_paused_by_default(self, handler, mock_server):
+    def test_init_starts_worker_paused_by_default(self, handler, mock_server, installed_models):
         """INIT starts generation paused by default."""
         payload = {
             "prompt": "test prompt",
             "seed": None,
             "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
             "width": 256,
             "height": 256,
         }
@@ -247,6 +274,11 @@ class TestInitCommand:
         mock_backend.start_generation = Mock()
         mock_backend.initialize = Mock()
         mock_backend.is_paused.return_value = True
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (256, 256)
 
         class ImmediateThread:
             def __init__(self, target=None, args=(), daemon=None):
@@ -1348,6 +1380,11 @@ class TestUpdateConfigCommand:
         mock_backend = Mock(spec=TextbrushBackend)
         mock_backend.buffer = Mock()
         mock_backend.buffer.max_size = 8
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (512, 512)
         mock_backend.update_config.side_effect = RuntimeError(
             "No worker to update. Call start_generation() first."
         )
@@ -1392,6 +1429,9 @@ class TestUpdateConfigCommand:
                             "aspect_ratio": "1:1",
                             "width": 256,
                             "height": 256,
+                            # Deferred loading: naming the model is what
+                            # starts the load this test queues against.
+                            "model_id": FLUX1_SCHNELL,
                         }
                         handler.handle_init(init_payload, mock_server)
 
@@ -1615,9 +1655,19 @@ class TestGenerationStartCallbackPromptBinding:
 
         mock_backend.start_generation.side_effect = capture_start_generation
         mock_backend.update_config.return_value = None
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (256, 256)
 
-        # Step 1: INIT with prompt "cat"
-        init_payload = {"prompt": "cat painting", "aspect_ratio": "1:1"}
+        # Step 1: INIT with prompt "cat". Deferred loading: naming the
+        # model is what starts the load.
+        init_payload = {
+            "prompt": "cat painting",
+            "aspect_ratio": "1:1",
+            "model_id": FLUX1_SCHNELL,
+        }
 
         # Mock _init_backend to call on_ready synchronously for testing
         def mock_init_backend(on_ready, server):
@@ -1626,6 +1676,7 @@ class TestGenerationStartCallbackPromptBinding:
 
         # Patch TextbrushBackend constructor to return our mock
         with (
+            patch("textbrush.ipc.handler.check_model_availability", return_value=_available()),
             patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend),
             patch.object(handler, "_init_backend", side_effect=mock_init_backend),
         ):
@@ -1849,13 +1900,23 @@ class TestLaunchSettledSignal:
         def init_backend(on_ready, server):
             on_ready()
 
+        mock_backend.model_id = FLUX1_SCHNELL
+        mock_backend.references = ()
+        mock_backend.reference_paths = ()
+        mock_backend.preset = None
+        mock_backend.canvas = (256, 256)
         with (
+            patch("textbrush.ipc.handler.check_model_availability", return_value=_available()),
             patch("textbrush.ipc.handler.TextbrushBackend", return_value=mock_backend),
             patch("textbrush.ipc.handler.threading.Thread", side_effect=_ImmediateThread),
             patch.object(handler, "_init_backend", side_effect=init_backend),
             patch.object(handler, "_start_image_delivery"),
         ):
-            handler.handle_init({"prompt": "a cat", "aspect_ratio": "1:1"}, mock_server)
+            # Deferred loading: INIT loads only the model it is told to.
+            handler.handle_init(
+                {"prompt": "a cat", "aspect_ratio": "1:1", "model_id": FLUX1_SCHNELL},
+                mock_server,
+            )
 
     def test_settled_true_when_worker_parks_at_launch(self, handler, mock_server):
         """A worker started paused is settled immediately; say so."""
@@ -1924,6 +1985,9 @@ class TestEditingUpdateHonoursPrompt:
         mock_backend.references = ["ref-a", "ref-b"]
         mock_backend.reference_paths = ["/tmp/a.png", "/tmp/b.png"]
         mock_backend.preset = None
+        # The acknowledged output canvas travels on every config_ack, so
+        # the UI can reconcile its output-size group to backend truth.
+        mock_backend.canvas = (768, 576)
         return mock_backend
 
     def test_editing_update_applies_the_prompt(self, handler, mock_server):

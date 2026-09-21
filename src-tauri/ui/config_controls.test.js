@@ -6,7 +6,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { EDITING_PRESETS } from './reference_picker.js';
 
 const bundle = await build({
   entryPoints: [new URL('./config_controls.ts', import.meta.url).pathname],
@@ -26,34 +25,41 @@ const bundle = await build({
   }],
 });
 
-const { resolveEditingPreset } = await import(
+const { resolutionAtStep, getResolutionIndex, SUPPORTED_RATIOS } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 
-test('resolveEditingPreset returns the requested preset', () => {
-  for (const preset of EDITING_PRESETS) {
-    assert.deepEqual(resolveEditingPreset(preset.id), preset);
-  }
+test('every ratio is in the one output-size group, editing sizes included', () => {
+  assert.deepEqual(SUPPORTED_RATIOS,
+    ['1:1', '16:9', '4:3', '3:4', '3:1', '4:1', '4:5', '9:16']);
 });
 
-test('resolveEditingPreset falls back to landscape-medium for null', () => {
-  assert.deepEqual(resolveEditingPreset(null), { id: 'landscape-medium', width: 768, height: 576 });
+test('the 4:3 and 3:4 ladders are the landscape and portrait preset sizes', () => {
+  // The backend still names these six sizes landscape-small/medium/large
+  // and portrait-small/medium/large (textbrush/validation.py), so a
+  // config file or --preset keeps resolving to an offered size.
+  assert.deepEqual([0, 1, 2].map(step => resolutionAtStep('4:3', step)), [
+    { width: 512, height: 384 }, { width: 768, height: 576 }, { width: 1024, height: 768 },
+  ]);
+  assert.deepEqual([0, 1, 2].map(step => resolutionAtStep('3:4', step)), [
+    { width: 384, height: 512 }, { width: 576, height: 768 }, { width: 768, height: 1024 },
+  ]);
 });
 
-test('resolveEditingPreset falls back instead of throwing on an unknown id', () => {
-  // textbrush/config.py does not validate the preset, so an arbitrary string
-  // can reach the frontend through config_ack.
-  const warnings = [];
-  const original = console.warn;
-  console.warn = message => warnings.push(message);
-  try {
-    assert.deepEqual(resolveEditingPreset('not-a-preset'),
-      { id: 'landscape-medium', width: 768, height: 576 });
-    assert.equal(warnings.length, 1, 'unknown preset is reported once');
-    assert.match(warnings[0], /not-a-preset/);
-    resolveEditingPreset('not-a-preset');
-    assert.equal(warnings.length, 1, 'the same unknown preset is not reported twice');
-  } finally {
-    console.warn = original;
+test('a ladder step carries across ratios and clamps to the shorter ladder', () => {
+  // 4:1 has only two entries; switching to it from the third step of
+  // 1:1 must land on its largest size, not fall back to its smallest.
+  assert.deepEqual(resolutionAtStep('4:1', 2), { width: 1600, height: 400 });
+  assert.deepEqual(resolutionAtStep('1:1', 2), { width: 1024, height: 1024 });
+  assert.deepEqual(resolutionAtStep('1:1', -1), { width: 256, height: 256 });
+  assert.deepEqual(resolutionAtStep('not-a-ratio', 0), { width: 256, height: 256 });
+});
+
+test('the ladder index round-trips through the dimensions', () => {
+  for (const ratio of SUPPORTED_RATIOS) {
+    for (const step of [0, 1, 2]) {
+      const { width, height } = resolutionAtStep(ratio, step);
+      assert.equal(resolutionAtStep(ratio, getResolutionIndex(ratio, width, height)).width, width);
+    }
   }
 });
