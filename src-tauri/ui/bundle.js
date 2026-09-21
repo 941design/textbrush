@@ -101,10 +101,14 @@ _Resource_rid = /* @__PURE__ */ new WeakMap();
 
 // config_controls.ts
 var ASPECT_RATIO_RESOLUTIONS = {
-  "1:1": [
-    { width: 256, height: 256 },
-    { width: 512, height: 512 },
-    { width: 1024, height: 1024 }
+  "4:1": [
+    { width: 1200, height: 300 },
+    { width: 1600, height: 400 }
+  ],
+  "3:1": [
+    { width: 900, height: 300 },
+    { width: 1500, height: 500 },
+    { width: 1800, height: 600 }
   ],
   "16:9": [
     { width: 640, height: 360 },
@@ -116,23 +120,19 @@ var ASPECT_RATIO_RESOLUTIONS = {
     { width: 768, height: 576 },
     { width: 1024, height: 768 }
   ],
-  "3:4": [
-    { width: 384, height: 512 },
-    { width: 576, height: 768 },
-    { width: 768, height: 1024 }
-  ],
-  "3:1": [
-    { width: 900, height: 300 },
-    { width: 1500, height: 500 },
-    { width: 1800, height: 600 }
-  ],
-  "4:1": [
-    { width: 1200, height: 300 },
-    { width: 1600, height: 400 }
+  "1:1": [
+    { width: 256, height: 256 },
+    { width: 512, height: 512 },
+    { width: 1024, height: 1024 }
   ],
   "4:5": [
     { width: 540, height: 675 },
     { width: 1080, height: 1350 }
+  ],
+  "3:4": [
+    { width: 384, height: 512 },
+    { width: 576, height: 768 },
+    { width: 768, height: 1024 }
   ],
   "9:16": [
     { width: 360, height: 640 },

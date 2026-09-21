@@ -418,6 +418,17 @@ class TestTextAspectRatiosTable:
     def test_eight_entries(self) -> None:
         assert len(TEXT_ASPECT_RATIOS) == 8
 
+    def test_ordered_by_height_over_width(self) -> None:
+        """Widest first, tallest last: the group reads as one progression
+        of shapes rather than an arbitrary sequence, and the desktop UI
+        renders it in exactly this order."""
+        ratios = [tuple(int(part) for part in ratio.split(":")) for ratio in TEXT_ASPECT_RATIOS]
+        aspects = [height / width for width, height in ratios]
+        assert aspects == sorted(aspects), (
+            f"TEXT_ASPECT_RATIOS must be ordered by height/width ascending; got "
+            f"{list(zip(TEXT_ASPECT_RATIOS, aspects))}"
+        )
+
     def test_matches_cli_supported_ratios(self) -> None:
         # Imported lazily so the leaf-boundary test below does not falsely
         # see a top-level cli import from the validation module.

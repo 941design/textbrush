@@ -29,9 +29,14 @@ const { resolutionAtStep, getResolutionIndex, SUPPORTED_RATIOS } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 
-test('every ratio is in the one output-size group, editing sizes included', () => {
-  assert.deepEqual(SUPPORTED_RATIOS,
-    ['1:1', '16:9', '4:3', '3:4', '3:1', '4:1', '4:5', '9:16']);
+test('every ratio is in the one output-size group, sorted widest to tallest', () => {
+  // Height/width ascending: 4:1 (0.25) through 1:1 (1.0) to 9:16 (1.78).
+  assert.deepEqual(SUPPORTED_RATIOS, ['4:1', '3:1', '16:9', '4:3', '1:1', '4:5', '3:4', '9:16']);
+  const heightOverWidth = SUPPORTED_RATIOS.map(ratio => {
+    const [w, h] = ratio.split(':').map(Number);
+    return h / w;
+  });
+  assert.deepEqual(heightOverWidth, [...heightOverWidth].sort((a, b) => a - b));
 });
 
 test('the 4:3 and 3:4 ladders are the landscape and portrait preset sizes', () => {

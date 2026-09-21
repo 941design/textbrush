@@ -73,7 +73,7 @@ CLI arguments override config file values.
 * `--out PATH` - Output file path (default: auto-generated in configured directory)
 * `--config PATH` - Config file path (default: `~/.config/textbrush/config.toml`)
 * `--seed INT` - Random seed for reproducibility (must be non-negative)
-* `--aspect-ratio CHOICE` - Image aspect ratio: `1:1`, `16:9`, `4:3`, `3:4`, `3:1`, `4:1`, `4:5`, or `9:16`
+* `--aspect-ratio CHOICE` - Image aspect ratio: `4:1`, `3:1`, `16:9`, `4:3`, `1:1`, `4:5`, `3:4`, or `9:16`
 * `--format CHOICE` - Output format: `png` or `jpg`
 * `--verbose` - Enable debug logging (overrides config `logging.verbosity` to `debug`)
 * `--headless` - Run without UI (for CI/CD and automated testing)
@@ -278,14 +278,16 @@ This distinction is enforced at compile time using Rust's `#[cfg(debug_assertion
 * `FluxInferenceEngine` implementation for FLUX.1 schnell
 * Hardware auto-detection: CUDA > MPS > CPU
 * Seed-based deterministic generation
-* Aspect ratio presets with predefined resolutions (first entry is the default):
-  - 1:1: 256×256, 512×512, 1024×1024
+* Aspect ratio presets with predefined resolutions (first entry is the
+  default), ordered by height/width ascending — widest first, tallest
+  last, which is also the order the UI presents them in:
+  - 4:1: 1200×300, 1600×400
+  - 3:1: 900×300, 1500×500, 1800×600
   - 16:9: 640×360, 1280×720, 1920×1080
   - 4:3: 512×384, 768×576, 1024×768
-  - 3:4: 384×512, 576×768, 768×1024
-  - 3:1: 900×300, 1500×500, 1800×600
-  - 4:1: 1200×300, 1600×400
+  - 1:1: 256×256, 512×512, 1024×1024
   - 4:5: 540×675, 1080×1350
+  - 3:4: 384×512, 576×768, 768×1024
   - 9:16: 360×640, 1080×1920
 * This is the **single output-size vocabulary**: every model is offered
   every entry. There is no separate size list for models that take

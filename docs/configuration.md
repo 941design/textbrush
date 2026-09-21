@@ -241,7 +241,8 @@ All options can be overridden on the command line (highest priority).
 
 **`--aspect-ratio CHOICE`**
 - Image aspect ratio preset
-- Choices: `1:1`, `16:9`, `4:3`, `3:4`, `3:1`, `4:1`, `4:5`, `9:16`
+- Choices, widest to tallest: `4:1`, `3:1`, `16:9`, `4:3`, `1:1`, `4:5`,
+  `3:4`, `9:16`
 - Valid for every model. `4:3` and `3:4` hold the same sizes the
   `landscape-*` and `portrait-*` presets name
 - Each ratio has multiple available resolutions (smallest selected by default)

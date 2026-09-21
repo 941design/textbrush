@@ -475,9 +475,12 @@ body {
     flex: 0 1 auto;
 }
 
+/* Two columns, filled row by row, so the visual order is the DOM order
+   is the tab order -- all three being the height/width progression the
+   ratio table declares (widest first, tallest last). */
 .aspect-ratio-group {
     display: grid;
-    grid-template-columns: repeat(3, max-content);
+    grid-template-columns: repeat(2, max-content);
     gap: 2px var(--spacing-md);
 }
 

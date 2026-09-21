@@ -72,14 +72,18 @@ largest (owned by `textbrush.cli.SUPPORTED_RATIOS`):
 
 | Ratio | Resolutions (width × height) |
 |---|---|
-| `1:1` | 256 × 256, 512 × 512, 1024 × 1024 |
+| `4:1` | 1200 × 300, 1600 × 400 |
+| `3:1` | 900 × 300, 1500 × 500, 1800 × 600 |
 | `16:9` | 640 × 360, 1280 × 720, 1920 × 1080 |
 | `4:3` | 512 × 384, 768 × 576, 1024 × 768 |
-| `3:4` | 384 × 512, 576 × 768, 768 × 1024 |
-| `3:1` | 900 × 300, 1500 × 500, 1800 × 600 |
-| `4:1` | 1200 × 300, 1600 × 400 |
+| `1:1` | 256 × 256, 512 × 512, 1024 × 1024 |
 | `4:5` | 540 × 675, 1080 × 1350 |
+| `3:4` | 384 × 512, 576 × 768, 768 × 1024 |
 | `9:16` | 360 × 640, 1080 × 1920 |
+
+The rows are ordered by height/width — widest first, tallest last — and
+the desktop app lays the same order out in two columns, so the group
+reads as one progression of shapes.
 
 `--aspect-ratio` selects a ratio for any model; the desktop app shows
 every ratio in one group with the pixel dimensions it currently

@@ -90,14 +90,17 @@ DEFAULT_EDITING_PRESET = "landscape-medium"
 # model (4:3 and 3:4 are the same ladders the landscape-* / portrait-*
 # presets name) and always sends explicit pixel dimensions alongside the
 # ratio, so there is nothing left for a per-mode ratio rule to protect.
+#
+# Order is height/width ascending -- widest first, tallest last; see
+# `cli.SUPPORTED_RATIOS` for why.
 TEXT_ASPECT_RATIOS: tuple[str, ...] = (
-    "1:1",
+    "4:1",
+    "3:1",
     "16:9",
     "4:3",
-    "3:4",
-    "3:1",
-    "4:1",
+    "1:1",
     "4:5",
+    "3:4",
     "9:16",
 )
 

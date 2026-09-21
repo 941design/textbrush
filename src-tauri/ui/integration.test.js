@@ -241,7 +241,7 @@ test('the output-size group is the same group for a model that takes references'
     // Every ratio is offered, and each one shows the pixels it produces.
     const ratios = [...document.querySelectorAll('input[name="aspect-ratio"]')]
       .map(input => input.value);
-    assert.deepEqual(ratios, ['1:1', '16:9', '4:3', '3:4', '3:1', '4:1', '4:5', '9:16']);
+    assert.deepEqual(ratios, ['4:1', '3:1', '16:9', '4:3', '1:1', '4:5', '3:4', '9:16']);
     assert.equal(document.querySelector('.ratio-dimensions[data-ratio="16:9"]').textContent,
       '1280×720');
 

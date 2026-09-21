@@ -24,11 +24,20 @@ interface Resolution {
 // the dimensions textbrush/validation.py names landscape-small/medium/
 // large and portrait-small/medium/large, so every model is offered the
 // same group and the backend still recognises those six sizes by name.
+//
+// Order is height/width ascending -- widest (4:1) through square (1:1)
+// to tallest (9:16) -- and the radios in index.html are laid out in that
+// same order, so the group reads as one progression of shapes. Keep the
+// three copies (here, cli.py, index.html) in step.
 const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
-  '1:1': [
-    { width: 256, height: 256 },
-    { width: 512, height: 512 },
-    { width: 1024, height: 1024 },
+  '4:1': [
+    { width: 1200, height: 300 },
+    { width: 1600, height: 400 },
+  ],
+  '3:1': [
+    { width: 900, height: 300 },
+    { width: 1500, height: 500 },
+    { width: 1800, height: 600 },
   ],
   '16:9': [
     { width: 640, height: 360 },
@@ -40,23 +49,19 @@ const ASPECT_RATIO_RESOLUTIONS: Record<string, Resolution[]> = {
     { width: 768, height: 576 },
     { width: 1024, height: 768 },
   ],
-  '3:4': [
-    { width: 384, height: 512 },
-    { width: 576, height: 768 },
-    { width: 768, height: 1024 },
-  ],
-  '3:1': [
-    { width: 900, height: 300 },
-    { width: 1500, height: 500 },
-    { width: 1800, height: 600 },
-  ],
-  '4:1': [
-    { width: 1200, height: 300 },
-    { width: 1600, height: 400 },
+  '1:1': [
+    { width: 256, height: 256 },
+    { width: 512, height: 512 },
+    { width: 1024, height: 1024 },
   ],
   '4:5': [
     { width: 540, height: 675 },
     { width: 1080, height: 1350 },
+  ],
+  '3:4': [
+    { width: 384, height: 512 },
+    { width: 576, height: 768 },
+    { width: 768, height: 1024 },
   ],
   '9:16': [
     { width: 360, height: 640 },

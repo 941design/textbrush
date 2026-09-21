@@ -113,9 +113,10 @@ class TestHTMLConfigControls:
         ]
 
         values = [attrs.get("value") for attrs in radio_inputs]
-        assert values == ["1:1", "16:9", "4:3", "3:4", "3:1", "4:1", "4:5", "9:16"], (
+        assert values == ["4:1", "3:1", "16:9", "4:3", "1:1", "4:5", "3:4", "9:16"], (
             "The output-size group must offer every ratio, in the order "
-            "textbrush/cli.py declares them"
+            "textbrush/cli.py declares them -- height/width ascending, "
+            "widest first"
         )
 
         checked_radios = [attrs for attrs in radio_inputs if "checked" in attrs]

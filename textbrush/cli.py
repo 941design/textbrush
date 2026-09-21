@@ -33,14 +33,20 @@ from .validation import (
 # `validation.EDITING_PRESETS` names landscape-small/medium/large and
 # portrait-small/medium/large. Every model is offered every entry --
 # there is no separate editing size vocabulary any more.
+#
+# Declaration order is height/width ascending: widest (4:1, h/w 0.25)
+# through square (1:1, 1.0) to tallest (9:16, 1.78). It is the order the
+# desktop UI renders the group in, so the list reads as one continuous
+# progression of shapes rather than as an arbitrary sequence. Keep any
+# new ratio in its place in that progression.
 SUPPORTED_RATIOS: dict[str, list[tuple[int, int]]] = {
-    "1:1": [(256, 256), (512, 512), (1024, 1024)],
+    "4:1": [(1200, 300), (1600, 400)],
+    "3:1": [(900, 300), (1500, 500), (1800, 600)],
     "16:9": [(640, 360), (1280, 720), (1920, 1080)],
     "4:3": [(512, 384), (768, 576), (1024, 768)],
-    "3:4": [(384, 512), (576, 768), (768, 1024)],
-    "3:1": [(900, 300), (1500, 500), (1800, 600)],
-    "4:1": [(1200, 300), (1600, 400)],
+    "1:1": [(256, 256), (512, 512), (1024, 1024)],
     "4:5": [(540, 675), (1080, 1350)],
+    "3:4": [(384, 512), (576, 768), (768, 1024)],
     "9:16": [(360, 640), (1080, 1920)],
 }
 

@@ -23,14 +23,15 @@ pub struct LaunchArgs {
 /// SUPPORTED_RATIOS[ratio][0] in textbrush/cli.py and the first entry in
 /// ASPECT_RATIO_RESOLUTIONS in src-tauri/ui/config_controls.ts.
 fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
+    // Ordered height/width ascending, as SUPPORTED_RATIOS declares them.
     match aspect_ratio {
-        "1:1" => (256, 256),
+        "4:1" => (1200, 300),
+        "3:1" => (900, 300),
         "16:9" => (640, 360),
         "4:3" => (512, 384),
-        "3:4" => (384, 512),
-        "3:1" => (900, 300),
-        "4:1" => (1200, 300),
+        "1:1" => (256, 256),
         "4:5" => (540, 675),
+        "3:4" => (384, 512),
         "9:16" => (360, 640),
         _ => (256, 256), // Fallback to square
     }
