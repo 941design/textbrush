@@ -47,16 +47,6 @@ export function maxReferencesFor(modelId: string | null): number {
   return modelCapability(modelId)?.maxReferences ?? 0;
 }
 
-/** Human-readable statement of what a model does with reference images. */
-export function referenceCapabilityLabel(model: ModelCapability): string {
-  if (model.maxReferences === 0) return 'text to image, no references';
-  if (model.minReferences === model.maxReferences) {
-    return `${model.minReferences} reference required`;
-  }
-  const optional = model.minReferences === 0 ? 'optional: ' : '';
-  return `${optional}${model.minReferences} to ${model.maxReferences} references`;
-}
-
 function basename(path: string): string {
   return path.split(/[\\/]/).at(-1) || path;
 }

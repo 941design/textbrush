@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   applyPickedPaths, removeReference, replaceReference, previewLabel,
   compatibilityMessage, adoptModelCapabilities, maxReferencesFor,
-  isEditingModel, referenceCapabilityLabel, modelCapability, MAX_REFERENCES,
+  isEditingModel, MAX_REFERENCES,
 } from './reference_picker.js';
 
 test('picked paths keep order and duplicates, while formats and limit are enforced', () => {
@@ -40,9 +40,6 @@ test('reference capability is per model: none, required, or optional', () => {
   assert.equal(maxReferencesFor('flux2-klein-4b'), 4);
   assert.equal(isEditingModel('flux2-klein-4b'), true);
   assert.equal(compatibilityMessage('flux2-klein-4b', 0), null);
-  assert.match(referenceCapabilityLabel(modelCapability('flux2-klein-4b')), /optional/);
-  assert.match(referenceCapabilityLabel(modelCapability('flux1-schnell')), /no references/);
-  assert.match(referenceCapabilityLabel(modelCapability('flux1-kontext-dev')), /required/);
   // An unknown model accepts nothing, so the picker stays disabled
   // rather than offering references no engine would take.
   assert.equal(maxReferencesFor(null), 0);

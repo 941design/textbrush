@@ -9010,14 +9010,6 @@ function modelCapability(modelId) {
 function maxReferencesFor(modelId) {
   return modelCapability(modelId)?.maxReferences ?? 0;
 }
-function referenceCapabilityLabel(model) {
-  if (model.maxReferences === 0) return "text to image, no references";
-  if (model.minReferences === model.maxReferences) {
-    return `${model.minReferences} reference required`;
-  }
-  const optional = model.minReferences === 0 ? "optional: " : "";
-  return `${optional}${model.minReferences} to ${model.maxReferences} references`;
-}
 function basename(path) {
   return path.split(/[\\/]/).at(-1) || path;
 }
@@ -9310,9 +9302,8 @@ function renderEditingControls() {
     }
     const capability = modelCapability(radio.value);
     const note = label?.querySelector(".model-note");
-    if (note && capability) {
-      const unavailable = capability.available === false ? " \u2014 not installed" : "";
-      note.textContent = `${referenceCapabilityLabel(capability)}${unavailable}`;
+    if (note) {
+      note.textContent = capability?.available === false ? "not installed" : "";
     }
     label?.classList.toggle("model-unavailable", capability?.available === false);
   });

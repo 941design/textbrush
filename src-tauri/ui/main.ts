@@ -13,7 +13,7 @@ import { fetchAndParsePngMetadata } from './png-metadata';
 import {
   applyPickedPaths, removeReference, replaceReference, previewLabel,
   isEditingModel, compatibilityMessage, adoptModelCapabilities,
-  maxReferencesFor, modelCapability, referenceCapabilityLabel,
+  maxReferencesFor, modelCapability,
 } from './reference_picker';
 import type {
   AppState,
@@ -321,11 +321,14 @@ function renderEditingControls(): void {
       badge.textContent = ' recommended';
       label.append(badge);
     }
+    // Availability only. What a model does with reference images is the
+    // reference group's own business -- stating it again per model line
+    // made the selector a wall of text for a fact one control already
+    // carries.
     const capability = modelCapability(radio.value);
     const note = label?.querySelector('.model-note');
-    if (note && capability) {
-      const unavailable = capability.available === false ? ' — not installed' : '';
-      note.textContent = `${referenceCapabilityLabel(capability)}${unavailable}`;
+    if (note) {
+      note.textContent = capability?.available === false ? 'not installed' : '';
     }
     label?.classList.toggle('model-unavailable', capability?.available === false);
   });
