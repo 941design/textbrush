@@ -85,108 +85,62 @@ pub fn abort_exit() {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
+    use super::*;
+    use std::process::Command;
 
-    proptest! {
-        #[test]
-        fn print_paths_and_exit_accepts_valid_path_strings(path in r"[a-zA-Z0-9/_.\-]{1,100}") {
-            // Property: print_paths_and_exit must accept any valid path string
-            // in a vector and preserve it exactly as provided.
-            // This verifies the function signature and type compatibility.
-            let paths = vec![path.clone()];
-            assert_eq!(paths[0], path, "Path should remain unchanged in vector");
+    // The child runs the real terminal function. Only this ignored probe
+    // reads the scenario variable; production has no test-only exit path.
+    #[test]
+    #[ignore]
+    fn exit_probe() {
+        match std::env::var("TEXTBRUSH_EXIT_TEST_CASE").unwrap().as_str() {
+            "abort" => abort_exit(),
+            "empty" => print_paths_and_exit(vec![]),
+            "single" => print_paths_and_exit(vec!["/tmp/a path.png".into()]),
+            "multiple" => print_paths_and_exit(vec![
+                "/tmp/z last.png".into(),
+                "/tmp/ä first.png".into(),
+                "/tmp/z last.png".into(),
+                "/tmp/b final.png".into(),
+            ]),
+            _ => panic!("unknown exit scenario"),
         }
-
-        #[test]
-        fn print_paths_and_exit_preserves_multiple_paths(
-            paths in prop::collection::vec(r"[a-zA-Z0-9/_.\-]{1,50}", 2..10)
-        ) {
-            // Property: When multiple paths are provided, each is preserved
-            // exactly as provided (no modification, no reordering).
-            for (i, path) in paths.iter().enumerate() {
-                assert_eq!(paths[i], *path, "Path at index {} should be preserved", i);
-            }
-        }
-
-        #[test]
-        fn print_paths_and_exit_maintains_order(
-            paths in prop::collection::vec(r"[a-zA-Z0-9/_.\-]{1,30}", 2..8)
-        ) {
-            // Property: Paths are printed in the same order as provided in input vector.
-            // This verifies the algorithm iterates in input order (not reversed/sorted).
-            let mut seen_order = Vec::new();
-            for (i, _) in paths.iter().enumerate() {
-                seen_order.push(i);
-            }
-            assert_eq!(paths.len(), seen_order.len(), "Order preservation requires same cardinality");
-        }
-
-        #[test]
-        fn print_paths_and_exit_handles_special_characters(
-            path in r"[/\\.:\-_a-zA-Z0-9 ]{1,80}"
-        ) {
-            // Property: print_paths_and_exit must preserve special characters
-            // that are valid in file paths (slashes, dots, colons, spaces, etc).
-            let paths = vec![path.clone()];
-            assert_eq!(paths[0], path, "Special characters must be preserved");
-        }
-
-        #[test]
-        fn print_paths_and_exit_single_path_backward_compatible(
-            path in r"[a-zA-Z0-9/_.\-]{1,100}"
-        ) {
-            // Property: Single-element vector behaves like print_and_exit.
-            // This ensures backward compatibility with existing single-path workflows.
-            let paths = vec![path.clone()];
-            assert_eq!(paths.len(), 1, "Single path should be in vector of length 1");
-            assert_eq!(paths[0], path, "Single path output should match input");
-        }
-
-        #[test]
-        fn print_paths_and_exit_vector_length_preservation(
-            paths in prop::collection::vec(r"[a-zA-Z0-9/_.\-]{1,40}", 0..20)
-        ) {
-            // Property: Output cardinality equals input cardinality.
-            // Each path in the input vector produces exactly one line of output.
-            assert_eq!(paths.len(), paths.len(), "Cardinality must be preserved");
-        }
-
-        #[test]
-        fn print_paths_and_exit_format_no_modification(
-            path in r"[a-zA-Z0-9/_.\-]{1,100}"
-        ) {
-            // Property: Paths are printed exactly as provided (no trimming, no case conversion).
-            let paths = vec![path.clone()];
-            let output = format!("{}", &paths[0]);
-            assert_eq!(output, path, "Output must be identical to input (no modification)");
-        }
-
-        #[test]
-        fn abort_exit_is_silent(_unit in Just(())) {
-            let _ = ();
-        }
-
-        #[test]
-        fn abort_exit_exit_code_one_intended(_unit in Just(())) {
-            let _ = ();
-        }
-
-        #[test]
-        fn abort_exit_no_stdout_contract(_unit in Just(())) {
-            let _ = ();
-        }
+        panic!("exit handler returned");
     }
 
     #[test]
-    fn tauri_command_macro_applied_to_abort_exit() {
-        let _ = ();
-    }
-
-    #[test]
-    fn tauri_command_macro_applied_to_print_paths_and_exit() {
-        // Property: The #[tauri::command] macro is applied to print_paths_and_exit.
-        // This ensures the function is registered as an IPC command.
-        // The macro application is verified at compile time by Tauri.
-        let _ = ();
+    fn production_exit_codes_stdout_and_order() {
+        for (scenario, code, stdout) in [
+            ("abort", 1, ""),
+            ("empty", 1, ""),
+            ("single", 0, "/tmp/a path.png\n"),
+            (
+                "multiple",
+                0,
+                "/tmp/z last.png\n/tmp/ä first.png\n/tmp/z last.png\n/tmp/b final.png\n",
+            ),
+        ] {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "exit_handlers::tests::exit_probe",
+                    "--ignored",
+                    "--nocapture",
+                    "--quiet",
+                    "--color",
+                    "never",
+                ])
+                .env("TEXTBRUSH_EXIT_TEST_CASE", scenario)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(code), "{scenario}");
+            // libtest writes this banner before invoking the probe.
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!("\nrunning 1 test\n{stdout}"),
+                "{scenario}"
+            );
+            assert!(output.stderr.is_empty(), "{scenario}: {:?}", output.stderr);
+        }
     }
 }
