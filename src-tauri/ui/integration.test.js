@@ -9,6 +9,7 @@ import * as ListManager from './list-manager.js';
 import * as ButtonFlash from './button-flash.js';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 
 // Dimensions default to the landscape-medium canvas, which is what the
 // backend acknowledges for the presets these tests name. The canvas -- not
@@ -65,7 +66,7 @@ async function renderedApp() {
   };
   window.__testListen = async () => () => {};
   const bundle = await build({
-    entryPoints: [new URL('./main.ts', import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL('./main.ts', import.meta.url))],
     bundle: true,
     format: 'iife',
     write: false,

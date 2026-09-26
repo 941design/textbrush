@@ -74,3 +74,6 @@ src-tauri/ui/types.js
 src-tauri/ui/a11y/bundle.a11y.js
 src-tauri/ui/test-results/
 *~
+
+# Verified release uploads
+release-assets/

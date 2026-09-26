@@ -108,6 +108,12 @@ pip install 'textbrush[model]'
 uv pip install 'textbrush[model]'
 ```
 
+Local `make package` and release CI use the same locked frontend tools and
+platform bundle configuration. They require Node.js 22 and install frontend
+packages with `npm ci`. Packages contain the desktop executable and runtime web
+assets; Python and model dependencies are installed separately. Copying a local
+virtual environment into the application is not supported.
+
 The base `textbrush` package supports help, update checks, and model downloads without the model extra. Image generation requires `textbrush[model]`.
 
 Then download the release binary for your platform and run it directly. `uv` is **not** required on the target system.
@@ -284,7 +290,7 @@ make clippy        # Check Rust code quality (cargo clippy)
 make fmt-rust      # Format Rust code (cargo fmt)
 make fmt-check     # Verify all code is formatted (CI)
 make build         # Build Tauri application
-make package       # Build and package (.app + .dmg)
+make package       # Package native app: .app/.dmg on macOS, .deb on Linux
 make release       # Full release build (clean, install, package)
 make run           # Run Tauri application locally
 make run-debug     # Run Tauri with debug logging

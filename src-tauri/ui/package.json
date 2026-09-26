@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Textbrush Tauri UI",
   "scripts": {
-    "build": "esbuild main.ts --bundle --outfile=bundle.js --format=esm --target=es2022",
+    "build": "esbuild main.ts --bundle --outfile=bundle.js --format=esm --target=es2022 && node stage-dist.mjs",
     "build:modules": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint *.ts",
@@ -20,6 +20,7 @@
     "@eslint/js": "^9.17.0",
     "@playwright/test": "^1.50.0",
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/cli": "2.11.5",
     "esbuild": "^0.24.0",
     "eslint": "^9.17.0",
     "globals": "^15.14.0",

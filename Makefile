@@ -1,4 +1,4 @@
-.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui test-ui-a11y lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env bundle-python-env package release clean run run-debug ui-deps distclean
+.PHONY: help install download-model dev test test-all test-e2e test-rust test-ui test-ui-a11y lint lint-ui typecheck-ui check-ui check-all format format-all clippy fmt-rust fmt-check build ui-install build-ui build-python ensure-model-env package release clean run run-debug ui-deps distclean
 
 # Use a user-writable Cargo home (the system CARGO_HOME may be read-only)
 override CARGO_HOME := $(HOME)/.cargo
@@ -36,8 +36,6 @@ endif
 
 # Default target: show help
 .DEFAULT_GOAL := help
-
-DMG_PATH = $(firstword $(wildcard src-tauri/target/release/bundle/dmg/*.dmg))
 
 help:  ## Show this help message
 	@echo "Textbrush - Development Commands"
@@ -92,7 +90,7 @@ test-all:  ## Run full test suite including slow/integration tests
 test-e2e:  ## Run end-to-end smoke tests
 	uv run pytest tests -m "e2e_smoke" -v
 
-test-rust:  ## Run Rust test suite
+test-rust: build-ui  ## Run Rust test suite
 	cd src-tauri && cargo test
 
 test-ui: ui-deps  ## Run UI TypeScript tests
@@ -136,7 +134,7 @@ format-all:  ## Format all code (Python + Rust)
 	@$(MAKE) -s fmt-rust
 	@echo "✓ All code formatted!"
 
-clippy:  ## Check Rust code quality with clippy
+clippy: build-ui  ## Check Rust code quality with clippy
 	cd src-tauri && cargo clippy -- -D warnings
 
 fmt-rust:  ## Format Rust code with rustfmt
@@ -162,7 +160,7 @@ $(UI_PLATFORM_STAMP): $(UI_DIR)/package.json $(UI_DIR)/package-lock.json
 			rm -rf $(UI_DIR)/node_modules; \
 		fi; \
 	fi
-	cd $(UI_DIR) && npm install
+	cd $(UI_DIR) && npm ci
 	@echo "$(CURRENT_PLATFORM)" > $(UI_PLATFORM_STAMP)
 
 build-ui: ui-deps  ## Build UI TypeScript bundle
@@ -176,29 +174,14 @@ build: build-ui  ## Build Tauri application (includes UI)
 build-python:  ## Build Python package wheel
 	uv build
 
-bundle-python-env: ensure-model-env  ## Prepare bundled Python environment for packaged app
-	rm -rf src-tauri/target/python-env
-	cp -R .venv src-tauri/target/python-env
-	uv pip install --python src-tauri/target/python-env/bin/python --no-deps .
+package: build-ui  ## Package native desktop app (external Python runtime required)
+	cd src-tauri && ./ui/node_modules/.bin/tauri build --ci $(if $(TARGET),--target $(TARGET))
 
-package: build-ui bundle-python-env  ## Build and package the application (.app + .dmg)
-	rm -rf src-tauri/ui-dist
-	mkdir -p src-tauri/ui-dist/styles
-	cp src-tauri/ui/index.html src-tauri/ui/bundle.js src-tauri/ui-dist/
-	cp src-tauri/ui/styles/*.css src-tauri/ui-dist/styles/
-	rm -rf src-tauri/target/release/bundle/macos/Textbrush.app
-	rm -f src-tauri/target/release/bundle/macos/Textbrush.dmg
-	rm -f src-tauri/target/release/bundle/macos/rw.*.dmg
-	rm -rf src-tauri/target/release/bundle/dmg
-	cd src-tauri && npx @tauri-apps/cli build -c '{"build":{"beforeBuildCommand":"","frontendDist":"ui-dist"},"bundle":{"resources":["target/python-env"]}}'
-	rm -rf src-tauri/ui-dist
-	@echo "App bundle: src-tauri/target/release/bundle/macos/Textbrush.app"
-	@echo "DMG: $(DMG_PATH)"
-
-release: clean install package  ## Full release build (clean, install, build, package)
+release:  ## Clean and package native desktop assets
+	$(MAKE) clean
+	$(MAKE) package
 	@echo "Release build completed successfully!"
-	@echo "App bundle: src-tauri/target/release/bundle/macos/Textbrush.app"
-	@echo "DMG: $(DMG_PATH)"
+	@echo "Native bundles: src-tauri/target/release/bundle/"
 
 # ============================================================================
 # Cleanup
