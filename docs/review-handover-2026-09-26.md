@@ -48,8 +48,8 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R12 | P2 | Reproduced | Surface unexpected sidecar exit | DONE | `e3846cb`; see detailed evidence |
 | R13 | P2 | Reproduced | Read installed distribution version correctly | DONE | `0b5563a`; see detailed evidence |
 | R14 | P2 | Reproduced | Preserve desktop seed zero | DONE | `a4b4b18`; see detailed evidence |
-| R15 | P2 | Code-confirmed; existing backlog | Honor CLI aspect ratio for reference-capable models | PLANNED | — |
-| R16 | P3 | Code-confirmed; existing backlog | Resolve generated-schema tracking policy | PLANNED | — |
+| R15 | P2 | Code-confirmed; existing backlog | Honor CLI aspect ratio for reference-capable models | DONE | `792dd5c`; canvas/normalization evidence below |
+| R16 | P3 | Code-confirmed; existing backlog | Resolve generated-schema tracking policy | DONE | `dce8a9e`; regeneration/preservation evidence below |
 | R17 | P2 | Reproduced | Fix stale FLUX.2 test and isolate model availability | DONE | `0b5563a`; see detailed evidence |
 | R18 | P3 | Reproduced | Replace vacuous contract tests with behavioral coverage | DONE | `7b01878`; see detailed evidence |
 | R19 | P2 | Reproduced | Coordinate abort/close, process cleanup, and UI exit | DONE | `5154f6e`; see detailed evidence |
@@ -294,7 +294,11 @@ Acceptance: actual frontend INIT calls preserve `0`, a positive seed, and the ab
 
 ### R15 — CLI aspect ratio for reference-capable models
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `792dd5c` — verification below.
+
+Headless launch now resolves one explicit canvas before configuration acknowledgement and passes the same dimensions to generation. An explicit ratio uses the smallest CLI/desktop ladder entry, an explicit preset uses its named dimensions, and no size selects 256×256 for all models. Implicit reference-based presets no longer override that choice. Preset/ratio conflicts fail before dispatch (R06); the named editing-preset capability rules remain unchanged. README, configuration/reference guides and specs/spec.md document the policy, including the configured editing fallback's lower priority. The base-records canonical resolve helper removed the linked finding as done, targeting the amended specs/spec.md.
+
+`uv run pytest tests/test_cli_canvas.py tests/test_cli.py tests/test_cli_headless.py tests/test_desktop_dispatch.py tests/test_generation_failures.py -m 'not slow and not integration' -q`: 192 passed, two inapplicable Schnell/editing-preset combinations skipped. The canvas matrix drives real headless main orchestration and desktop INIT through backend/normalizer/worker with mocked inference, asserting exact generation dimensions/ratio and normalized pixel dimensions using the production FLUX reference-sizing method. It covers Schnell, Kontext with one reference, FLUX.2 with zero/two references, square defaults, wide/tall ratios, explicit presets and conflict rejection. Desktop INIT tests resume its initially paused worker. Separate native parser tests prove model-independent default/ratio/preset canvases; existing frontend/Rust INIT bridge tests cover forwarding. Rust: 61 passed, one intentional child probe ignored; fmt/Clippy and Python Ruff lint/format passed. No real models were loaded; final broad delivery checks remain pending until the remaining tasks are complete.
 
 Existing backlog slug: `cli-aspect-ratio-ignored-for-reference-capable-models`.
 Anchors: `textbrush/cli.py` generation call sites; `textbrush/backend.py:776` preset fallback; `tests/test_cli.py::test_cli_accepts_any_aspect_ratio_for_editing`.
@@ -307,7 +311,11 @@ Acceptance: drive the real CLI orchestration with mocked inference for both disp
 
 ### R16 — Generated capability schemas
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `dce8a9e` — verification below.
+
+Policy: generated Tauri capability schemas remain local and ignored, while capability/configuration sources stay tracked. No runtime/CI consumer references these generated files; build.rs invokes tauri_build::build(), and the tracked capability file uses the published schema URL. Added src-tauri/gen/schemas/ to .gitignore and removed the four generated files from the Git index. README records where permissions should be edited. The base-records resolve helper removed the linked mechanical finding.
+
+Verification temporarily backed up the entire existing schema directory, removed it, and triggered a native Cargo build. The successful Linux ARM64 build regenerated valid JSON acl-manifests, capabilities, desktop-schema and linux-schema files. Every original file was then restored and its SHA-256 compared to the backup: the pre-existing modified macOS schema and untracked Linux schema are preserved byte-for-byte. A subsequent cargo build passed and git status remained clean; git ls-files reports no tracked schema artifacts and git check-ignore confirms both platform schemas are ignored. Temporary backups/logs were removed. This verifies regeneration on Linux and platform-independent Git exclusion; it does not claim a macOS build was executed.
 
 Existing backlog slug: `tauri-generated-schemas-tracked-on-two-platform-tree`.
 Anchor: `src-tauri/gen/schemas/`, `.gitignore`.
@@ -577,8 +585,8 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Startup, configuration changes, worker failure, accept, abort, close, and child crash have deterministic behavioral tests.
 - [ ] The installed wheel is tested outside the checkout with exactly its declared dependencies.
 - [ ] Release readiness is withheld until the intended packaging contract is verified outside the build environment; remaining platform/model checks are stated explicitly.
-- [ ] Existing unrelated schema changes are preserved or handled only under the explicit R16 decision.
+- [x] Existing unrelated schema changes are preserved byte-for-byte under the explicit R16 ignore/untrack decision.
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: R06 is DONE in `4b7e3ee`: Python CLI now launches the native desktop by default, headless owns Python generation. Installed-wheel console probes demonstrated native window startup/close and controlled headless generation outside the checkout; details above. `6e61f03` removes a pause/release race in four provenance-test sequences. Focused CLI group: 160 passed; provenance/shutdown/desktop follow-up: 21 passed. Broad fast run had 1,279 passed and two failures, both corrected and covered in the follow-up; repeat the broad gate after remaining functional changes. No processes remain running. Next tasks are R15 (CLI canvas precedence), R16 (schema policy/backlog), R27 (asset/CSP assessment), and R28 (stale docs). R03 is DONE; R04/R05/R26 retain honest clean-machine and macOS/Linux x64 validation gaps. The latest installed Linux .deb still contains `b8b215e` native code (unchanged by R06), and normal native build outputs remain. New Python code requires rebuilding the wheel for further installed checks. Existing macOS/Linux schema changes remain untouched. Temporary validation files were removed. No model-heavy tests or remote release publication were run. The overall goal remains active.
+Next-context starting point: R15 and R16 are DONE in `792dd5c` and `dce8a9e`. CLI launch sizes now match native defaults/ratio/preset dimensions for every model, with the same canvas sent to reference normalization and generation. Focused Python group: 192 passed, two deliberately inapplicable Schnell/preset combinations skipped. Rust: 61 passed, one intentional child probe ignored; fmt/Clippy/Ruff passed. Both canonical backlog findings were resolved via base-records helpers; BACKLOG.json now has no open findings. Generated schemas are ignored/untracked; original modified macOS and untracked Linux files were preserved byte-for-byte, and a from-empty-schema Linux build plus repeat build passed with clean git status. No processes remain running. Next independent tasks: R27 asset/CSP assessment and R28 stale documentation. R04/R05/R26 still need clean-machine and macOS/Linux x64 release validation, and the final broad Python/frontend/Rust delivery gate must be rerun after remaining functional changes. The previous broad Python run's two failures were corrected in R06 and passed their complete affected groups. No model-heavy tests or remote release publication were run. Temporary task artifacts were removed. The overall goal remains active.
