@@ -4,6 +4,7 @@
 // enabling JavaScript UI to access prompt, output path, seed, and aspect ratio.
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 const DEFAULT_PROMPT: &str = "A watercolor painting of a cat";
 
@@ -43,8 +44,10 @@ fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
 /// Parse the native executable's options for frontend initialization.
 /// Model capability validation remains owned by the Python registry.
 #[tauri::command]
-pub fn get_launch_args() -> Result<LaunchArgs, String> {
-    parse_launch_args(std::env::args())
+pub fn get_launch_args(app: tauri::AppHandle) -> Result<LaunchArgs, String> {
+    let args = parse_launch_args(std::env::args())?;
+    crate::asset_access::allow_references(&app.asset_protocol_scope(), &args.references)?;
+    Ok(args)
 }
 
 fn parse_launch_args<I>(args: I) -> Result<LaunchArgs, String>

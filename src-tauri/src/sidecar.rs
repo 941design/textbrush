@@ -66,6 +66,10 @@ fn terminate_group(child: &mut Child, terminated: &AtomicBool) -> std::io::Resul
 }
 
 impl Sidecar {
+    pub fn preview_directory(&self) -> &std::path::Path {
+        self.preview_dir.path()
+    }
+
     /// Spawn Python sidecar process.
     ///
     /// CONTRACT:

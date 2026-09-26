@@ -20,6 +20,7 @@ tempfile = "3"
 libc = "0.2"
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 proptest = "1.5"
 
 [features]

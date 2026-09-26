@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod asset_access;
 mod commands;
 mod commands_reference_dialog;
 mod commands_update_config;

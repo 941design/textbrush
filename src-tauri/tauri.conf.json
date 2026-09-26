@@ -32,22 +32,16 @@
         "transparent": false,
         "alwaysOnTop": false,
         "focus": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; connect-src ipc: http://ipc.localhost asset: http://asset.localhost https://asset.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "**",
-            "$HOME/**",
-            "$DESKTOP/**",
-            "$DOCUMENT/**",
-            "$PICTURE/**",
-            "$DOWNLOAD/**"
-          ],
+          "allow": [],
           "requireLiteralLeadingDot": false
         }
       }

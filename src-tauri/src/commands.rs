@@ -4,7 +4,7 @@
 
 use crate::sidecar::{IpcMessage, Sidecar};
 use std::sync::Mutex;
-use tauri::{command, Emitter, State, Window};
+use tauri::{command, Emitter, Manager, State, Window};
 
 /// The exact JSON payload sent to Python, shared by production and bridge tests.
 #[derive(serde::Serialize)]
@@ -102,6 +102,10 @@ pub async fn init_generation(
         crate::python_runtime::spawn(configured.as_deref())?
     };
 
+    crate::asset_access::allow_previews(
+        &window.asset_protocol_scope(),
+        sidecar.preview_directory(),
+    )?;
     let window_clone = window.clone();
     sidecar.start_reader(move |msg| {
         window_clone.emit("sidecar-message", msg).ok();

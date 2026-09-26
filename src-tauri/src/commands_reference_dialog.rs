@@ -1,4 +1,4 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 fn paths_to_strings(paths: Vec<FilePath>) -> Result<Vec<String>, String> {
@@ -20,7 +20,9 @@ pub fn pick_reference_files(app: AppHandle) -> Result<Vec<String>, String> {
         .add_filter("Images", &["png", "jpg", "jpeg", "PNG", "JPG", "JPEG"])
         .blocking_pick_files()
         .unwrap_or_default();
-    paths_to_strings(picked)
+    let paths = paths_to_strings(picked)?;
+    crate::asset_access::allow_references(&app.asset_protocol_scope(), &paths)?;
+    Ok(paths)
 }
 
 #[cfg(test)]
