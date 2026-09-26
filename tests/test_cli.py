@@ -970,16 +970,7 @@ class TestDownloadModelDispatch:
 
 
 class TestAspectRatioIsNotANoOp:
-    """`--aspect-ratio` must reach the engine as a ratio, not as a
-    pre-resolved square canvas (gate-remediation round 7, finding 2).
-
-    The CLI passes `--aspect-ratio` to `backend.start_generation` without
-    width/height. While `start_generation` substituted 1024x1024 for the
-    missing dimensions, the engine could not distinguish that from a
-    caller who had genuinely asked for 1024x1024, so the aspect-ratio
-    lookup was unreachable and `textbrush --aspect-ratio 16:9 "a cat"`
-    produced a square image.
-    """
+    """The CLI resolves explicit ratios to the desktop's first resolution rung."""
 
     @pytest.mark.parametrize("ratio", ["16:9", "9:16", "4:5"])
     @patch("textbrush.cli.load_config")
@@ -1037,10 +1028,9 @@ class TestAspectRatioIsNotANoOp:
         assert seen, "the engine was never asked to generate"
         options = seen[0]
         assert options.aspect_ratio == ratio
-        # The CLI specified no dimensions, so none may be invented on
-        # the way down: the ratio is the engine's to resolve.
-        assert options.width is None
-        assert options.height is None
+        from textbrush.cli import get_default_resolution
+
+        assert (options.width, options.height) == get_default_resolution(ratio)
 
 
 class TestDownloadModelAcceptsAnyRegistrySlug:

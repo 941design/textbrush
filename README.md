@@ -175,7 +175,11 @@ for the window to close, preserving accepted-path stdout and the desktop exit
 status. It forwards `--config`, `--format`, `--verbose`, model/reference options
 and seed zero; the sidecar uses the CLI's Python environment unless
 `TEXTBRUSH_PYTHON` is set explicitly. `--preset` and `--aspect-ratio` are mutually
-exclusive. Use `--headless` to generate and save one image without a desktop
+exclusive. Both desktop and headless launches use the smallest listed resolution
+for an explicit ratio (for example, `16:9` is 640×360), or the named preset's
+dimensions. With neither option, every model starts at 256×256. The configured
+editing default does not override this launch canvas. Reference images are
+normalized for that same canvas before generation. Use `--headless` to generate and save one image without a desktop
 installation; `--auto-accept` and `--auto-abort` require `--headless`.
 
 ### Desktop UI Workflow

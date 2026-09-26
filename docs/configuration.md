@@ -156,10 +156,10 @@ default_preset = "landscape-medium"
 #### `[editing]`
 
 **`default_preset`** (string)
-- Fallback output size. It applies only when a reference-capable model is
-  active and no size has been explicitly selected; it is never used as
-  the fallback for a text-to-image model (the aspect-ratio default
-  applies there instead).
+- Backend fallback output size when a reference-capable model is active
+  and no canvas is supplied. Desktop and headless CLI launches always
+  select a canvas (256×256 if neither size flag is supplied), so this
+  setting does not override launch sizing.
 - These six identifiers are names for six entries of the one output-size
   table — the `4:3` and `3:4` ladders — not a separate vocabulary.
 - Choices (canonical identifiers, `<orientation>-<tier>`):
@@ -245,7 +245,8 @@ All options can be overridden on the command line (highest priority).
   `3:4`, `9:16`
 - Valid for every model. `4:3` and `3:4` hold the same sizes the
   `landscape-*` and `portrait-*` presets name
-- Each ratio has multiple available resolutions (smallest selected by default)
+- Each ratio has multiple available resolutions; desktop and headless CLI
+  launches select the smallest. Cannot be combined with `--preset`.
 - Default: `1:1` (defaults to 256×256, smallest 1:1 resolution)
 - Example: `--aspect-ratio 16:9`
 - Note: UI provides resolution selector (+/− buttons) to cycle through available sizes for each ratio

@@ -272,6 +272,26 @@ mod tests {
     }
 
     #[test]
+    fn canvas_selection_is_independent_of_model_and_references() {
+        for model in ["flux1-schnell", "flux1-kontext-dev", "flux2-klein-4b"] {
+            for (size, ratio, width, height) in [
+                (vec![], "1:1", 256, 256),
+                (vec!["--aspect-ratio", "16:9"], "16:9", 640, 360),
+                (vec!["--aspect-ratio", "9:16"], "9:16", 360, 640),
+                (vec!["--preset", "portrait-medium"], "3:4", 576, 768),
+            ] {
+                let mut options = vec!["--model", model, "--reference", "/ref image.png"];
+                options.extend(size);
+                let args = parse(&options).unwrap();
+                assert_eq!(
+                    (args.aspect_ratio.as_str(), args.width, args.height),
+                    (ratio, width, height)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tolerates_finder_serial_and_uses_ratio_size() {
         let args = parse(&["-psn_0_123", "--aspect-ratio", "16:9"]).unwrap();
         assert_eq!((args.width, args.height), (640, 360));

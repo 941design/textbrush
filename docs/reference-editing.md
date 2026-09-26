@@ -103,9 +103,13 @@ scripts keep working:
 | `portrait-medium` | 3:4 | 576 × 768 |
 | `portrait-large` | 3:4 | 768 × 1024 |
 
-The default when a reference-capable model is active and no size has
-been chosen explicitly is `landscape-medium` (configurable under
-`[editing] default_preset`; see [Configuration Reference](configuration.md)).
+Desktop and headless CLI launches select the smallest resolution for an
+explicit `--aspect-ratio`, the named dimensions for `--preset`, or 256×256
+when neither is supplied. This policy is the same for every model; the two
+size flags cannot be combined. `[editing] default_preset` is a backend
+fallback when no canvas is supplied, and does not override launch sizing.
+Reference normalization uses the selected output canvas with the model's
+required grid alignment; see [Configuration Reference](configuration.md).
 
 A size with no preset name is not second-class: the desktop app sends
 explicit pixel dimensions with every change, and the backend reports the

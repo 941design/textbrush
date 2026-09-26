@@ -15,10 +15,8 @@ from .model.weights import check_model_availability
 from .paths import CONFIG_PATH
 from .references import (
     SUPPORTED_EXTENSIONS,
-    ReferenceImageError,
 )
 from .validation import (
-    DEFAULT_EDITING_PRESET,
     EDITING_PRESETS,
     validate_selection,
 )
@@ -505,7 +503,7 @@ def main(argv: List[str] | None = None) -> None:
             return
 
         references_paths = [str(p) for p in args.reference]
-        preset = args.preset or (DEFAULT_EDITING_PRESET if references_paths else None)
+        preset = args.preset
 
         # AC-MODEL-5b: run the model resolver exactly once at launch
         # (T08 step 2). A blocked resolution prints the discovery reason
@@ -649,27 +647,33 @@ def run_headless(
         print("Loading model...", file=sys.stderr)
         backend.initialize()
 
-        # T06 contract: model / references / preset are acknowledged via
-        # `apply_configuration` before `start_generation`. Bypassing it
-        # would re-introduce decode-twice (AC-PROCESS-3).
-        if reference_paths or preset or model_id != config.model.selected_id:
-            try:
-                ack = backend.apply_configuration(
-                    model_id=model_id,
-                    reference_paths=list(reference_paths),
-                    preset=preset,
-                )
-                if not ack.compatible:
-                    print(f"Error: {ack.incompatibility_reason}", file=sys.stderr)
-                    sys.exit(1)
-            except ReferenceImageError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                sys.exit(1)
+        # Resolve one launch canvas for every model, matching the desktop's
+        # smallest ratio rung. Acknowledge it before decoding references, then
+        # pass the identical dimensions to generation.
+        if preset is not None:
+            if aspect_ratio not in ("custom", None):
+                raise ValueError("--preset cannot be combined with --aspect-ratio")
+            width, height = EDITING_PRESETS[preset]
+            aspect_ratio = "4:3" if width > height else "3:4"
+        else:
+            aspect_ratio = "1:1" if aspect_ratio in ("custom", None) else aspect_ratio
+            width, height = get_default_resolution(aspect_ratio)
+        ack = backend.apply_configuration(
+            model_id=model_id,
+            reference_paths=list(reference_paths),
+            preset=preset,
+            width=width,
+            height=height,
+        )
+        if not ack.compatible:
+            raise ValueError(ack.incompatibility_reason)
 
         backend.start_generation(
             prompt=prompt,
             seed=seed,
             aspect_ratio=aspect_ratio,
+            width=width,
+            height=height,
         )
 
         if auto_abort:

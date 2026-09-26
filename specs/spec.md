@@ -297,6 +297,12 @@ This distinction is enforced at compile time using Rust's `#[cfg(debug_assertion
   reference images — the 4:3 and 3:4 ladders are exactly the sizes the
   `landscape-*` and `portrait-*` preset identifiers name, so config files
   and `--preset` keep working while the UI shows one group
+* CLI launch sizing is independent of model: an explicit aspect ratio selects
+  its smallest listed resolution, an explicit editing preset selects its named
+  dimensions, and an omitted size selects 256×256. Preset and ratio options are
+  mutually exclusive. Both desktop and headless launches use this policy;
+  configured editing defaults do not override the launch canvas. Reference
+  normalization and generation receive the same selected output dimensions.
 * UI provides +/- buttons to cycle through available resolutions per ratio
 * PNG images include metadata: aspect ratio, dimensions, prompt, model, seed
 
@@ -725,3 +731,9 @@ For planned features that are not yet implemented, see the following separate fe
 * **`feature-backend-owns-image-list.md`** - Planned refactor for backend-owned image lifecycle management
 
 These feature specifications are separate requirements documents describing WHAT to build, not HOW. They are not part of the current production system described in this spec.md.
+
+## Amendments
+
+- 2026-09-26 (R15): CLI ratio and default canvas selection is the same for
+  text-only and reference-capable models, and for desktop and headless
+  launches. Reference normalization uses the selected generation canvas.
