@@ -54,7 +54,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R18 | P3 | Code-confirmed | Replace vacuous contract tests with behavioral coverage | PLANNED | — |
 | R19 | P2 | Investigate | Coordinate abort/close, process cleanup, and UI exit | PLANNED | — |
 | R20 | P2 | Investigate | Settle worker before engine unload | DONE | `52036ba`; see detailed evidence |
-| R21 | P2 | Investigate | Await frontend event subscription before initialization | PLANNED | — |
+| R21 | P2 | Reproduced | Await frontend event subscription before initialization | DONE | `feb1ae2`; see detailed evidence |
 | R22 | P3 | Code-confirmed | Build current frontend bundle before regression tests | DONE | `0b5563a`; see detailed evidence |
 | R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | DONE | `52036ba`; see detailed evidence |
 | R24 | P3 | Code-confirmed | Return the validated cached model snapshot | DONE | `0b5563a`; see detailed evidence |
@@ -347,7 +347,9 @@ Acceptance: a generation lasting beyond the join timeout cannot use a concurrent
 
 ### R21 — Event listener startup ordering
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `feb1ae2` — verification below.
+
+Startup awaits acknowledged event registration before invoking INIT. Subscription failure resets initialization and displays a Retry action; retry after an INIT rejection retains the existing listener. Page teardown owns unsubscription. Tests exercise the rebuilt application with delayed registration, immediate backend state emission, registration rejection, INIT rejection, concurrent/repeated initialization, and page teardown. `node --test main-regressions.test.js`: 14 passed; `npm test`: 159 passed; `npm run check` and `git diff --check`: passed. These are lightweight IPC/browser mocks, without real inference.
 
 Anchor: `src-tauri/ui/main.ts::setupMessageListener`, called immediately before `init_generation`.
 
@@ -539,4 +541,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, listener/lifecycle R19/R21, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user requested stopping after the next completed task; stop here after R29 and await further instructions. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is now complete in `feb1ae2` (159 frontend tests and TypeScript/ESLint passed). R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
