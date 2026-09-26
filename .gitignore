@@ -44,6 +44,8 @@ htmlcov/
 target/
 src-tauri/target/
 src-tauri/ui-dist/
+# Tauri regenerates capability schemas for the current platform.
+src-tauri/gen/schemas/
 
 # Tool artifacts
 .serena/

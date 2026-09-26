@@ -334,6 +334,11 @@ make dev           # Run CLI with --help
 make clean         # Remove build artifacts
 ```
 
+Tauri regenerates `src-tauri/gen/schemas/` during native builds. These files
+are ignored and kept locally; edit the tracked capability and Tauri configuration
+files to change permissions. Builds on macOS and Linux can share the tree without
+committing platform-generated schemas.
+
 For detailed technical guides and troubleshooting, see [docs/](docs/).
 
 ## TODO / Future Ideas
