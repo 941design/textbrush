@@ -538,8 +538,9 @@ class TestStaleResultNeverVisible:
         # next update. The worker may be in a follow-up generate
         # call (blocked on the gate), so release the gate first to
         # let any in-flight generate finish before pause settles.
-        schnell_engine.release_one()
+        # Request pause before releasing inference so no new gated run can start.
         handler.handle_pause(server)
+        schnell_engine.release_one()
         deadline = time.time() + 3.0
         while not backend.is_settled() and time.time() < deadline:
             time.sleep(0.01)
@@ -730,8 +731,9 @@ class TestSnapshotAttributionAcrossTwoChanges:
         idx_1 = handler._assign_image_index(image_1)
 
         # Pause + wait for settled before applying the next config.
-        schnell_engine.release_one()
+        # Request pause before releasing inference so no new gated run can start.
         handler.handle_pause(full_stack.server)
+        schnell_engine.release_one()
         deadline = time.time() + 3.0
         while not backend.is_settled() and time.time() < deadline:
             time.sleep(0.01)
@@ -756,8 +758,9 @@ class TestSnapshotAttributionAcrossTwoChanges:
         path_2 = backend.save_to_preview(image_2)
         idx_2 = handler._assign_image_index(image_2)
 
-        kontext_engine.release_one()
+        # Request pause before releasing inference so no new gated run can start.
         handler.handle_pause(full_stack.server)
+        kontext_engine.release_one()
         deadline = time.time() + 3.0
         while not backend.is_settled() and time.time() < deadline:
             time.sleep(0.01)
@@ -852,8 +855,9 @@ class TestNoPartialReferenceSet:
         assert len(image_2refs.reference_ids) == 2
 
         # Pause + wait settled before applying the next config.
-        klein_engine.release_one()
+        # Request pause before releasing inference so no new gated run can start.
         handler.handle_pause(server)
+        klein_engine.release_one()
         deadline = time.time() + 3.0
         while not backend.is_settled() and time.time() < deadline:
             time.sleep(0.01)
