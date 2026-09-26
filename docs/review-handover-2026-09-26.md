@@ -35,7 +35,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | ID | Priority | Evidence | Task | Status | Sign-off |
 | --- | --- | --- | --- | --- | --- |
 | R01 | P1 | Reproduced | Preserve acceptance state on save failure | PLANNED | — |
-| R02 | P1 | Reproduced | Report worker errors without waiting for an image | PLANNED | — |
+| R02 | P1 | Reproduced | Report worker errors without waiting for an image | DONE | `bf9eb15`; see detailed evidence |
 | R03 | P1 | Reproduced | Make base wheel installation importable | IN_PROGRESS | `0b5563a`; see detailed evidence |
 | R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | PLANNED | — |
 | R05 | P1 | Code-confirmed | Bundle a portable Python runtime | PLANNED | — |
@@ -53,7 +53,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R17 | P2 | Reproduced | Fix stale FLUX.2 test and isolate model availability | DONE | `0b5563a`; see detailed evidence |
 | R18 | P3 | Code-confirmed | Replace vacuous contract tests with behavioral coverage | PLANNED | — |
 | R19 | P2 | Investigate | Coordinate abort/close, process cleanup, and UI exit | PLANNED | — |
-| R20 | P2 | Investigate | Settle worker before engine unload | PLANNED | — |
+| R20 | P2 | Investigate | Settle worker before engine unload | IN_PROGRESS | `bf9eb15`; see detailed evidence |
 | R21 | P2 | Investigate | Await frontend event subscription before initialization | PLANNED | — |
 | R22 | P3 | Code-confirmed | Build current frontend bundle before regression tests | DONE | `0b5563a`; see detailed evidence |
 | R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | PLANNED | — |
@@ -93,7 +93,9 @@ Acceptance: first-save failure retains all selections; failure on the second of 
 
 ### R02 — Report worker errors independently of image delivery
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** See verification below.
+
+DONE — 2026-09-26 — Codex — `bf9eb15` — Inference exceptions terminate the current run, preserve the original error, and close the buffer immediately to wake delivery even before the first image. Delivery checks the error before interpreting an empty read. Both CLI branches check worker errors without an arbitrary inference deadline. Explicit worker restart clears the previous error. `uv run pytest tests/test_generation_failures.py tests/test_worker.py tests/test_worker_quiescence.py tests/test_image_delivery_update.py tests/test_cli.py -m 'not slow and not integration' -q`: 160 passed before adding the slow-success test. Latest `uv run pytest tests/test_cli_headless.py tests/test_generation_failures.py -q`: 54 passed, including the virtual 180-second successful-generation case, real worker-to-delivery error signalling, and both CLI branches. Ruff lint/format and `git diff --check` passed. The broad fast run reported 1,212 passed and 11 failures in headless mocks that did not configure check_worker_error; those mocks and obsolete timeout-contract tests were corrected, and their entire file passes in the latest 54-test run. The final project-wide gate still needs a fresh broad run after the remaining tasks.
 
 Anchors: `textbrush/ipc/handler.py:1244` (`deliver_loop`), `textbrush/worker.py:530`, CLI wait loops in `textbrush/cli.py`.
 
@@ -323,7 +325,9 @@ Acceptance: Abort always terminates the UI/backend within the documented bound; 
 
 ### R20 — Shutdown while inference is active
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** IN_PROGRESS. **Sign-off:** Pending task audit.
+
+Implementation committed with R02 in `bf9eb15`: Python abort/shutdown joins active inference without a deadline before clearing resources or unloading the engine. Worker stop immediately closes the buffer, and an inference result returned after stop is closed and discarded. README documents the unbounded Python cleanup contract. `tests/test_generation_failures.py::test_shutdown_never_unloads_engine_during_inference` holds a fake engine beyond the old five-second timeout, proves unload has not run, then releases it and checks the worker stopped, unload ran once, and no late result entered the buffer. All six tests in that file pass. Separate task acceptance audit/sign-off remains pending because the user requested stopping after the next completed task (R02). Desktop bounded termination and delivered-preview cleanup remain R19/R25 work.
 
 Anchors: `textbrush/backend.py::abort/shutdown` (five-second join), `textbrush/inference/flux.py::unload`.
 
@@ -519,4 +523,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: check the task register, re-read current guidance and git status, then continue installation/release tasks R04/R05/R12/R26 or the core-session recovery group. R17/R22 are complete. Python and frontend lint/format checks passed for commit `0b5563a`. Temporary wheel/build artifacts were removed; both original schema changes remain untouched. Implementation evidence is recorded under R03, R13, R17, R22 and R24. Continue with the remaining PLANNED tasks and incomplete validation; the overall goal is not complete.
+Next-context starting point: paused at the user's request after completing R02. On an explicit resume, re-read guidance and git status, audit/sign off the R20 implementation, then continue the remaining tasks (especially R08/R23 publication/backpressure and R01/R25 acceptance ownership). R13/R17/R22/R24 were completed in the previous increment. R03 still needs model-enabled validation. Source commits are `0b5563a` and `bf9eb15`; the final project-wide gate remains open. Original macOS/Linux schema changes remain untouched. Temporary wheel/build artifacts and test logs have been removed. The overall goal is not complete.
