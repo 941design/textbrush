@@ -990,16 +990,10 @@ def download_model_weights(model_id: str, *, force: bool = False) -> Path:
     spec = get_model_spec(model_id)
     repo_id = spec.repo_id
 
-    if not force and is_model_available(model_id):
-        cache_info = get_cache_info()
-        hub_cache = cache_info["cache_dir"]
-        model_dir = hub_cache / f"models--{repo_id.replace('/', '--')}"
-        snapshots_dir = model_dir / "snapshots"
-        if snapshots_dir.is_dir():
-            snapshots = sorted(snapshots_dir.iterdir())
-            if snapshots:
-                return snapshots[-1]
-        return hub_cache
+    if not force:
+        report = check_model_availability(model_id)
+        if report.available and report.root is not None:
+            return report.root
 
     if spec.gated and not os.environ.get("HF_TOKEN"):
         raise TokenRequiredError(

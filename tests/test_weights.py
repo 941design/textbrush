@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tests.model_fixtures import write_complete_snapshot, write_index_only
-from textbrush.model.registry import FLUX2_KLEIN_4B, DiscoveryCause
+from textbrush.model.registry import FLUX2_KLEIN_4B, AvailabilityReport, DiscoveryCause
 from textbrush.model.weights import (
     TokenRequiredError,
     _mask_token,
@@ -24,7 +24,10 @@ class TestDownloadFailureHandling:
     def test_network_timeout_error(self):
         """Network timeout raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = TimeoutError("Connection timed out")
 
@@ -39,7 +42,10 @@ class TestDownloadFailureHandling:
     def test_authentication_error_generic(self):
         """Generic PermissionError raises RuntimeError (not TokenRequiredError)."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = PermissionError("Permission denied")
 
@@ -52,7 +58,10 @@ class TestDownloadFailureHandling:
     def test_disk_space_error(self):
         """Disk space error raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = OSError("No space left on device")
 
@@ -66,7 +75,10 @@ class TestDownloadFailureHandling:
     def test_generic_download_error(self):
         """Generic download error raises RuntimeError with helpful message."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("Unexpected error")
 
@@ -80,7 +92,10 @@ class TestDownloadFailureHandling:
     def test_download_success_returns_path(self):
         """Successful download returns Path to snapshot directory."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.return_value = "/tmp/hf_cache/models--test/snapshots/abc123"
 
@@ -93,7 +108,10 @@ class TestDownloadFailureHandling:
     def test_force_download_overrides_cache_check(self):
         """Force download re-downloads even if cached."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=True):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(True, None, root=Path("/cache/validated")),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.return_value = "/tmp/hf_cache/models--test/snapshots/abc123"
 
@@ -104,28 +122,27 @@ class TestDownloadFailureHandling:
                     assert mock_download.call_args[1]["force_download"] is True
                     assert isinstance(result, Path)
 
-    def test_skip_download_if_cached_no_token_needed(self):
-        """Skip download if already cached — HF_TOKEN not required for cache reads."""
-        with patch("textbrush.model.weights.is_model_available", return_value=True):
-            with patch("textbrush.model.weights.snapshot_download") as mock_download:
-                with patch("textbrush.model.weights.get_cache_info") as mock_cache_info:
-                    mock_cache_dir = MagicMock()
-                    mock_cache_dir.__truediv__ = MagicMock(
-                        return_value=MagicMock(is_dir=MagicMock(return_value=False))
-                    )
-                    mock_cache_info.return_value = {
-                        "cache_dir": mock_cache_dir,
-                        "custom_location": False,
-                        "env_var": None,
-                    }
-                    # Ensure HF_TOKEN is NOT set
-                    env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
-                    with patch.dict(os.environ, env, clear=True):
-                        # Should not raise TokenRequiredError when already cached
-                        download_flux_weights(force=False)
-
-                    # Should not call download
-                    assert not mock_download.called
+    @pytest.mark.parametrize("custom_cache", [False, True])
+    def test_skip_download_returns_validated_snapshot(self, tmp_path, monkeypatch, custom_cache):
+        """A later-sorting incomplete snapshot must never replace the validated root."""
+        cache = tmp_path / ("custom cache" if custom_cache else "hub")
+        model = cache / "models--black-forest-labs--FLUX.1-schnell"
+        valid = model / "snapshots" / "aaa-complete"
+        write_complete_snapshot(valid)
+        write_index_only(model / "snapshots" / "zzz-incomplete")
+        (model / "refs").mkdir()
+        (model / "refs" / "main").write_text(valid.name)
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        # huggingface_hub captures the environment at import time.
+        monkeypatch.setattr("huggingface_hub.constants.HF_HUB_CACHE", str(cache))
+        if custom_cache:
+            monkeypatch.setenv("HF_HUB_CACHE", str(cache))
+        else:
+            monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+            monkeypatch.setenv("HF_HOME", str(tmp_path))
+        with patch("textbrush.model.weights.snapshot_download") as download:
+            assert download_flux_weights(force=False) == valid
+            download.assert_not_called()
 
 
 class TestTokenRequiredError:
@@ -139,7 +156,10 @@ class TestTokenRequiredError:
 
     def test_raises_token_required_when_no_hf_token(self):
         """TokenRequiredError raised when HF_TOKEN not set and download needed."""
-        with patch("textbrush.model.weights.is_model_available", return_value=False):
+        with patch(
+            "textbrush.model.weights.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ):
             env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(TokenRequiredError) as exc_info:
@@ -158,7 +178,10 @@ class TestTokenRequiredError:
         mock_response.status_code = 403
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = GatedRepoError(
                         "Repository access restricted", response=mock_response
@@ -180,7 +203,10 @@ class TestTokenRequiredError:
         mock_response.status_code = 401
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_invalid_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError(
                         "Unauthorized", response=mock_response
@@ -201,7 +227,10 @@ class TestTokenRequiredError:
         mock_response.status_code = 403
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError("Forbidden", response=mock_response)
 
@@ -215,7 +244,10 @@ class TestTokenRequiredError:
         """Plain Exception with '401' in message raises TokenRequiredError
         classified LICENSE_ACCESS_MISSING."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("401 Client Error")
 
@@ -227,7 +259,10 @@ class TestTokenRequiredError:
         """Plain Exception with '403' in message raises TokenRequiredError
         classified LICENSE_ACCESS_MISSING."""
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = Exception("403 Forbidden")
 
@@ -243,7 +278,10 @@ class TestTokenRequiredError:
         mock_response.status_code = 500
 
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}):
-            with patch("textbrush.model.weights.is_model_available", return_value=False):
+            with patch(
+                "textbrush.model.weights.check_model_availability",
+                return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+            ):
                 with patch("textbrush.model.weights.snapshot_download") as mock_download:
                     mock_download.side_effect = HfHubHTTPError(
                         "Internal Server Error", response=mock_response
@@ -268,7 +306,10 @@ class TestGatedFlagGatesTokenRequirement:
         """flux2-klein-4b (gated=False): no HF_TOKEN configured must not
         raise TokenRequiredError before even attempting the download --
         snapshot_download must be reached and allowed to proceed anonymously."""
-        with patch("textbrush.model.weights.is_model_available", return_value=False):
+        with patch(
+            "textbrush.model.weights.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ):
             with patch("textbrush.model.weights.snapshot_download") as mock_download:
                 mock_download.return_value = "/tmp/hf_cache/models--flux2/snapshots/abc123"
                 env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
@@ -282,7 +323,10 @@ class TestGatedFlagGatesTokenRequirement:
         """The existing gated-model guard (schnell, Kontext-dev, both `auto`)
         must be unchanged: no token configured still raises TokenRequiredError
         before any download attempt."""
-        with patch("textbrush.model.weights.is_model_available", return_value=False):
+        with patch(
+            "textbrush.model.weights.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ):
             with patch("textbrush.model.weights.snapshot_download") as mock_download:
                 env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}
                 with patch.dict(os.environ, env, clear=True):
@@ -303,7 +347,10 @@ class TestGatedFlagGatesTokenRequirement:
         mock_response = MagicMock()
         mock_response.status_code = 401
 
-        with patch("textbrush.model.weights.is_model_available", return_value=False):
+        with patch(
+            "textbrush.model.weights.check_model_availability",
+            return_value=AvailabilityReport(False, DiscoveryCause.ABSENT),
+        ):
             with patch("textbrush.model.weights.snapshot_download") as mock_download:
                 mock_download.side_effect = HfHubHTTPError("Unauthorized", response=mock_response)
                 env = {k: v for k, v in os.environ.items() if k != "HF_TOKEN"}

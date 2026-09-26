@@ -650,31 +650,47 @@ class TestMain:
         for model, lower, upper in (
             ("flux1-schnell", 0, 0),
             ("flux1-kontext-dev", 1, 1),
-            ("flux2-klein-4b", 1, 4),
+            ("flux2-klein-4b", 0, 4),
         )
         for count in range(6)
     ],
 )
-def test_cli_model_reference_cardinality_before_backend(model_id, count, valid, tmp_path, capsys):
+def test_cli_model_reference_cardinality_before_backend(
+    model_id, count, valid, tmp_path, capsys, sample_config
+):
+    from textbrush.model.registry import AvailabilityReport
+
     paths = [tmp_path / f"reference-{n}.png" for n in range(count)]
     for path in paths:
         path.write_bytes(b"not decoded during argument validation")
-    argv = ["--prompt", "edit", "--model", model_id]
+    argv = ["--prompt", "edit", "--model", model_id, "--headless"]
     for path in paths:
         argv.extend(["--reference", str(path)])
 
-    if valid:
-        validate_args(build_parser().parse_args(argv))
-        return
-
-    with patch("textbrush.backend.TextbrushBackend") as backend_class:
-        with pytest.raises(SystemExit) as error:
+    with (
+        patch("textbrush.cli.load_config", return_value=sample_config),
+        patch(
+            "textbrush.cli.check_model_availability",
+            return_value=AvailabilityReport(True, None),
+        ) as availability,
+        patch("textbrush.cli.run_headless") as headless,
+        patch("textbrush.backend.TextbrushBackend") as backend_class,
+    ):
+        if valid:
             main(argv)
-    assert error.value.code == 1
-    assert backend_class.call_count == 0
-    output = capsys.readouterr()
-    assert output.out == ""
-    assert model_id in output.err
+            headless.assert_called_once()
+            assert headless.call_args.kwargs["model_id"] == model_id
+            assert headless.call_args.kwargs["reference_paths"] == [str(p) for p in paths]
+        else:
+            with pytest.raises(SystemExit) as error:
+                main(argv)
+            assert error.value.code == 1
+            headless.assert_not_called()
+            availability.assert_not_called()
+            output = capsys.readouterr()
+            assert output.out == ""
+            assert model_id in output.err
+        backend_class.assert_not_called()
 
 
 def test_cli_accepts_any_aspect_ratio_for_editing(tmp_path):
@@ -1063,3 +1079,13 @@ class TestDownloadModelAcceptsAnyRegistrySlug:
             with pytest.raises(SystemExit):
                 main(["--download-model"])
         mock_download.assert_called_once_with(FLUX1_SCHNELL)
+
+
+def test_missing_inference_dependencies_explain_model_extra(monkeypatch):
+    import sys
+
+    from textbrush.inference.flux import FluxInferenceEngine
+
+    monkeypatch.setitem(sys.modules, "torch", None)
+    with pytest.raises(RuntimeError, match=r"pip install 'textbrush\[model\]'"):
+        FluxInferenceEngine().load()

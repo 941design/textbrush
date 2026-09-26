@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import json
 import sys
-import tomllib
 import urllib.error
 import urllib.request
-from pathlib import Path
+from importlib.metadata import version
 from typing import Literal
 
 GITHUB_API_URL = "https://api.github.com/repos/941design/textbrush/releases/latest"
@@ -21,28 +20,8 @@ REQUEST_TIMEOUT = 5  # seconds
 
 
 def get_current_version() -> str:
-    """Read the current textbrush version from pyproject.toml.
-
-    CONTRACT:
-      Outputs:
-        - str: semantic version string (e.g. "0.1.0")
-
-      Invariants:
-        - Reads pyproject.toml from package root (two levels up from this file)
-        - Returns [project].version field
-        - Raises FileNotFoundError if pyproject.toml not found
-        - Raises KeyError if version field missing
-
-    Algorithm:
-      1. Locate pyproject.toml relative to this module's directory
-      2. Parse using tomllib (stdlib, Python 3.11+)
-      3. Return project.version string
-    """
-    # This file is at textbrush/updates.py; pyproject.toml is one level up
-    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
-    with open(pyproject_path, "rb") as f:
-        data = tomllib.load(f)
-    return data["project"]["version"]
+    """Return the version of the installed distribution (including editable installs)."""
+    return version("textbrush")
 
 
 def get_latest_release(verbose: bool = False) -> dict:
@@ -241,7 +220,7 @@ def check_for_updates(verbose: bool = False) -> None:
         - 5 second timeout on network request
 
     Algorithm:
-      1. Get current version from pyproject.toml
+      1. Get current version from installed distribution metadata
       2. Query GitHub API for latest release
       3. Compare versions
       4. Print appropriate notification:
@@ -256,7 +235,9 @@ def check_for_updates(verbose: bool = False) -> None:
     except Exception as e:
         if verbose:
             print(f"Could not read current version: {e}", file=sys.stderr)
-        current = "unknown"
+        print("Cannot check for updates: installed Textbrush version metadata is unavailable.")
+        print("Reinstall Textbrush to restore its package metadata.")
+        sys.exit(0)
 
     try:
         release = get_latest_release(verbose=verbose)

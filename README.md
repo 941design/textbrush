@@ -84,19 +84,21 @@ Packaged release builds spawn the Python backend using `python3` on the system `
 
 ```bash
 # Install the textbrush Python package system-wide or in the active environment
-pip install textbrush
+pip install 'textbrush[model]'
 
 # Or with uv
-uv pip install textbrush
+uv pip install 'textbrush[model]'
 ```
+
+The base `textbrush` package supports help, update checks, and model downloads without the model extra. Image generation requires `textbrush[model]`.
 
 Then download the release binary for your platform and run it directly. `uv` is **not** required on the target system.
 
 ### From Source
 
 ```bash
-# Install dependencies
-uv sync
+# Install dependencies, including inference
+uv sync --extra model
 
 # Download the default model, FLUX.1 schnell (gated: needs a HuggingFace token)
 export HF_TOKEN="hf_xxxxxxxxxxxxx"

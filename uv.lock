@@ -1203,6 +1203,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
+    { name = "packaging" },
+    { name = "pillow" },
     { name = "tomli-w" },
 ]
 
@@ -1210,7 +1212,6 @@ dependencies = [
 model = [
     { name = "accelerate" },
     { name = "diffusers" },
-    { name = "pillow" },
     { name = "protobuf" },
     { name = "safetensors" },
     { name = "sentencepiece" },
@@ -1231,7 +1232,8 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'model'", specifier = ">=0.25.0,<1.0.0" },
     { name = "diffusers", marker = "extra == 'model'", specifier = ">=0.37.0,<1.0.0" },
     { name = "huggingface-hub", specifier = ">=0.20.0,<1.0.0" },
-    { name = "pillow", marker = "extra == 'model'", specifier = ">=10.0.0,<11.0.0" },
+    { name = "packaging", specifier = ">=23.0" },
+    { name = "pillow", specifier = ">=10.0.0,<11.0.0" },
     { name = "protobuf", marker = "extra == 'model'", specifier = ">=6.33.2" },
     { name = "safetensors", marker = "extra == 'model'", specifier = ">=0.4.0,<1.0.0" },
     { name = "sentencepiece", marker = "extra == 'model'", specifier = ">=0.1.99,<1.0.0" },

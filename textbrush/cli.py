@@ -460,8 +460,6 @@ def main(argv: List[str] | None = None) -> None:
            - Exit with code 1 on any error
            - Never print to stdout on error
     """
-    from .backend import TextbrushBackend
-
     parser = build_parser()
     backend = None
 
@@ -601,6 +599,8 @@ def main(argv: List[str] | None = None) -> None:
             )
             # run_headless() calls sys.exit(), so this line is unreachable
             return
+
+        from .backend import TextbrushBackend
 
         backend = TextbrushBackend(config)
 

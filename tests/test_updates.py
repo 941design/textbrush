@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import urllib.error
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -74,44 +73,17 @@ class TestGetCurrentVersion:
         for part in parts:
             assert part.isdigit(), f"Version part '{part}' is not a digit"
 
-    def test_reads_from_pyproject_toml(self, tmp_path):
-        """get_current_version reads version from pyproject.toml."""
-        import textbrush.updates as updates_module
+    def test_reads_installed_distribution_metadata(self):
+        with patch("textbrush.updates.version", return_value="1.2.3") as metadata_version:
+            assert get_current_version() == "1.2.3"
+        metadata_version.assert_called_once_with("textbrush")
 
-        fake_pyproject = tmp_path / "pyproject.toml"
-        fake_pyproject.write_bytes(b'[project]\nversion = "1.2.3"\n')
+    def test_missing_distribution_is_explicit(self):
+        from importlib.metadata import PackageNotFoundError
 
-        fake_module_dir = tmp_path / "textbrush"
-        fake_module_dir.mkdir()
-
-        # Patch the __file__ attribute to point to our fake location
-        with patch.object(
-            updates_module,
-            "get_current_version",
-            wraps=lambda: _read_version_from(fake_pyproject),
-        ):
-            version = updates_module.get_current_version()
-            # The patched version reads our fake pyproject, returning "1.2.3"
-            assert version == "1.2.3"
-
-    def test_raises_on_missing_pyproject(self, tmp_path, monkeypatch):
-        """get_current_version raises if pyproject.toml cannot be found."""
-
-        # Temporarily make the function look for pyproject in a nonexistent location
-        # by monkeypatching Path.__file__ is not directly patchable, but we can
-        # test this indirectly by verifying the function does raise on bad paths.
-        # We test the happy path via test_returns_string above.
-        # This test documents the expected behavior on missing file.
-        pass  # Covered by test_returns_string successfully finding the file
-
-
-def _read_version_from(path: Path) -> str:
-    """Helper: read version from given pyproject.toml path."""
-    import tomllib
-
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return data["project"]["version"]
+        with patch("textbrush.updates.version", side_effect=PackageNotFoundError("textbrush")):
+            with pytest.raises(PackageNotFoundError):
+                get_current_version()
 
 
 # ---------------------------------------------------------------------------
@@ -616,3 +588,21 @@ class TestCheckUpdatesCLIIntegration:
 
         captured = capsys.readouterr()
         assert "--check-updates" in captured.out
+
+
+def test_update_check_missing_local_metadata_does_not_report_remote_failure(capsys):
+    from importlib.metadata import PackageNotFoundError
+
+    with (
+        patch(
+            "textbrush.updates.get_current_version", side_effect=PackageNotFoundError("textbrush")
+        ),
+        patch("textbrush.updates.get_latest_release") as remote,
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        check_for_updates()
+    assert exit_info.value.code == 0
+    remote.assert_not_called()
+    output = capsys.readouterr().out
+    assert "version metadata is unavailable" in output
+    assert "API" not in output

@@ -265,8 +265,14 @@ class FluxInferenceEngine(InferenceEngine):
         if self.is_loaded():
             return
 
-        import torch
-        from diffusers import FluxPipeline
+        try:
+            import torch
+            from diffusers import FluxPipeline
+        except ImportError as exc:
+            raise RuntimeError(
+                "Image generation requires the model dependencies. "
+                "Install them with: pip install 'textbrush[model]'"
+            ) from exc
 
         if torch.cuda.is_available():
             self._device = "cuda"
