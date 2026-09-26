@@ -51,7 +51,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R15 | P2 | Code-confirmed; existing backlog | Honor CLI aspect ratio for reference-capable models | PLANNED | — |
 | R16 | P3 | Code-confirmed; existing backlog | Resolve generated-schema tracking policy | PLANNED | — |
 | R17 | P2 | Reproduced | Fix stale FLUX.2 test and isolate model availability | DONE | `0b5563a`; see detailed evidence |
-| R18 | P3 | Code-confirmed | Replace vacuous contract tests with behavioral coverage | PLANNED | — |
+| R18 | P3 | Reproduced | Replace vacuous contract tests with behavioral coverage | DONE | `7b01878`; see detailed evidence |
 | R19 | P2 | Investigate | Coordinate abort/close, process cleanup, and UI exit | PLANNED | — |
 | R20 | P2 | Investigate | Settle worker before engine unload | DONE | `52036ba`; see detailed evidence |
 | R21 | P2 | Reproduced | Await frontend event subscription before initialization | DONE | `feb1ae2`; see detailed evidence |
@@ -312,7 +312,10 @@ Acceptance: zero-reference FLUX.2 succeeds in validation/orchestration; Kontext 
 
 ### R18 — Replace vacuous contract tests
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7b01878` — verification below.
+
+Replaced twelve vacuous exit tests with a subprocess test invoking the actual production handlers for abort, empty acceptance, one path, and multiple paths with spaces, Unicode, duplicates and non-palindromic ordering. It asserts exact stdout/stderr and process exit codes. The ignored child probe is explicitly run by the parent test, not missing coverage. Replaced nineteen frontend object-only contract tests with actual rebuilt-app INIT calls for seed variants and complete native launch options, using a shared DOM/Tauri harness. Production Rust serialization is covered by R07. Deliberate mutations of success exit code, path ordering, stdout content and seed-zero serialization all failed the relevant tests; mutations were restored. An initial palindrome path fixture missed reversal and was corrected before sign-off. `npm test`: 145 passed; `cargo test --bin textbrush`: 51 passed, 1 child probe ignored by the outer runner; `npm run check`, Rust fmt/Clippy, Ruff lint/format and `git diff --check` passed. The full fast Python suite after R07 passed 1,262 tests, 18 skipped, 42 deselected and 1 xfailed in 200.05 seconds; R18 changes no Python. Test-count reductions reflect removal of vacuous tests. This is scoped boundary coverage, not a claim that every legacy test was audited.
+
 
 Anchors: `src-tauri/src/exit_handlers.rs` tests; `src-tauri/ui/ipc-contracts.test.js`.
 
@@ -546,4 +549,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is complete in `feb1ae2`; R14 is complete in `a4b4b18`. Latest checks: 163 current-source frontend tests and 97 IPC handler tests passed, plus TypeScript/ESLint and Ruff lint/format. Continue with remaining tasks without treating these focused checks as the final project-wide gate. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
+Next-context starting point: R07 is complete in `8e7a908` and R18 in `7b01878`; R21/R14 were completed in the preceding increment. Remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI workflow/canvas R06/R15, lifecycle R19, schema/security/docs R16/R27/R28. R03 still needs model-enabled validation. Latest gates: 1,262 fast Python tests passed (18 skipped, 42 deselected, 1 xfailed); 145 current-source frontend tests passed; 51 Rust tests passed with one child-process probe marked ignored but explicitly exercised by its parent test. TypeScript/ESLint, Ruff lint/format and Rust fmt/Clippy passed. R18 mutations for exit code, path ordering, stdout and actual INIT seed payload were detected and restored. Original macOS/Linux schema changes remain untouched. Temporary logs were removed. Final gates must be refreshed after remaining functional work. No model-heavy tests, clean-machine packaged-app validation or remote release CI were run. The overall goal is not complete.
