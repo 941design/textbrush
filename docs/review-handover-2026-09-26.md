@@ -37,8 +37,8 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R01 | P1 | Reproduced | Preserve acceptance state on save failure | DONE | `7472c1b`; see detailed evidence |
 | R02 | P1 | Reproduced | Report worker errors without waiting for an image | DONE | `bf9eb15`; see detailed evidence |
 | R03 | P1 | Reproduced | Make base wheel installation importable | IN_PROGRESS | `0b5563a`; see detailed evidence |
-| R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | PLANNED | — |
-| R05 | P1 | Code-confirmed | Bundle a portable Python runtime | PLANNED | — |
+| R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
+| R05 | P1 | Code-confirmed | Bundle a portable Python runtime | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
 | R06 | P2 | Code-confirmed | Resolve the CLI/desktop workflow mismatch | PLANNED | — |
 | R07 | P2 | Reproduced | Forward desktop model/reference launch arguments | DONE | `8e7a908`; see detailed evidence |
 | R08 | P2 | Reproduced | Make configuration changes and image publication atomic | DONE | `52036ba`; see detailed evidence |
@@ -59,7 +59,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | DONE | `52036ba`; see detailed evidence |
 | R24 | P3 | Code-confirmed | Return the validated cached model snapshot | DONE | `0b5563a`; see detailed evidence |
 | R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | DONE | `7472c1b`; see detailed evidence |
-| R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | PLANNED | — |
+| R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
 | R27 | P3 | Investigate | Review asset-protocol scope and CSP deliberately | PLANNED | — |
 | R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | PLANNED | — |
 | R29 | P2 | Investigate | Release partially loaded candidate before model recovery | DONE | `fd46404` |
@@ -127,7 +127,10 @@ Acceptance: help, version/update entry path, and download argument parsing work 
 
 ### R04 — Install frontend dependencies in release CI
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** IN_PROGRESS. **Sign-off:** Pending macOS/CI matrix validation.
+
+`6557895` installs Node 22 and locked npm dependencies in release/native CI jobs, pins the npm Tauri CLI to 2.11.5, and uses `make package` in both local and CI packaging. Direct Rust CI builds first rebuild/stage the frontend. The Tauri hook now runs `npm run build` from its actual detected frontend directory; the previous extra `cd ui` was wrong. Runtime assets are staged separately from tests/dependencies. A temporary clean frontend tree with spaces in its path, no node_modules and no bundle passed npm ci, npm run check and all 148 npm tests, with exactly five staged runtime files. That test exposed URL.pathname handling in two esbuild test imports; fileURLToPath fixes both. `make package` began with npm ci and successfully built the native Linux ARM64 release Debian package in 3m07s. Six artifact-collector tests and Ruff lint/format passed. Workflow YAML parsed successfully. Remote CI, macOS packaging and the Linux x64 matrix row have not been run, so cross-platform release readiness is not signed off.
+
 
 Anchors: `.github/workflows/release.yml:47`, `src-tauri/tauri.conf.json` build hooks, `src-tauri/ui/package.json`.
 
@@ -139,7 +142,10 @@ Acceptance: clean-checkout frontend and release builds succeed with no pre-exist
 
 ### R05 — Bundle a portable Python runtime
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** IN_PROGRESS. **Sign-off:** Pending installed-app runtime validation.
+
+Distribution decision in `6557895`: use an explicitly required external Python runtime with textbrush[model], consistently for local and CI builds. Removed the nonportable .venv copying recipe; make package now builds only native/frontend assets through the same path as CI. README and release installation commands state the external model dependency. Remaining work: remove obsolete bundled/repository-venv resolver fallbacks and their now-stale error messages, validate configured/system Python diagnostics, and demonstrate startup from an installed app outside the checkout with a separate runtime (including paths with spaces). The Linux release .deb was built and extracted, but not launched as an installed app. This does not close R03's model-enabled validation gap.
+
 
 Anchors: `Makefile:179` (`bundle-python-env`, `package`), `src-tauri/src/commands.rs` (`bundled_python_from_exe`, `resolve_release_python_command`).
 
@@ -433,7 +439,12 @@ Acceptance: failed acceptance leaves a usable retry UI; repeated keyboard activa
 
 ### R26 — Platform-specific release validation
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** IN_PROGRESS. **Sign-off:** Pending macOS and Linux x64 execution.
+
+`6557895` selects macos-15 (ARM64), macos-15-intel (x64), and ubuntu-24.04 (x64); macos-13 retirement and replacement labels were checked against [GitHub's runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) and [retirement notice](https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/). Linux prerequisites follow [Tauri's official prerequisites](https://v2.tauri.app/start/prerequisites/). Node 22 remains supported according to the [Node release schedule](https://github.com/nodejs/Release/blob/main/README.md). Tauri 2.11.5's local build help lists Linux deb/rpm/appimage targets; `tauri bundle --ci --config '{"bundle":{"targets":["app","dmg"]}}'` on Linux returned zero with no output, rather than producing a Linux installer. Configuration now selects deb by default and app/dmg through the macOS override.
+
+Both debug and release Linux ARM64 Debian bundles were produced locally. The artifact helper collected the real release tar/deb, sha256sum verified both, and dpkg-deb reported textbrush 0.1.0 arm64 with GTK/WebKit dependencies. Extraction confirmed an executable and no node_modules. The helper requires a nonempty executable and exactly one platform installer before emitting uploads; six tests cover archive layout/checksums and missing/empty/ambiguous artifacts. Upload steps fail on missing files. macOS DMG/app generation, Linux x64 packaging, remote runner execution and clean-machine runtime prerequisites remain unverified; do not infer these from the local ARM64 result.
+
 
 Anchors: `.github/workflows/{ci,release}.yml`, `src-tauri/tauri.conf.json` (`bundle.targets = ['app', 'dmg']`), `Makefile::package`.
 
@@ -557,4 +568,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: R19 is complete in `5154f6e`; R12, R07/R18 and R21/R14 were completed in preceding increments. Remaining tasks: release/runtime R03/R04/R05/R26, CLI workflow/canvas R06/R15, schema/security/docs R16/R27/R28. R19 introduces Rust-owned private preview directories through TEXTBRUSH_PREVIEW_DIR, relevant to R27 asset scope. Exit paths share AppState.shutdown with a five-second grace period; Python shutdown waits safely for loading/inference while desktop termination bounds the process lifetime. Latest gates: 60 Rust tests and 148 frontend tests passed; 1,266 fast Python tests passed (18 skipped, 42 deselected, 1 xfailed), with the final acceptance-preservation test then passing in the five-test teardown group. Rust fmt/Clippy, TypeScript/ESLint and Ruff lint/format passed. Existing macOS/Linux schema changes remain untouched. Temporary logs were removed. Refresh final gates after remaining functional edits. No model-heavy tests, clean-machine packaged-app validation or remote release CI were run. The overall goal is not complete.
+Next-context starting point: release/frontend/platform implementation is in `6557895`; R04/R05/R26 remain IN_PROGRESS because matrix/installed-runtime validation is incomplete. Native Linux ARM64 `make package` completed, producing src-tauri/target/release/bundle/deb/Textbrush_0.1.0_arm64.deb. Its tar/deb checksums and extracted executable were validated. Clean npm ci/check/test from a temporary path with spaces passed 148 tests; six release-artifact tests passed; Ruff and workflow YAML checks passed. No build process remains running. R05 is the next natural step: external runtime is the chosen contract, but commands.rs still has obsolete bundled/repo-venv fallback lookup and obsolete bundling diagnostics. Validate actual installed app startup outside the checkout with the external runtime; xvfb-run is available for a lightweight Linux window test. R03 still needs model-enabled installation validation. Other remaining tasks: R06/R15, R16/R27/R28. Source staging is now ui-dist, so Rust-only checks need make build-ui first (make test-rust/clippy and CI already do this). The new artifact helper is scripts/package_release.py. Existing macOS/Linux schema changes remain untouched. Temporary validation copies/logs were removed; normal build outputs remain available for installed-app validation. No model-heavy tests or remote release publication were run. The overall goal is not complete.
