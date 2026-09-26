@@ -62,7 +62,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | PLANNED | — |
 | R27 | P3 | Investigate | Review asset-protocol scope and CSP deliberately | PLANNED | — |
 | R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | PLANNED | — |
-| R29 | P2 | Investigate | Release partially loaded candidate before model recovery | PLANNED | — |
+| R29 | P2 | Investigate | Release partially loaded candidate before model recovery | DONE | `fd46404` |
 
 ## Architecture and constraints worth preserving
 
@@ -447,7 +447,9 @@ Acceptance: touched code comments describe actual control flow; documented comma
 
 ### R29 — Recovery after a partially loaded model fails
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `fd46404` — verification below.
+
+Failed candidates are unloaded before recovery, and inactive exception-frame locals are cleared so they cannot retain candidate allocations. Release failures stop recovery with a fatal error; original load and recovery causes remain available. Reference-decoding rollback updates the paused worker to the restored engine, and failed restoration is fatal even when the candidate can be reloaded. Six deterministic cases cover partial allocation lifetime, successful and failed recovery, candidate/previous unload failures, and reference rollback with worker generation. Verification: `uv run pytest tests/test_model_recovery.py tests/test_backend.py tests/test_worker_publication.py tests/test_generation_failures.py tests/test_acceptance_recovery.py -m 'not slow and not integration' -q`: 71 passed, 1 skipped. Ruff lint/format and `git diff --check` passed. Real-model/GPU validation was not run.
 
 Anchors: `textbrush/backend.py::_swap_engine`, `textbrush/inference/flux.py::load`.
 
@@ -537,4 +539,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, listener/lifecycle R19/R21, candidate cleanup R29, then R16/R18/R27/R28. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, listener/lifecycle R19/R21, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user requested stopping after the next completed task; stop here after R29 and await further instructions. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
