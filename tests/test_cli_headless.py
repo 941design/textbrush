@@ -47,7 +47,7 @@ class TestAbortWorkflow:
 
     def test_abort_exits_with_code_1(self, sample_config):
         """Auto-abort exits with code 1."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -99,7 +99,7 @@ class TestAbortWorkflow:
 
     def test_abort_calls_backend_abort(self, sample_config):
         """Auto-abort calls backend.abort()."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -117,7 +117,7 @@ class TestAbortWorkflow:
 
     def test_abort_calls_backend_shutdown(self, sample_config):
         """Auto-abort calls backend.shutdown()."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -135,7 +135,7 @@ class TestAbortWorkflow:
 
     def test_abort_produces_empty_stdout(self, sample_config, capsys):
         """Auto-abort produces no output to stdout."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -154,7 +154,7 @@ class TestAbortWorkflow:
 
     def test_abort_calls_initialize_before_abort(self, sample_config):
         """Auto-abort initializes backend before aborting."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
         call_order = []
         mock_backend.initialize.side_effect = lambda: call_order.append("init")
@@ -179,7 +179,7 @@ class TestAbortWorkflow:
         @given(prompts(), seeds(), aspect_ratios())
         @settings(suppress_health_check=[HealthCheck.filter_too_much])
         def property_test(prompt, seed, aspect_ratio):
-            mock_backend = Mock()
+            mock_backend = Mock(check_worker_error=Mock(return_value=None))
             mock_backend.buffer = Mock()
 
             with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -199,7 +199,7 @@ class TestAbortWorkflow:
 
     def test_abort_takes_precedence_over_accept(self, sample_config):
         """Auto-abort takes precedence even if auto_accept is also True."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -226,7 +226,7 @@ class TestAcceptWorkflow:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = Path("/tmp/output.png")
@@ -251,7 +251,7 @@ class TestAcceptWorkflow:
         from textbrush.buffer import BufferedImage
 
         output_path = tmp_path / "test_output.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = output_path
@@ -277,7 +277,7 @@ class TestAcceptWorkflow:
         from textbrush.buffer import BufferedImage
 
         output_path = tmp_path / "test.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = output_path
@@ -304,7 +304,7 @@ class TestAcceptWorkflow:
         from textbrush.buffer import BufferedImage
 
         output_path = tmp_path / "output.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = output_path
@@ -329,7 +329,7 @@ class TestAcceptWorkflow:
         from textbrush.buffer import BufferedImage
 
         output_path = tmp_path / "custom_output.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = output_path
@@ -354,7 +354,7 @@ class TestAcceptWorkflow:
         from textbrush.buffer import BufferedImage
 
         generated_path = tmp_path / "generated.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = generated_path
@@ -378,7 +378,7 @@ class TestAcceptWorkflow:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -396,62 +396,62 @@ class TestAcceptWorkflow:
                 )
             mock_backend.shutdown.assert_called_once()
 
-    def test_accept_timeout_exits_with_code_1(self, sample_config):
-        """Auto-accept exits with code 1 if generation times out."""
-        mock_backend = Mock()
+    def test_accept_worker_failure_exits_with_code_1(self, sample_config):
+        """Auto-accept exits with code 1 if generation fails."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit) as exc_info:
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=True,
-                        auto_abort=False,
-                    )
-                assert exc_info.value.code == 1
+            with pytest.raises(SystemExit) as exc_info:
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=True,
+                    auto_abort=False,
+                )
+            assert exc_info.value.code == 1
 
-    def test_accept_timeout_produces_empty_stdout(self, sample_config, capsys):
-        """Auto-accept produces no stdout on timeout."""
-        mock_backend = Mock()
+    def test_accept_worker_failure_produces_empty_stdout(self, sample_config, capsys):
+        """Auto-accept produces no stdout on worker failure."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit):
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=True,
-                        auto_abort=False,
-                    )
+            with pytest.raises(SystemExit):
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=True,
+                    auto_abort=False,
+                )
             captured = capsys.readouterr()
             assert captured.out == ""
 
-    def test_accept_timeout_calls_shutdown(self, sample_config):
-        """Auto-accept calls shutdown on timeout."""
-        mock_backend = Mock()
+    def test_accept_worker_failure_calls_shutdown(self, sample_config):
+        """Auto-accept calls shutdown on worker failure."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit):
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=True,
-                        auto_abort=False,
-                    )
+            with pytest.raises(SystemExit):
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=True,
+                    auto_abort=False,
+                )
             mock_backend.shutdown.assert_called()
 
     def test_accept_with_various_seeds(self, sample_config):
@@ -463,7 +463,7 @@ class TestAcceptWorkflow:
         @given(prompts(), seeds(), aspect_ratios())
         @settings(suppress_health_check=[HealthCheck.filter_too_much])
         def property_test(prompt, seed, aspect_ratio):
-            mock_backend = Mock()
+            mock_backend = Mock(check_worker_error=Mock(return_value=None))
             mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=seed or 42)
             mock_backend.buffer.peek.return_value = mock_image
             mock_backend.accept_current.return_value = Path("/tmp/output.png")
@@ -492,7 +492,7 @@ class TestAcceptWorkflow:
         @given(aspect_ratios())
         @settings(suppress_health_check=[HealthCheck.filter_too_much])
         def property_test(aspect_ratio):
-            mock_backend = Mock()
+            mock_backend = Mock(check_worker_error=Mock(return_value=None))
             mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
             mock_backend.buffer.peek.return_value = mock_image
             mock_backend.accept_current.return_value = Path("/tmp/output.png")
@@ -518,7 +518,7 @@ class TestInitializationProperties:
 
     def test_initializes_backend_before_abort(self, sample_config):
         """Backend.initialize() is called before abort in auto-abort workflow."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
         init_called = []
         mock_backend.initialize.side_effect = lambda: init_called.append(True)
@@ -542,7 +542,7 @@ class TestInitializationProperties:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -564,7 +564,7 @@ class TestInitializationProperties:
 
     def test_starts_generation_after_initialize(self, sample_config):
         """Backend.start_generation() is called after initialize."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
         call_order = []
         mock_backend.initialize.side_effect = lambda: call_order.append("init")
@@ -585,7 +585,7 @@ class TestInitializationProperties:
 
     def test_shutdown_called_on_abort(self, sample_config):
         """Backend.shutdown() is guaranteed to be called in abort workflow."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -607,7 +607,7 @@ class TestInitializationProperties:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -625,28 +625,28 @@ class TestInitializationProperties:
                 )
             mock_backend.shutdown.assert_called()
 
-    def test_shutdown_called_on_accept_timeout(self, sample_config):
-        """Backend.shutdown() is guaranteed to be called on accept timeout."""
-        mock_backend = Mock()
+    def test_shutdown_called_on_accept_worker_failure(self, sample_config):
+        """Backend.shutdown() is guaranteed to be called on worker failure."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit):
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=True,
-                        auto_abort=False,
-                    )
+            with pytest.raises(SystemExit):
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=True,
+                    auto_abort=False,
+                )
             mock_backend.shutdown.assert_called()
 
     def test_shutdown_called_on_error(self, sample_config):
         """Backend.shutdown() is called even when initialization fails."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.initialize.side_effect = RuntimeError("Model load failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -668,7 +668,7 @@ class TestErrorHandling:
 
     def test_initialization_error_prints_to_stderr(self, sample_config, capsys):
         """Initialization errors are printed to stderr."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.initialize.side_effect = RuntimeError("Model load failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -687,7 +687,7 @@ class TestErrorHandling:
 
     def test_initialization_error_exits_with_code_1(self, sample_config):
         """Initialization errors exit with code 1."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.initialize.side_effect = RuntimeError("Model load failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -705,7 +705,7 @@ class TestErrorHandling:
 
     def test_generation_error_prints_to_stderr(self, sample_config, capsys):
         """Generation errors are printed to stderr."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.start_generation.side_effect = RuntimeError("Generation failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -724,7 +724,7 @@ class TestErrorHandling:
 
     def test_generation_error_exits_with_code_1(self, sample_config):
         """Generation errors exit with code 1."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.start_generation.side_effect = RuntimeError("Generation failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -742,7 +742,7 @@ class TestErrorHandling:
 
     def test_error_produces_empty_stdout(self, sample_config, capsys):
         """Errors produce no output to stdout."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.initialize.side_effect = RuntimeError("Failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -765,7 +765,7 @@ class TestErrorHandling:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.side_effect = RuntimeError("Failed to save image")
@@ -789,7 +789,7 @@ class TestStderrMessages:
 
     def test_loading_model_message_printed(self, sample_config, capsys):
         """'Loading model...' is printed to stderr."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -812,7 +812,7 @@ class TestStderrMessages:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -833,7 +833,7 @@ class TestStderrMessages:
 
     def test_generating_message_not_printed_on_abort(self, sample_config, capsys):
         """'Generating...' is not printed in auto-abort mode."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -856,7 +856,7 @@ class TestStartGenerationProperties:
 
     def test_start_generation_called_with_correct_prompt(self, sample_config):
         """start_generation() is called with the provided prompt."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -875,7 +875,7 @@ class TestStartGenerationProperties:
 
     def test_start_generation_called_with_seed(self, sample_config):
         """start_generation() is called with the provided seed."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -894,7 +894,7 @@ class TestStartGenerationProperties:
 
     def test_start_generation_called_with_none_seed(self, sample_config):
         """start_generation() is called with None seed when not provided."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -913,7 +913,7 @@ class TestStartGenerationProperties:
 
     def test_start_generation_called_with_aspect_ratio(self, sample_config):
         """start_generation() is called with the provided aspect_ratio."""
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer = Mock()
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -936,7 +936,7 @@ class TestStartGenerationProperties:
         @given(aspect_ratios())
         @settings(suppress_health_check=[HealthCheck.filter_too_much])
         def property_test(aspect_ratio):
-            mock_backend = Mock()
+            mock_backend = Mock(check_worker_error=Mock(return_value=None))
             mock_backend.buffer = Mock()
 
             with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -961,7 +961,7 @@ class TestStartGenerationProperties:
         @given(seeds())
         @settings(suppress_health_check=[HealthCheck.filter_too_much])
         def property_test(seed):
-            mock_backend = Mock()
+            mock_backend = Mock(check_worker_error=Mock(return_value=None))
             mock_backend.buffer = Mock()
 
             with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
@@ -994,7 +994,7 @@ class TestNoAutoAcceptOrAbort:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -1019,7 +1019,7 @@ class TestNoAutoAcceptOrAbort:
         from textbrush.buffer import BufferedImage
 
         output_path = tmp_path / "output.png"
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = output_path
@@ -1044,7 +1044,7 @@ class TestNoAutoAcceptOrAbort:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -1068,7 +1068,7 @@ class TestNoAutoAcceptOrAbort:
 
         from textbrush.buffer import BufferedImage
 
-        mock_backend = Mock()
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_image = BufferedImage(image=Image.new("RGB", (512, 512)), seed=42)
         mock_backend.buffer.peek.return_value = mock_image
         mock_backend.accept_current.return_value = tmp_path / "output.png"
@@ -1086,41 +1086,41 @@ class TestNoAutoAcceptOrAbort:
                 )
             mock_backend.shutdown.assert_called()
 
-    def test_no_flags_timeout_exits_with_code_1(self, sample_config):
-        """Without auto_accept or auto_abort, timeout exits with code 1."""
-        mock_backend = Mock()
+    def test_no_flags_worker_failure_exits_with_code_1(self, sample_config):
+        """Without auto_accept or auto_abort, worker failure exits with code 1."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit) as exc_info:
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=False,
-                        auto_abort=False,
-                    )
-                assert exc_info.value.code == 1
+            with pytest.raises(SystemExit) as exc_info:
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=False,
+                    auto_abort=False,
+                )
+            assert exc_info.value.code == 1
 
-    def test_no_flags_timeout_produces_empty_stdout(self, sample_config, capsys):
-        """Without auto_accept or auto_abort, timeout produces no stdout."""
-        mock_backend = Mock()
+    def test_no_flags_worker_failure_produces_empty_stdout(self, sample_config, capsys):
+        """Without auto_accept or auto_abort, worker failure produces no stdout."""
+        mock_backend = Mock(check_worker_error=Mock(return_value=None))
         mock_backend.buffer.peek.return_value = None
+        mock_backend.check_worker_error.return_value = RuntimeError("inference failed")
 
         with patch("textbrush.backend.TextbrushBackend", return_value=mock_backend):
-            with patch("time.time", side_effect=[0, 121]):
-                with pytest.raises(SystemExit):
-                    run_headless(
-                        prompt="test",
-                        out=None,
-                        config=sample_config,
-                        seed=None,
-                        aspect_ratio="1:1",
-                        auto_accept=False,
-                        auto_abort=False,
-                    )
+            with pytest.raises(SystemExit):
+                run_headless(
+                    prompt="test",
+                    out=None,
+                    config=sample_config,
+                    seed=None,
+                    aspect_ratio="1:1",
+                    auto_accept=False,
+                    auto_abort=False,
+                )
             captured = capsys.readouterr()
             assert captured.out == ""

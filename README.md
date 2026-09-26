@@ -177,6 +177,8 @@ uv run textbrush --prompt "test" --headless --auto-abort
 # 1: Aborted or error (empty stdout)
 ```
 
+Generation waits for an image without a fixed inference deadline. Inference errors end the run and report the original error; start a new run to retry. Python backend shutdown waits for active inference to return before releasing the model, so cleanup can take as long as the current generation.
+
 Headless mode is designed for:
 - **CI/CD pipelines**: Automated image generation without UI
 - **Integration testing**: End-to-end workflow verification

@@ -1197,47 +1197,11 @@ class MessageHandler:
         )
 
     def _start_image_delivery(self, server: "IPCServer", output_path: str | None) -> None:  # type: ignore  # noqa: F821
-        """Start background thread delivering images to UI.
+        """Continuously deliver previews until buffer shutdown or terminal failure.
 
-        Helper method for handle_init. Runs image delivery loop in daemon thread.
-
-        CONTRACT:
-          Inputs:
-            - server: IPCServer instance for sending events
-            - output_path: Optional path for saving accepted images
-
-          Outputs: none (starts background thread)
-
-          Invariants:
-            - Thread runs until backend.get_next_image() returns None
-            - Each image assigned unique stable index via _assign_image_index
-            - IMAGE_READY events sent for each image with index
-            - STATE_CHANGED(IDLE) emitted after each image ready
-            - Thread blocks waiting for skip/accept between images
-
-          Properties:
-            - Daemon thread: exits when main thread exits
-            - Error handling: logs errors but continues
-            - Thread coordination: uses threading primitives to wait for actions
-            - Index assignment: monotonic, thread-safe, permanent
-
-          Algorithm:
-            1. Store output_path for later use in accept
-            2. Define deliver_loop function:
-               a. Loop:
-                  - Call backend.get_next_image() (blocks)
-                  - If None: break
-                  - Assign index via _assign_image_index(buffered)
-                  - Store as self._current_image
-                  - Save to preview directory
-                  - Send IMAGE_READY event with:
-                    * index: stable backend index
-                    * path: absolute path to PNG file
-                    * display_path: path with ~ for home
-                  - Emit STATE_CHANGED(state=IDLE)
-                  - Wait for skip/accept action (block on threading.Event or similar)
-               b. Exit loop on shutdown
-            3. Start daemon thread running deliver_loop
+        Worker failure closes the buffer and wakes an empty read. Inspect its
+        error before interpreting end-of-stream so failures need no image to
+        reach the frontend. Inference itself has no delivery timeout.
         """
         from textbrush.ipc.protocol import ImageReadyEvent
 
@@ -1248,17 +1212,18 @@ class MessageHandler:
                     logger.debug("Waiting for next image from buffer...")
                     # Use None timeout to wait indefinitely - FLUX can take 60+ seconds per image
                     buffered = self.backend.get_next_image(timeout=None)
-                    if buffered is None:
-                        logger.info("No more images, delivery loop ending")
-                        break
-
-                    # Check for worker errors during generation
+                    # A failed worker shuts down its buffer, waking this read
+                    # without an image. Check the error before interpreting EOF.
                     worker_error = self.backend.check_worker_error()
                     if worker_error:
                         logger.error(f"Worker error detected: {worker_error}")
                         self._emit_state_changed(
                             server, "error", message=str(worker_error), fatal=True
                         )
+                        break
+
+                    if buffered is None:
+                        logger.info("No more images, delivery loop ending")
                         break
 
                     index = self._assign_image_index(buffered)

@@ -388,6 +388,19 @@ def validate_args(args: argparse.Namespace) -> None:
                     ) from e
 
 
+def _wait_for_image(backend) -> None:
+    """Wait for slow inference without replacing its terminal error with a timeout."""
+    import time
+
+    while True:
+        error = backend.check_worker_error()
+        if error is not None:
+            raise error
+        if backend.buffer.peek() is not None:
+            return
+        time.sleep(0.1)
+
+
 def main(argv: List[str] | None = None) -> None:
     """Main entry point for textbrush CLI.
 
@@ -634,16 +647,7 @@ def main(argv: List[str] | None = None) -> None:
             aspect_ratio=args.aspect_ratio if args.aspect_ratio else "custom",
         )
 
-        import time
-
-        timeout = 30.0
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            if backend.buffer.peek() is not None:
-                break
-            time.sleep(0.1)
-        else:
-            raise RuntimeError("No image generated within timeout")
+        _wait_for_image(backend)
 
         if args.out is not None:
             output_path = backend.accept_current(args.out)
@@ -719,9 +723,9 @@ def run_headless(
            c. Exit with code 1 (no stdout)
         6. Otherwise (auto_accept or neither flag): generate-and-save
            a. Print "Generating..." to stderr
-           b. Wait for first image (timeout 120s):
+           b. Wait for first image or terminal worker error:
               - Poll buffer.peek() with 0.1s sleep intervals
-              - If timeout: raise RuntimeError
+              - If worker fails: propagate its original error
            c. If image available:
               i. Determine output path (use 'out' or generate)
               ii. Call backend.accept_current(output_path)
@@ -740,8 +744,6 @@ def run_headless(
       directly for pure CLI-based generation, suitable for CI pipelines
       and automated testing.
     """
-    import time
-
     from .backend import TextbrushBackend
 
     backend = None
@@ -782,14 +784,7 @@ def run_headless(
 
         print("Generating...", file=sys.stderr)
 
-        timeout_seconds = 120.0
-        start_time = time.time()
-        while time.time() - start_time < timeout_seconds:
-            if backend.buffer.peek() is not None:
-                break
-            time.sleep(0.1)
-        else:
-            raise RuntimeError("No image generated within 120 second timeout")
+        _wait_for_image(backend)
 
         output_path = backend.accept_current(out)
         print(str(output_path.absolute()), file=sys.stdout)

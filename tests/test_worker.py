@@ -96,8 +96,8 @@ class TestGenerationWorkerProperties:
 
         assert not worker._thread.is_alive()
 
-    def test_worker_continues_on_generation_error(self):
-        """Property: worker continues generating after non-fatal errors."""
+    def test_worker_keeps_completed_images_before_terminal_error(self):
+        """Completed images remain readable when a later inference fails."""
         buffer = ImageBuffer(max_size=20)
         engine = MockInferenceEngine(fail_after_n_generations=3)
         options = GenerationOptions(seed=0)
@@ -372,45 +372,6 @@ class TestGenerationWorkerExamples:
         worker.join(timeout=2.0)
         assert not worker._thread.is_alive()
 
-    def test_worker_handles_engine_raising_exception(self):
-        """Worker continues when engine raises exception during generate."""
-        buffer = ImageBuffer(max_size=20)
-        engine_mock = Mock(spec=InferenceEngine)
-        engine_mock.is_loaded.return_value = True
-        engine_mock.generate.side_effect = [
-            RuntimeError("First error"),
-            GenerationResult(
-                image=Image.new("RGB", (512, 512)),
-                seed=1,
-                generation_time=0.001,
-                model_name="mock",
-            ),
-            RuntimeError("Second error"),
-            GenerationResult(
-                image=Image.new("RGB", (512, 512)),
-                seed=2,
-                generation_time=0.001,
-                model_name="mock",
-            ),
-        ]
-
-        options = GenerationOptions(seed=0)
-        worker = GenerationWorker(engine_mock, buffer, "test prompt", options)
-
-        with patch("textbrush.worker.logger"):
-            worker.start()
-
-            img1 = buffer.get(timeout=2.0)
-            img2 = buffer.get(timeout=2.0)
-
-            worker.stop()
-            worker.join(timeout=2.0)
-
-            assert img1 is not None
-            assert img2 is not None
-            assert img1.seed == 1
-            assert img2.seed == 2
-
 
 class TestGenerationOptionsImmutability:
     """Property-based tests for GenerationOptions immutability contract."""
@@ -679,124 +640,19 @@ class TestErrorPropagationProperties:
             assert captured_error is not None
             assert str(captured_error) == error_message
 
-    def test_most_recent_error_kept_when_queue_full(self):
-        """Property: when queue is full, oldest error is discarded for newest."""
-        buffer = ImageBuffer(max_size=20)
-        engine_mock = Mock(spec=InferenceEngine)
-        engine_mock.is_loaded.return_value = True
-
-        error1 = RuntimeError("First error")
-        error2 = ValueError("Second error")
-
-        call_count = [0]
-
-        def generate_errors(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise error1
-            elif call_count[0] == 2:
-                raise error2
-            else:
-                time.sleep(10)
-                return GenerationResult(
-                    image=Image.new("RGB", (512, 512)),
-                    seed=99,
-                    generation_time=0.001,
-                    model_name="mock",
-                )
-
-        engine_mock.generate.side_effect = generate_errors
-
-        options = GenerationOptions(seed=0)
-        worker = GenerationWorker(engine_mock, buffer, "test prompt", options)
-
-        with patch("textbrush.worker.logger"):
-            worker.start()
-            time.sleep(0.3)
-            worker.stop()
-            worker.join(timeout=2.0)
-
-            captured_error = worker.get_error()
-            assert captured_error is error2
-            assert str(captured_error) == "Second error"
-
-    def test_worker_continues_after_error_captured(self):
-        """Property: worker continues generating after capturing error."""
-        buffer = ImageBuffer(max_size=20)
-        engine_mock = Mock(spec=InferenceEngine)
-        engine_mock.is_loaded.return_value = True
-
-        test_error = RuntimeError("Recoverable error")
-        success_result = GenerationResult(
-            image=Image.new("RGB", (512, 512)),
-            seed=42,
-            generation_time=0.001,
-            model_name="mock",
-        )
-
-        call_count = [0]
-
-        def generate_mixed(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                raise test_error
-            else:
-                return success_result
-
-        engine_mock.generate.side_effect = generate_mixed
-
-        options = GenerationOptions(seed=0)
-        worker = GenerationWorker(engine_mock, buffer, "test prompt", options)
-
-        with patch("textbrush.worker.logger"):
-            worker.start()
-
-            img1 = buffer.get(timeout=2.0)
-            img2 = buffer.get(timeout=2.0)
-
-            worker.stop()
-            worker.join(timeout=2.0)
-
-            assert img1 is not None
-            assert img2 is not None
-            assert worker.get_error() is test_error
-
     @given(num_errors=st.integers(min_value=1, max_value=5))
     @settings(max_examples=5, deadline=5000)
-    def test_multiple_errors_only_latest_kept(self, num_errors: int):
-        """Property: with multiple errors, only the most recent is kept."""
-        buffer = ImageBuffer(max_size=20)
-        engine_mock = Mock(spec=InferenceEngine)
-        engine_mock.is_loaded.return_value = True
-
+    def test_each_explicit_run_preserves_its_first_error(self, num_errors):
+        buffer = ImageBuffer(max_size=1)
+        engine = Mock(spec=InferenceEngine)
         errors = [RuntimeError(f"Error {i}") for i in range(num_errors)]
-        call_count = [0]
-
-        def generate_multiple_errors(*args, **kwargs):
-            if call_count[0] < len(errors):
-                error = errors[call_count[0]]
-                call_count[0] += 1
-                raise error
-            else:
-                time.sleep(10)
-                return GenerationResult(
-                    image=Image.new("RGB", (512, 512)),
-                    seed=99,
-                    generation_time=0.001,
-                    model_name="mock",
-                )
-
-        engine_mock.generate.side_effect = generate_multiple_errors
-
-        options = GenerationOptions(seed=0)
-        worker = GenerationWorker(engine_mock, buffer, "test prompt", options)
-
+        engine.generate.side_effect = errors
+        worker = GenerationWorker(engine, buffer, "prompt", GenerationOptions())
         with patch("textbrush.worker.logger"):
-            worker.start()
-            time.sleep(0.3)
-            worker.stop()
-            worker.join(timeout=2.0)
-
-            captured_error = worker.get_error()
-            assert captured_error is errors[-1]
-            assert str(captured_error) == f"Error {num_errors - 1}"
+            for index, error in enumerate(errors):
+                worker.start()
+                worker.join(1)
+                assert not worker._thread.is_alive()
+                assert worker.get_error() is error
+                assert engine.generate.call_count == index + 1
+                assert buffer.get(timeout=None) is None

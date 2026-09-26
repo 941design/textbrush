@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import queue
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -72,7 +71,8 @@ class GenerationWorker:
         if not start_paused:
             self._pause_event.set()  # Set = running state
         # If start_paused=True, leave _pause_event cleared (paused state)
-        self._error_queue: queue.Queue[Exception] = queue.Queue(maxsize=1)
+        self._error_lock = threading.Lock()
+        self._error: Exception | None = None
         self._settled_event = threading.Event()
         if start_paused:
             self._settled_event.set()
@@ -100,13 +100,17 @@ class GenerationWorker:
           Properties:
             - Non-blocking: returns immediately, thread runs in background
             - Daemon thread: won't block process exit
-            - Idempotent-ish: calling multiple times creates new threads (caller should not do this)
+            - Rejects a start while already running; a new run clears the prior error
 
           Algorithm:
             1. Clear stop_event
             2. Create daemon thread targeting _run()
             3. Start thread
         """
+        if self._thread is not None and self._thread.is_alive():
+            raise RuntimeError("Generation worker is already running")
+        self.clear_error()
+        self.buffer.reset_shutdown()
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -135,7 +139,7 @@ class GenerationWorker:
         """
         self._stop_event.set()
         self._pause_event.set()  # Unblock pause wait if paused
-        self.buffer.shutdown()
+        self.buffer.shutdown(grace_period=0.0)
 
     def pause(self) -> None:
         """Pause generation without stopping.
@@ -340,60 +344,14 @@ class GenerationWorker:
             self._thread.join(timeout)
 
     def get_error(self) -> Exception | None:
-        """Get error from worker if one occurred.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs:
-            - Exception if error occurred, None otherwise
-
-          Invariants:
-            - Non-destructive: error remains in queue for future checks
-            - Thread-safe: can be called while worker is running
-
-          Properties:
-            - Non-blocking: returns immediately
-            - Persistent: same error returned on repeated calls until cleared
-            - FIFO semantics: returns oldest error if multiple occurred
-
-          Algorithm:
-            1. Try to get error from queue without blocking
-            2. If error exists, put it back in queue
-            3. Return error (or None if queue empty)
-        """
-        try:
-            error = self._error_queue.get_nowait()
-            self._error_queue.put_nowait(error)
-            return error
-        except queue.Empty:
-            return None
+        """Return the terminal error for this run, without consuming it."""
+        with self._error_lock:
+            return self._error
 
     def clear_error(self) -> None:
-        """Clear error state.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - After clear_error(), get_error() returns None
-            - Thread-safe: can be called while worker is running
-
-          Properties:
-            - Non-blocking: returns immediately
-            - Idempotent: safe to call multiple times
-
-          Algorithm:
-            1. Try to get error from queue without blocking
-            2. Discard error if exists
-            3. Return without putting back
-        """
-        try:
-            self._error_queue.get_nowait()
-        except queue.Empty:
-            pass
+        """Clear the recorded error; starting a new run also clears it."""
+        with self._error_lock:
+            self._error = None
 
     def _run(self) -> None:
         """Worker loop - generate images until stopped.
@@ -419,7 +377,7 @@ class GenerationWorker:
           Properties:
             - Loop: runs until stop_event or unrecoverable error
             - Seed progression: seed increments by 1 for each image
-            - Error resilient: catches exceptions, logs, continues (unless stopped)
+            - Inference errors terminate the run and wake buffer consumers
             - Blocking: respects buffer.put() blocking when buffer full
             - The on-settled callback fires once per settle (the first
               iteration of the pause-wait loop after a pause request)
@@ -444,7 +402,7 @@ class GenerationWorker:
                g. Otherwise build a BufferedImage carrying the snapshot
                   and put it in the buffer.
                h. Increment seed for next iteration.
-            3. Catch exceptions: log error, continue if not stopped
+            3. On exception: record error, close the buffer, and terminate
             4. Log worker stop
         """
         logger.info("Worker started")
@@ -493,6 +451,9 @@ class GenerationWorker:
                         self._on_generation_start(current_seed, queue_position)
 
                     result = self.engine.generate(generation_prompt, generation_options)
+                    if self._stop_event.is_set():
+                        result.image.close()
+                        break
 
                     # A result from the configuration that was active before an
                     # acknowledged update must never enter the cleared buffer.
@@ -530,18 +491,13 @@ class GenerationWorker:
                 except Exception as e:
                     logger.error(f"Error during generation: {e}", exc_info=True)
 
-                    if self._error_queue.full():
-                        try:
-                            self._error_queue.get_nowait()
-                        except queue.Empty:
-                            pass
-
-                    try:
-                        self._error_queue.put_nowait(e)
-                    except queue.Full:
-                        pass
-
-                    if self._stop_event.is_set():
-                        break
+                    with self._error_lock:
+                        self._error = e
+                    # Inference errors are terminal for this run. Wake blocked
+                    # consumers even when no image was ever produced. A fresh
+                    # generation run starts with an empty error state.
+                    self._stop_event.set()
+                    self.buffer.shutdown(grace_period=0.0)
+                    break
         finally:
             logger.info("Worker stopped")

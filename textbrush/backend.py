@@ -1002,19 +1002,19 @@ class TextbrushBackend:
               the abort
 
           Properties:
-            - Blocking: waits for worker to stop (with timeout)
+            - Blocking without a deadline: waits for in-flight inference to finish
             - Cleanup: discards all buffered images and deletes temp files
             - Idempotent: safe to call multiple times
 
           Algorithm:
-            1. If worker exists: stop worker and join with timeout
+            1. If worker exists: stop worker and join until inference has returned
             2. Clear buffer (which calls cleanup() on all items)
             3. Release decoded references (set references, reference_ids,
                reference_paths to empty)
         """
         if self._worker:
             self._worker.stop()
-            self._worker.join(timeout=5.0)
+            self._worker.join()
         self.buffer.clear()
         self.references = ()
         self.reference_paths = ()
