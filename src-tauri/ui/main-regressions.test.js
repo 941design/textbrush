@@ -339,3 +339,25 @@ test('recovery with only deletion tombstones clears stale visible images', async
   assert.equal(app.state.currentIndex, -1);
   assert.ok(document.getElementById('current-image').classList.contains('hidden'));
 });
+
+
+test('sidecar crash event replaces loading with a visible fatal error', async (t) => {
+  const { window, document, calls } = await setupMain();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {
+    event: 'sidecar-message', payload: { type: 'error', payload: {
+      message: 'Backend connection closed unexpectedly (exit status: 7). Check Python runtime installation.',
+      fatal: true, operation: 'sidecar_exit',
+    } },
+  });
+  assert.match(document.querySelector('.loading-label').textContent, /Fatal Error: Backend connection closed/);
+  assert.equal(document.getElementById('accept-btn').disabled, true);
+  assert.equal(document.getElementById('prompt-input').disabled, true);
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await Promise.resolve();
+  assert.equal(countCalls(calls, 'accept_image').length, 0);
+  assert.equal(countCalls(calls, 'plugin:window|close').length, 0);
+  t.mock.timers.tick(3000);
+  await Promise.resolve();
+  assert.equal(countCalls(calls, 'plugin:window|close').length, 1);
+});

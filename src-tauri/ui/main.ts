@@ -706,6 +706,7 @@ function handleStateChanged(payload: StateChangedPayload): void {
  */
 function handleFatalError(message: string): void {
   console.error('Fatal error received:', message);
+  state.isTransitioning = true;
 
   // Immediately disable all interactive buttons
   const buttons = [

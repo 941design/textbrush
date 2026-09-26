@@ -5,7 +5,9 @@
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IpcMessage {
@@ -16,7 +18,8 @@ pub struct IpcMessage {
 
 #[derive(Debug)]
 pub struct Sidecar {
-    process: Child,
+    process: Arc<Mutex<Child>>,
+    expected_exit: Arc<AtomicBool>,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
 }
 
@@ -66,7 +69,8 @@ impl Sidecar {
             .ok_or_else(|| "Failed to capture stdin".to_string())?;
 
         Ok(Self {
-            process,
+            process: Arc::new(Mutex::new(process)),
+            expected_exit: Arc::new(AtomicBool::new(false)),
             stdin: Arc::new(Mutex::new(stdin)),
         })
     }
@@ -117,87 +121,102 @@ impl Sidecar {
         Ok(())
     }
 
-    /// Start background thread reading messages from sidecar stdout.
-    ///
-    /// CONTRACT:
-    ///   Inputs:
-    ///     - on_message: callback function called for each received message
-    ///                   Must be Send + 'static (can be moved to thread)
-    ///
-    ///   Outputs: none (starts background thread)
-    ///
-    ///   Invariants:
-    ///     - Takes ownership of stdout handle
-    ///     - Spawns daemon thread reading lines from stdout
-    ///     - Each line is parsed as JSON message
-    ///     - Valid messages are passed to on_message callback
-    ///     - Thread exits when stdout closes (EOF) or error
-    ///
-    ///   Properties:
-    ///     - Non-blocking: returns immediately after starting thread
-    ///     - Background processing: messages delivered asynchronously
-    ///     - Error tolerance: invalid JSON is skipped (logged)
-    ///     - Thread lifetime: runs until stdout closes
-    ///
-    ///   Algorithm:
-    ///     1. Take stdout handle from process (consuming it)
-    ///     2. Spawn thread:
-    ///        a. Create BufReader wrapping stdout
-    ///        b. Loop over lines:
-    ///           - Read line
-    ///           - Try parse as IpcMessage
-    ///           - If valid: call on_message(msg)
-    ///           - If invalid: skip (optional: log error)
-    ///        c. Exit when EOF or error
+    /// Forward complete JSON lines, then reap the child and report unexpected EOF.
+    /// Terminal protocol messages and explicit termination suppress crash reports.
+    /// Stderr remains inherited; it is never copied into frontend error messages.
     pub fn start_reader<F>(&mut self, on_message: F)
     where
         F: Fn(IpcMessage) + Send + 'static,
     {
         let stdout = self
             .process
+            .lock()
+            .unwrap()
             .stdout
             .take()
             .expect("stdout was already taken");
-
+        let process = Arc::clone(&self.process);
+        let expected_exit = Arc::clone(&self.expected_exit);
         std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
+            let mut read_error = false;
+            for line in BufReader::new(stdout).lines() {
                 match line {
                     Ok(line) => {
                         if let Ok(msg) = serde_json::from_str::<IpcMessage>(&line) {
+                            if matches!(msg.msg_type.as_str(), "accepted" | "aborted") {
+                                expected_exit.store(true, Ordering::SeqCst);
+                            }
                             on_message(msg);
                         }
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        read_error = true;
+                        break;
+                    }
                 }
+            }
+            // EOF may arrive just before the OS publishes the exit status.
+            // A process that closes stdout but keeps running cannot serve IPC.
+            let deadline = Instant::now() + Duration::from_millis(100);
+            let outcome = loop {
+                let mut child = process.lock().unwrap();
+                match child.try_wait() {
+                    Ok(Some(status)) => break Ok(status),
+                    Err(error) => break Err(error.to_string()),
+                    Ok(None) if Instant::now() >= deadline => {
+                        break child
+                            .kill()
+                            .and_then(|()| child.wait())
+                            .map_err(|e| e.to_string());
+                    }
+                    Ok(None) => {}
+                }
+                drop(child);
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            if !expected_exit.load(Ordering::SeqCst) {
+                let reason = match outcome {
+                    Ok(status) => format!("Backend connection closed unexpectedly ({status})."),
+                    Err(_) => {
+                        "Backend connection closed unexpectedly; process cleanup failed.".into()
+                    }
+                };
+                let detail = if read_error {
+                    " Reading backend output failed."
+                } else {
+                    ""
+                };
+                on_message(IpcMessage {
+                    msg_type: "error".into(),
+                    payload: serde_json::json!({
+                        "message": format!("{reason}{detail} Check backend stderr and the Python runtime installation."),
+                        "fatal": true,
+                        "operation": "sidecar_exit",
+                    }),
+                });
             }
         });
     }
 
-    /// Terminate sidecar process.
-    ///
-    /// CONTRACT:
-    ///   Inputs: none
-    ///
-    ///   Outputs:
-    ///     - Result<(), String>: Ok on success, error message on failure
-    ///
-    ///   Invariants:
-    ///     - Process is forcefully terminated
-    ///     - Does not wait for graceful shutdown
-    ///
-    ///   Properties:
-    ///     - Blocking: waits for kill operation
-    ///     - Forceful: sends SIGKILL (Unix) or TerminateProcess (Windows)
-    ///     - Error handling: returns Result with error description
-    ///
-    ///   Algorithm:
-    ///     1. Call process.kill()
-    ///     2. Return Ok or Err with error message
+    /// Intentional termination is idempotent and always reaps the child.
     pub fn kill(&mut self) -> Result<(), String> {
-        self.process
-            .kill()
-            .map_err(|e| format!("Failed to kill process: {}", e))
+        self.expected_exit.store(true, Ordering::SeqCst);
+        let mut child = self.process.lock().map_err(|e| e.to_string())?;
+        if child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            child
+                .kill()
+                .map_err(|e| format!("Failed to kill process: {e}"))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("Failed to reap process: {e}"))?;
+        Ok(())
+    }
+}
+
+impl Drop for Sidecar {
+    fn drop(&mut self) {
+        let _ = self.kill();
     }
 }
 
@@ -207,6 +226,96 @@ mod tests {
     use proptest::prelude::*;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[cfg(unix)]
+    fn assert_reaped(pid: u32) {
+        let exists = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success();
+        assert!(!exists, "child {pid} still exists (possibly unreaped)");
+    }
+
+    #[test]
+    fn unexpected_exits_and_broken_stdout_report_one_terminal_error() {
+        for script in [
+            "import sys; sys.exit(7)",
+            "import sys; print('not JSON', flush=True); sys.exit(8)",
+            "import os,time; os.close(1); time.sleep(60)",
+            "import os,time; os.write(1, b'\\xff\\n'); time.sleep(60)",
+        ] {
+            let mut sidecar = Sidecar::spawn("python3", &["-c", script]).unwrap();
+            let pid = sidecar.process.lock().unwrap().id();
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).unwrap();
+            });
+            let error = rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert_eq!(error.msg_type, "error");
+            assert_eq!(error.payload["fatal"], true);
+            assert_eq!(error.payload["operation"], "sidecar_exit");
+            assert!(error.payload["message"]
+                .as_str()
+                .unwrap()
+                .contains("Python runtime"));
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(1)),
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            ));
+            #[cfg(unix)]
+            assert_reaped(pid);
+        }
+    }
+
+    #[test]
+    fn acknowledged_terminal_messages_exit_without_crash_reports() {
+        for terminal in ["accepted", "aborted"] {
+            let script = format!("import json; print(json.dumps({{'type': '{terminal}', 'payload': {{}}}}), flush=True)");
+            let mut sidecar = Sidecar::spawn("python3", &["-c", &script]).unwrap();
+            let pid = sidecar.process.lock().unwrap().id();
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).unwrap();
+            });
+            assert_eq!(
+                rx.recv_timeout(Duration::from_secs(3)).unwrap().msg_type,
+                terminal
+            );
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(3)),
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            ));
+            #[cfg(unix)]
+            assert_reaped(pid);
+        }
+    }
+
+    #[test]
+    fn intentional_kill_and_drop_reap_without_crash_reports() {
+        for explicit in [true, false] {
+            let mut sidecar =
+                Sidecar::spawn("python3", &["-c", "import time; time.sleep(60)"]).unwrap();
+            let pid = sidecar.process.lock().unwrap().id();
+            let (tx, rx) = mpsc::channel();
+            sidecar.start_reader(move |msg| {
+                tx.send(msg).unwrap();
+            });
+            if explicit {
+                sidecar.kill().unwrap();
+                sidecar.kill().unwrap();
+            }
+            drop(sidecar);
+            assert!(matches!(
+                rx.recv_timeout(Duration::from_secs(3)),
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            ));
+            #[cfg(unix)]
+            assert_reaped(pid);
+        }
+    }
 
     fn python_echo_script() -> &'static str {
         r#"
@@ -422,8 +531,16 @@ sys.exit(0)
 
         std::thread::sleep(Duration::from_millis(200));
 
-        let no_more = rx.recv_timeout(Duration::from_millis(100));
-        assert!(no_more.is_err());
+        let terminal = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(terminal.msg_type, "error");
+        assert_eq!(terminal.payload["fatal"], true);
+        assert!(sidecar
+            .process
+            .lock()
+            .unwrap()
+            .try_wait()
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -447,7 +564,10 @@ for i in range(5):
         });
 
         let mut received_count = 0;
-        while let Ok(_msg) = rx.recv_timeout(Duration::from_millis(500)) {
+        while let Ok(msg) = rx.recv_timeout(Duration::from_millis(500)) {
+            if msg.msg_type == "error" {
+                break;
+            }
             received_count += 1;
         }
 
@@ -466,7 +586,7 @@ for i in range(5):
 
         std::thread::sleep(Duration::from_millis(100));
 
-        let status = sidecar.process.try_wait();
+        let status = sidecar.process.lock().unwrap().try_wait();
         assert!(status.is_ok());
         assert!(status.unwrap().is_some());
     }

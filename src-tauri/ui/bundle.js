@@ -9557,6 +9557,7 @@ function handleStateChanged(payload) {
 }
 function handleFatalError(message) {
   console.error("Fatal error received:", message);
+  state.isTransitioning = true;
   const buttons = [
     elements.prevButton,
     elements.nextButton,
