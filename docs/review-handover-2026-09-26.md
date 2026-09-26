@@ -3,16 +3,18 @@
 Review date: 2026-09-26. Repository: `caricature-builder` (product/package: Textbrush).
 Reviewed HEAD: `676a968`. Paths and line numbers below refer to this baseline; locate symbols again after edits.
 
-This document transfers the review findings and proposed remediation to a new implementation context. It is not evidence that the fixes have been implemented. The review made no production or test source changes. The user subsequently requested this document, including lower-priority findings and task sign-off tracking.
+This is the implementation and resumption record for the review. The original review was read-only; subsequent implementation commits and verification are recorded below. **Current state: partial fulfillment — 26 tasks DONE, R04/R05/R26 BLOCKED on remaining platform and clean-machine validation. The overall goal is blocked, not complete, and release readiness is not established.**
+
+The latest implementation/evidence snapshot before this documentation refresh is `9c44894`. Each task's status and implementation evidence describe current work; the original defect descriptions, baseline anchors and proposed remediation retained beneath them describe `676a968`, not necessarily current code. Earlier per-task test counts and “remaining final gate” notes are historical; the final local gate recorded under R28 supersedes those local-test gaps. It does not supersede the outstanding platform gates.
 
 ## Instructions for the next implementor
 
 1. Read repository guidance, including `CLAUDE.md`, and check for any newly applicable `AGENTS.md` files. Use `uv` for Python dependency/environment management. Run appropriate lint and formatting checks. Do not rewrite history.
-2. Inspect `git status` before editing. At review start and finish there were two pre-existing changes: modified `src-tauri/gen/schemas/macOS-schema.json` and untracked `src-tauri/gen/schemas/linux-schema.json`. Preserve them; they are not review-generated changes to discard.
+2. Inspect `git status` before editing. R16 now ignores/untracks generated schemas. The original modified macOS schema and untracked Linux schema were preserved byte-for-byte locally; do not delete them or re-add generated schemas to Git. Revalidate build artifacts instead of assuming ignored files are current.
 3. Revalidate each finding against the current code before changing it. Implement focused fixes, not a wholesale rewrite of the three-language architecture.
 4. Do not run model-heavy integration tests without user confirmation: `CLAUDE.md` explicitly says, “NEVER run integration tests without user confirmation, as they are very resource intensive.” Fast unit tests, mocks, and static checks supplied most review evidence. This handover does not grant new permission to run expensive tests, publish, or release.
 5. Update the task register and its detailed task entry together. Record actual commands, results, commit IDs, and limitations. Do not mark a task done solely because a mocked test passed when its acceptance criteria require packaged-app or model validation.
-6. Keep the two existing `BACKLOG.json` findings linked to R15 and R16. This handover does not modify that file or create feature epics. If updating canonical backlog/feature records later, use the applicable project-record workflow.
+6. R15 and R16 were resolved through the base-records helpers, and `BACKLOG.json` has no open findings. Their original slugs remain in the detailed entries for history. Do not recreate them merely because the original review text mentions them; use the project-record workflow for any new canonical-record changes.
 
 ## Status and evidence conventions
 
@@ -37,8 +39,8 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R01 | P1 | Reproduced | Preserve acceptance state on save failure | DONE | `7472c1b`; see detailed evidence |
 | R02 | P1 | Reproduced | Report worker errors without waiting for an image | DONE | `bf9eb15`; see detailed evidence |
 | R03 | P1 | Reproduced | Make base wheel installation importable | DONE | `0b5563a`; installed model-extra evidence below |
-| R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
-| R05 | P1 | Code-confirmed | Define a reliable packaged Python runtime | IN_PROGRESS | `b8b215e`; isolated installed Linux startup passed; clean-machine matrix remains |
+| R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | BLOCKED | Implementation landed; runner access and target-matrix evidence missing; see resumption plan |
+| R05 | P1 | Code-confirmed | Define a reliable packaged Python runtime | BLOCKED | External runtime implemented; clean-machine installation/startup evidence missing; see resumption plan |
 | R06 | P2 | Code-confirmed | Resolve the CLI/desktop workflow mismatch | DONE | `4b7e3ee`; installed console/native evidence below |
 | R07 | P2 | Reproduced | Forward desktop model/reference launch arguments | DONE | `8e7a908`; see detailed evidence |
 | R08 | P2 | Reproduced | Make configuration changes and image publication atomic | DONE | `52036ba`; see detailed evidence |
@@ -59,10 +61,71 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | DONE | `52036ba`; see detailed evidence |
 | R24 | P3 | Code-confirmed | Return the validated cached model snapshot | DONE | `0b5563a`; see detailed evidence |
 | R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | DONE | `7472c1b`; see detailed evidence |
-| R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
+| R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | BLOCKED | Implementation landed; runner access and target-matrix evidence missing; see resumption plan |
 | R27 | P3 | Investigate | Review asset-protocol scope and CSP deliberately | DONE | `fcb67c5`; threat assessment and native-rendering evidence below |
 | R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | DONE | `edfe0ff`; documentation and final local gates below |
 | R29 | P2 | Investigate | Release partially loaded candidate before model recovery | DONE | `fd46404` |
+
+## Remaining work and fresh-context resumption plan
+
+### What is implemented versus missing
+
+| Task | Already implemented and locally demonstrated | Still missing before DONE |
+| --- | --- | --- |
+| R04 | Locked Node/npm/Tauri tooling, frontend build/staging, shared `make package` path, CI dependency setup; clean frontend install and Linux ARM64 package succeeded | Run the exact candidate commit from fresh checkouts on all configured target rows; verify current frontend assets are embedded and required native artifacts exist. No successful remote run of this candidate has been recorded. |
+| R05 | External Python 3.11+ contract, explicit interpreter selection, isolated imports, useful startup errors; installed wheel/current native Linux ARM64 startup, close and cleanup demonstrated | Install and launch on separate clean target systems without the build user's environment; demonstrate the documented runtime prerequisites and interpreter selection, including normal desktop launch behavior. A fresh HOME/venv on the build VM is only partial evidence. |
+| R26 | macOS app/DMG override, Linux deb target, runner labels, artifact collector and checksums; real Linux ARM64 outputs validated | Produce and inspect artifacts on macOS ARM64, macOS x64 and Linux x64; verify architecture, installed runtime dependencies, checksums and actual launch. Resolve any failures exposed there. |
+
+No known application-code fix from these three findings remains deliberately unimplemented. Their acceptance is nevertheless incomplete: the unexecuted matrix may reveal defects that require code, packaging, prerequisite or documentation changes. Do not convert them to DONE solely because the configuration looks correct.
+
+**Missing durable validation automation:** the native installed-app/window-close and pixel-rendering probes were temporary scripts and were removed. Their observations are recorded here, but the scripts and raw logs are not committed artifacts. Current CI builds/uploads platform bundles; it does not install them on separate clean systems, launch the UI with the external runtime, or verify native close/preview cleanup. Recreate an explicit lightweight probe or perform and record the equivalent manual checks on the target machines. If automating them, commit the reusable runner-appropriate harness and wire it into a non-publishing validation job. Do not assume an existing installed-runtime job or smoke script can simply be rerun.
+
+### Blocker and authorization boundary
+
+The available workspace is Linux aarch64. At the last audit there was no `gh`, Docker, Podman, x64 emulator, GitHub/runner connector, configured GH_TOKEN/GITHUB_TOKEN or SSH agent. Read-only `git ls-remote origin HEAD` failed host-key verification. No trust settings were bypassed, commits pushed, CI jobs triggered, or release published. A user question requested an existing runner/CI environment; no runner information had arrived when the goal was marked blocked. Recheck access on resumption because these facts may change.
+
+Needed input: access to macOS ARM64/x64 and Linux x64 build/install environments, or CI runs and install-test evidence tied to the exact candidate commit. Provisioning credentials, accepting SSH host trust, or publishing releases is not implied by this handover. The existing `release.yml` triggers on `v*` tags and publishes assets; **do not create a release tag to obtain test evidence**. `ci.yml` currently triggers on master pushes/pull requests, has no manual-dispatch trigger, and includes an E2E smoke job. Review its test selection against CLAUDE.md's confirmation requirement before triggering it. If necessary, prepare a dedicated build/runtime-validation workflow that neither publishes nor runs model-heavy inference.
+
+### Target matrix and execution order
+
+| Runner currently configured | Rust target | Expected installer/application | Collector asset name |
+| --- | --- | --- | --- |
+| `macos-15` | `aarch64-apple-darwin` | `bundle/macos/Textbrush.app`, one `bundle/dmg/*.dmg` | `textbrush-macos-arm64` |
+| `macos-15-intel` | `x86_64-apple-darwin` | `bundle/macos/Textbrush.app`, one `bundle/dmg/*.dmg` | `textbrush-macos-x64` |
+| `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | native `textbrush`, one `bundle/deb/*.deb` | `textbrush-linux-x64` |
+
+Runner labels were researched during implementation, not guaranteed indefinitely. Revalidate availability when execution resumes. Linux ARM64 was an additional local check, not a substitute for any row above.
+
+1. Read this snapshot and the three detailed task entries; check `git status`, current HEAD, CLAUDE.md and any AGENTS.md. Locate the implementation in `.github/workflows/{ci,release}.yml`, `Makefile`, `src-tauri/tauri{,.macos}.conf.json`, `src-tauri/ui/stage-dist.mjs`, `src-tauri/src/python_runtime.rs`, `textbrush/desktop.py`, and `scripts/package_release.py`. Do not repeat completed application rewrites.
+2. Obtain an authorized execution route and a fresh checkout of the exact candidate commit on each target. Install Node 22, Rust with that target, uv, and documented native build dependencies. Linux's current workflow lists WebKit 4.1, libayatana-appindicator3-dev, librsvg2-dev, libxdo-dev and patchelf. Start without reused node_modules or staged frontend assets.
+3. Run the normal build and artifact collection below on each row. `TARGET` puts outputs under `src-tauri/target/<target>/release`; a build without TARGET uses `src-tauri/target/release` and cannot be passed to the CLI collector as though it used a target directory. Run collection with an empty `release-assets/` directory (use a fresh checkout or preserve old evidence elsewhere).
+
+   ```sh
+   make package TARGET=<rust-target>
+   uv run python scripts/package_release.py --target <rust-target> --asset-name <asset-name>
+   uv build --wheel --out-dir <wheel-output-directory>
+   ```
+
+4. Inspect the actual app/binary architecture, app/DMG or deb contents, native dependencies and SHA-256 sidecars. Verify the bundled frontend reflects the candidate sources and contains runtime assets rather than node_modules/tests. Record OS/architecture, tool versions, commit, command exit codes and artifact names/hashes. Successful compilation or an artifact-upload glob alone is insufficient.
+5. Transfer the artifacts and wheel to a separate clean target system (or an equivalently isolated install environment whose limits are documented). Install only the documented prerequisites and the wheel's declared `model` extra into a new Python environment. For example, `uv venv --python <system-python> <runtime-dir>` followed by `uv pip install --python <runtime-dir>/bin/python '<wheel-path>[model]'`. Use a suitable torch backend for that machine; the local dependency check used `--torch-backend cpu` to avoid unnecessary CUDA downloads. Do not download weights or perform model inference without the required confirmation.
+6. Install/mount the platform package and launch it outside the checkout with a new user profile and no build-user interpreter/venv path. Exercise both a correctly configured TEXTBRUSH_PYTHON and the documented default Python discovery path. On macOS, check the normal installed/Finder route separately from a shell launch: a shell's environment is not proof that Finder can locate the backend. Check runtime error messages for missing executable/package and unsupported Python. Include spaces in app/runtime/reference paths. Fix and retest any failed prerequisite or launch contract.
+7. Demonstrate real frontend/sidecar initialization (`awaiting_model` with no selected model), IPC responsiveness, native close/abort exit 1 with empty stdout, child-process reaping and private-preview cleanup. For image rendering/acceptance, a controlled inference fixture can exercise local previews/references and accepted-path stdout without weights; keep fixtures separate from production code. R27's Linux rendering evidence does not prove macOS WebKit behavior. Record the installed-app result and limitations for each row rather than inferring them from unit tests.
+8. If fixes are needed, retain completed work and run checks appropriate to those changes. The final local baseline is Python 1,313 passed/20 skipped/42 deselected/one xfailed, frontend 148 passed, Rust 62 passed/one intentional child probe ignored, plus Ruff/fmt/Clippy. Commands: `uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -q`; from `src-tauri/ui`, `npm run check && npm test`; then from `src-tauri`, `cargo test --bin textbrush`, `cargo fmt --check`, `cargo clippy -- -D warnings`. Build/stage the UI before Rust checks in a fresh checkout. These totals are a recorded baseline, not a required fixed count.
+9. Store durable validation evidence (run URLs or retained logs/artifact manifests, exact commit, environment, commands, results and limitations). Update each task's partial checklist and sign-off independently. R04 can close once fresh target builds/assets are proved; R05 needs clean installed-runtime evidence; R26 needs every configured platform/artifact/runtime claim proved. Mark the overall goal complete only after all three acceptance gaps are closed. If access remains unavailable, leave the goal/tasks BLOCKED and state the missing prerequisite.
+
+### Partial-fulfillment checklist
+
+- [x] R04: frontend dependencies, current-source staging and shared packaging path implemented.
+- [x] R04: clean frontend install and local Linux ARM64 packaging demonstrated.
+- [ ] R04: fresh macOS ARM64/x64 and Linux x64 candidate builds demonstrated.
+- [x] R05: external-runtime contract and startup diagnostics implemented.
+- [x] R05: installed wheel/native startup outside the checkout demonstrated on the existing Linux ARM64 VM.
+- [ ] R05: separate clean-system prerequisite installation and native launch demonstrated on the target platforms.
+- [ ] R05: normal macOS installed/Finder runtime discovery and failure diagnostics validated.
+- [x] R26: platform targets, runner configuration and artifact validation implemented.
+- [x] R26: local Linux ARM64 artifacts, checksums and native rendering verified.
+- [ ] R26: all three configured target artifact sets and installed-runtime checks verified.
+- [ ] Reusable installed-runtime probe/CI validation automation added, **if automation is chosen**; otherwise retain equivalent manual evidence. This is a documented tooling gap, not a requirement to replace adequate manual validation with automation.
 
 ## Architecture and constraints worth preserving
 
@@ -73,7 +136,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 - Reference paths and session-local reference identities must not leak into saved image metadata. Existing normalization, provenance, and metadata tests are relevant regression protection.
 - Do not load old and new full models simultaneously as a routine switching strategy. Recovery and memory limits matter for these large pipelines.
 - FLUX.2 klein permits **zero through four** references. Kontext requires one; Schnell accepts none. Prefer the registry as the capability source.
-- The CLI ratio table, inference ratio defaults, Rust startup dimensions, and frontend resolution ladder are not currently identical concepts. Decide precedence explicitly instead of copying whichever table is nearest.
+- R15 fixes launch precedence: explicit ratio selects the smallest shared ladder entry, preset selects its named canvas, and omitted size selects 256×256 for all models. Reference normalization and generation use the same launch canvas; lower-level inference defaults are not the CLI launch policy.
 
 ## Confirmed findings and implementation tasks
 
@@ -127,7 +190,7 @@ Acceptance: help, version/update entry path, and download argument parsing work 
 
 ### R04 — Install frontend dependencies in release CI
 
-**Status:** IN_PROGRESS. **Sign-off:** Pending macOS/CI matrix validation.
+**Status:** BLOCKED. **Partial fulfillment:** implementation complete in `6557895`; local Linux ARM64 evidence passed. **Missing prerequisite:** runnable macOS ARM64/x64 and Linux x64 CI/build hosts. **Sign-off:** withheld until R04 checks in the resumption plan pass.
 
 `6557895` installs Node 22 and locked npm dependencies in release/native CI jobs, pins the npm Tauri CLI to 2.11.5, and uses `make package` in both local and CI packaging. Direct Rust CI builds first rebuild/stage the frontend. The Tauri hook now runs `npm run build` from its actual detected frontend directory; the previous extra `cd ui` was wrong. Runtime assets are staged separately from tests/dependencies. A temporary clean frontend tree with spaces in its path, no node_modules and no bundle passed npm ci, npm run check and all 148 npm tests, with exactly five staged runtime files. That test exposed URL.pathname handling in two esbuild test imports; fileURLToPath fixes both. `make package` began with npm ci and successfully built the native Linux ARM64 release Debian package in 3m07s. Six artifact-collector tests and Ruff lint/format passed. Workflow YAML parsed successfully. Remote CI, macOS packaging and the Linux x64 matrix row have not been run, so cross-platform release readiness is not signed off.
 
@@ -140,15 +203,15 @@ Install a supported Node runtime and locked UI dependencies before the build. Re
 
 Acceptance: clean-checkout frontend and release builds succeed with no pre-existing `node_modules`; built assets reflect current sources; required macOS/Linux artifacts actually exist before upload. See R22/R26.
 
-### R05 — Bundle a portable Python runtime
+### R05 — Define and validate the packaged Python runtime
 
-**Status:** IN_PROGRESS. **Sign-off:** `6557895`, `b8b215e`; isolated installed Linux startup passed, clean-machine/platform evidence remains.
+**Status:** BLOCKED. **Partial fulfillment:** external-runtime implementation in `6557895`/`b8b215e`; installed Linux ARM64 startup passed. **Missing prerequisite:** separate clean target-machine environments with a graphical session. **Sign-off:** withheld until R05 installation/runtime checks in the resumption plan pass. A bundled interpreter is not missing implementation: the accepted distribution choice is an explicitly required external runtime.
 
 Distribution contract: require external Python 3.11+ with textbrush[model]. Local and CI builds use the same native/frontend packaging path. Packaged startup uses TEXTBRUSH_PYTHON literally when supplied, otherwise python3 on PATH; it no longer searches a copied venv or checkout. Python -I excludes working-directory, PYTHONPATH and user-site imports. Missing executables, missing imports and old Python produce actionable startup errors; a fatal startup message is not overwritten by a generic EOF error. Two process tests cover selection, paths with spaces, no fallback, missing imports, and unsupported versions.
 
 `make package` produced a Linux ARM64 release .deb. A lightweight Xvfb/DBus native-window probe extracted that artifact into a temporary path containing spaces, gave it a fresh HOME, cwd outside the checkout, PATH=/usr/bin:/bin and a separate system-Python-3.12 venv with the installed wheel. It reached awaiting_model through the real frontend INIT/sidecar flow; /proc confirmed the selected external interpreter. Sending the real X11 WM_DELETE_WINDOW event returned exit 1 within eight seconds, left stdout empty, reaped the sidecar and removed its private preview directory. No weights or inference were involved. This probe exposed and verified the R19 follow-up below. Rust tests: 60 passed, one intentionally ignored child probe; fmt, Clippy and git diff --check passed.
 
-This is isolated installed-artifact evidence on the build VM, not a separate clean OS. Clean-machine provisioning and macOS/Linux x64 execution remain unverified, so R05 remains IN_PROGRESS.
+This is isolated installed-artifact evidence on the build VM, not a separate clean OS. Clean-machine provisioning and macOS/Linux x64 execution remain unverified, so R05 remains BLOCKED pending that evidence.
 
 Anchors: `Makefile:179` (`bundle-python-env`, `package`), `src-tauri/src/commands.rs` (`bundled_python_from_exe`, `resolve_release_python_command`).
 
@@ -460,7 +523,7 @@ Acceptance: failed acceptance leaves a usable retry UI; repeated keyboard activa
 
 ### R26 — Platform-specific release validation
 
-**Status:** IN_PROGRESS. **Sign-off:** Pending macOS and Linux x64 execution.
+**Status:** BLOCKED. **Partial fulfillment:** platform-specific configuration and artifact validation implemented in `6557895`; Linux ARM64 artifacts verified. **Missing prerequisite:** execution on the configured macOS ARM64/x64 and Linux x64 runners. **Sign-off:** withheld until R26 artifact and runtime checks in the resumption plan pass.
 
 `6557895` selects macos-15 (ARM64), macos-15-intel (x64), and ubuntu-24.04 (x64); macos-13 retirement and replacement labels were checked against [GitHub's runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) and [retirement notice](https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/). Linux prerequisites follow [Tauri's official prerequisites](https://v2.tauri.app/start/prerequisites/). Node 22 remains supported according to the [Node release schedule](https://github.com/nodejs/Release/blob/main/README.md). Tauri 2.11.5's local build help lists Linux deb/rpm/appimage targets; `tauri bundle --ci --config '{"bundle":{"targets":["app","dmg"]}}'` on Linux returned zero with no output, rather than producing a Linux installer. Configuration now selects deb by default and app/dmg through the macOS override.
 
@@ -592,8 +655,9 @@ The wheel directory and generated `build/` from this review were removed afterwa
 
 Not executed: real-model/GPU inference, model-heavy integration tests, the complete frontend test glob, accessibility browser tests, live release CI, clean-machine packaged-app execution, or a dependency vulnerability audit. No exploit or platform-runner retirement was verified. The frontend bundle caveat is R22. Rust test output included child-process BrokenPipe stderr although all 58 tests passed; investigate process lifecycle in R12/R19 rather than treating that output alone as proof of a production defect.
 
-## Final delivery gate and context handoff checklist
+## Completed local gates and outstanding delivery gates
 
+- [ ] Overall acceptance: R04/R05/R26 target-platform and clean-machine evidence complete.
 - [x] Every addressed task has a status, commit, and specific verification evidence; unresolved tasks remain visible.
 - [x] R17's baseline failure is resolved for the correct product contract, independent of local weights.
 - [x] The fast Python suite, current-source frontend tests, Rust tests, and applicable lint/format checks pass after the final functional edits.
@@ -605,6 +669,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [x] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [x] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: all locally implementable findings are DONE, including R28 in `edfe0ff`. Final local checks passed: Python 1,313 passed/20 skipped/42 deselected/one xfailed; frontend 148 passed; Rust 62 passed/one intentional child probe ignored; Ruff/fmt/Clippy passed. Latest release .deb includes R27; artifact checksums and installed-current-wheel/current-native startup and close passed outside the checkout under Linux ARM64. BACKLOG.json has no findings, and local schema files remain preserved/ignored. Temporary current-task artifacts were removed and no build/test process remains running.
-
-The only incomplete task statuses are R04/R05/R26: clean-machine provisioning plus macOS ARM64/x64 and Linux x64 packaging/runtime matrix evidence. This environment is Linux aarch64 with no gh CLI, Docker/Podman or x64 emulator found. Available connector tools do not provide a GitHub/runner interface. A read-only git ls-remote origin HEAD using BatchMode SSH failed host-key verification; no trust settings were bypassed, remote commits pushed, or release jobs run. An asynchronous question asks the user for an existing runner/CI environment. Do not mark these tasks complete from Linux ARM64 evidence, and do not publish a release to obtain validation. There is no active process to wait on. If no runner response arrives, revalidate available safe validation routes before treating this as an impasse. This is the first goal turn ending with only that external validation blocker; prior turns made implementation progress. The overall goal remains active, not complete.
+Fresh-context starting point: follow **Remaining work and fresh-context resumption plan** above. The overall goal is BLOCKED after three consecutive audits found the same unavailable platform-validation prerequisites. This documentation update does not resume implementation or claim release readiness. There is no active build/test process to wait for. The current local implementation and final gate results are recorded under R28; outstanding work is precisely the unchecked R04/R05/R26 checks, including any fixes those runs expose. Temporary native smoke scripts and raw logs were removed; rebuild current artifacts and recreate the probes or retain equivalent manual evidence rather than looking for nonexistent saved scripts. Generated schemas remain local/ignored, and BACKLOG.json has no open findings. Revalidate environment/access and the candidate commit before continuing.
