@@ -34,7 +34,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 
 | ID | Priority | Evidence | Task | Status | Sign-off |
 | --- | --- | --- | --- | --- | --- |
-| R01 | P1 | Reproduced | Preserve acceptance state on save failure | PLANNED | — |
+| R01 | P1 | Reproduced | Preserve acceptance state on save failure | DONE | `7472c1b`; see detailed evidence |
 | R02 | P1 | Reproduced | Report worker errors without waiting for an image | DONE | `bf9eb15`; see detailed evidence |
 | R03 | P1 | Reproduced | Make base wheel installation importable | IN_PROGRESS | `0b5563a`; see detailed evidence |
 | R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | PLANNED | — |
@@ -42,9 +42,9 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R06 | P2 | Code-confirmed | Resolve the CLI/desktop workflow mismatch | PLANNED | — |
 | R07 | P2 | Code-confirmed | Forward desktop model/reference launch arguments | PLANNED | — |
 | R08 | P2 | Reproduced | Make configuration changes and image publication atomic | DONE | `52036ba`; see detailed evidence |
-| R09 | P2 | Reproduced | Encode actual JPEG output when requested | PLANNED | — |
-| R10 | P2 | Mixed: reproduced/code | Honor output path and directory overrides | PLANNED | — |
-| R11 | P2 | Code-confirmed | Release deleted-image pixel memory | PLANNED | — |
+| R09 | P2 | Reproduced | Encode actual JPEG output when requested | DONE | `7472c1b`; see detailed evidence |
+| R10 | P2 | Mixed: reproduced/code | Honor output path and directory overrides | DONE | `7472c1b`; see detailed evidence |
+| R11 | P2 | Code-confirmed | Release deleted-image pixel memory | DONE | `7472c1b`; see detailed evidence |
 | R12 | P2 | Code-confirmed | Surface unexpected sidecar exit | PLANNED | — |
 | R13 | P2 | Reproduced | Read installed distribution version correctly | DONE | `0b5563a`; see detailed evidence |
 | R14 | P2 | Code-confirmed | Preserve desktop seed zero | PLANNED | — |
@@ -58,7 +58,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R22 | P3 | Code-confirmed | Build current frontend bundle before regression tests | DONE | `0b5563a`; see detailed evidence |
 | R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | DONE | `52036ba`; see detailed evidence |
 | R24 | P3 | Code-confirmed | Return the validated cached model snapshot | DONE | `0b5563a`; see detailed evidence |
-| R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | PLANNED | — |
+| R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | DONE | `7472c1b`; see detailed evidence |
 | R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | PLANNED | — |
 | R27 | P3 | Investigate | Review asset-protocol scope and CSP deliberately | PLANNED | — |
 | R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | PLANNED | — |
@@ -79,7 +79,9 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 
 ### R01 — Preserve acceptance state on save failure
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7472c1b` — verification below.
+
+Acceptance keeps session indexes/selections until all outputs are committed. Each BufferedImage stores its planned destination and accepted-path checkpoint; failed batches report completed paths and retain previews for review/retry. Tests inject first-save and second-save disk failures, verify every selection survives, retry once per image, inspect chronological saved PNG seeds, and serialize delivery against the acceptance boundary. Verification: `uv run pytest tests/test_acceptance_recovery.py -q`: 16 passed. Acceptance/IPC/metadata/delivery/failure/publication group: 152 passed before the final repeated-deletion case; acceptance/cleanup/buffer group: 73 passed. The full fast Python command from the delivery gate passed 1,247 tests, with 18 skipped, 42 deselected and 1 xfailed; the final repeated-deletion test was added afterward and passed in the 16-test run. `npm test` rebuilt current sources and passed 156 tests; the final keyboard-path refinement then passed all 11 tests in `node --test src-tauri/ui/main-regressions.test.js`. `npm run check`, Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/ipc/handler.py:513` (`handle_accept`, especially 573–581), `textbrush/backend.py:1440` (`accept_all`).
 
@@ -189,7 +191,9 @@ Acceptance: deterministic barriers cover updates during inference, after epoch v
 
 ### R09 — Encode actual JPEG output
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7472c1b` — verification below.
+
+PNG output preserves preview bytes and text metadata without re-encoding. JPEG is encoded to a staging file before publication; RGB, RGBA, L and palette inputs are covered by actual Pillow format/dimension checks. JPEG writes no custom/EXIF metadata. Encoding failure and cross-filesystem copy failure preserve previews, remove partial output, and allow recovery. Reference provenance stays out of saved metadata. Verification: `uv run pytest tests/test_acceptance_recovery.py -q`: 16 passed. Acceptance/IPC/metadata/delivery/failure/publication group: 152 passed before the final repeated-deletion case; acceptance/cleanup/buffer group: 73 passed. The full fast Python command from the delivery gate passed 1,247 tests, with 18 skipped, 42 deselected and 1 xfailed; the final repeated-deletion test was added afterward and passed in the 16-test run. `npm test` rebuilt current sources and passed 156 tests; the final keyboard-path refinement then passed all 11 tests in `node --test src-tauri/ui/main-regressions.test.js`. `npm run check`, Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/backend.py:1350` (`save_to_preview`), `accept_from_preview` around 1423–1435.
 
@@ -201,7 +205,9 @@ Acceptance: inspect encoded format and dimensions, not just suffix; PNG metadata
 
 ### R10 — Honor output destinations
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7472c1b` — verification below.
+
+Acceptance now forwards the desktop output_path and honors explicit backend output_dir. The first file uses the requested filename; subsequent files receive -002, -003, etc. before its extension. The extension chooses encoding, existing destinations are rejected without overwrite, and per-image destination/checkpoint state survives partial failure. Tests inspect actual files for default/custom directories, filenames with spaces, multi-image suffixes, collisions, and the real handler-to-backend destination bridge. Verification: `uv run pytest tests/test_acceptance_recovery.py -q`: 16 passed. Acceptance/IPC/metadata/delivery/failure/publication group: 152 passed before the final repeated-deletion case; acceptance/cleanup/buffer group: 73 passed. The full fast Python command from the delivery gate passed 1,247 tests, with 18 skipped, 42 deselected and 1 xfailed; the final repeated-deletion test was added afterward and passed in the 16-test run. `npm test` rebuilt current sources and passed 156 tests; the final keyboard-path refinement then passed all 11 tests in `node --test src-tauri/ui/main-regressions.test.js`. `npm run check`, Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/ipc/handler.py` (`_start_image_delivery(output_path)`, `handle_accept`), `textbrush/backend.py:1474` (`accept_all`).
 
@@ -213,7 +219,9 @@ Acceptance: explicit directory and single-file overrides, default directory, mul
 
 ### R11 — Release deleted-image memory
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7472c1b` — verification below.
+
+BufferedImage.cleanup closes decoded pixels even if file deletion fails, leaving only lightweight metadata/tombstones in session indexes. Twenty repeated delete cycles verify closed pixel handles, stable indexes, idempotent deletion, and empty tombstone paths. Deleted images are excluded from acceptance. The existing wire protocol still carries flagged tombstones; frontend recovery filters them, and now also clears stale visible images when no active entries remain. Tests cover retained-image output and recovery with only tombstones. Verification: `uv run pytest tests/test_acceptance_recovery.py -q`: 16 passed. Acceptance/IPC/metadata/delivery/failure/publication group: 152 passed before the final repeated-deletion case; acceptance/cleanup/buffer group: 73 passed. The full fast Python command from the delivery gate passed 1,247 tests, with 18 skipped, 42 deselected and 1 xfailed; the final repeated-deletion test was added afterward and passed in the 16-test run. `npm test` rebuilt current sources and passed 156 tests; the final keyboard-path refinement then passed all 11 tests in `node --test src-tauri/ui/main-regressions.test.js`. `npm run check`, Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/ipc/handler.py:1168` (`handle_delete`, `_image_index_map`), `textbrush/buffer.py` (`BufferedImage.cleanup`).
 
@@ -393,7 +401,9 @@ Acceptance: cached-download success returns the validated model root for multi-s
 
 ### R25 — Frontend acceptance errors and delivery races
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `7472c1b` — verification below.
+
+The frontend tracks acceptance in flight across asynchronous backend responses. Repeated Enter presses cannot submit overlapping accepts; both invoke rejection and backend acceptance ERROR restore the button and show an error outside the hidden loading overlay. Backend publication saves previews before indexing and holds the same delivery lock as acceptance. Failure resumes delivery; success closes it and discards a late in-flight image. Deterministic barriers cover preview completion during accept, late delivery after success, repeated commands, and new delivery after a failed save. Verification: `uv run pytest tests/test_acceptance_recovery.py -q`: 16 passed. Acceptance/IPC/metadata/delivery/failure/publication group: 152 passed before the final repeated-deletion case; acceptance/cleanup/buffer group: 73 passed. The full fast Python command from the delivery gate passed 1,247 tests, with 18 skipped, 42 deselected and 1 xfailed; the final repeated-deletion test was added afterward and passed in the 16-test run. `npm test` rebuilt current sources and passed 156 tests; the final keyboard-path refinement then passed all 11 tests in `node --test src-tauri/ui/main-regressions.test.js`. `npm run check`, Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `src-tauri/ui/main.ts::accept/handleErrorMessage`, `textbrush/ipc/handler.py::deliver_loop/handle_accept`.
 
@@ -527,4 +537,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. R08/R20/R23 are now complete in `52036ba`; continue with R01/R09/R10/R25 acceptance/output recovery, then the remaining planned tasks. R03 still needs model-enabled validation. The full fast Python suite now passes (1,232 passed); final frontend/Rust/platform gates remain open. Original macOS/Linux schema changes remain untouched. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, listener/lifecycle R19/R21, candidate cleanup R29, then R16/R18/R27/R28. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
