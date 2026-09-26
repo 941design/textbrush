@@ -61,7 +61,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | DONE | `7472c1b`; see detailed evidence |
 | R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | IN_PROGRESS | `6557895`; remaining platform/runtime validation below |
 | R27 | P3 | Investigate | Review asset-protocol scope and CSP deliberately | DONE | `fcb67c5`; threat assessment and native-rendering evidence below |
-| R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | PLANNED | — |
+| R28 | P3 | Code-confirmed | Remove stale implementation narratives and align docs | DONE | `edfe0ff`; documentation and final local gates below |
 | R29 | P2 | Investigate | Release partially loaded candidate before model recovery | DONE | `fd46404` |
 
 ## Architecture and constraints worth preserving
@@ -495,7 +495,13 @@ Acceptance: record a threat/requirements assessment; either justify current scop
 
 ### R28 — Documentation and contract maintenance
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `edfe0ff` — verification below.
+
+Replaced stale initialization/update/headless/acceptance narratives with current ownership and synchronization rules. Comments now describe continuous indexed preview-path delivery, model selection without automatic weight downloads, initially paused desktop workers, worker epoch invalidation, reference normalization at acknowledgement, disk IO during saves, and checkpointed PNG/JPEG publication. Legacy action-event helpers are explicitly not the delivery or acceptance boundary. Removed the native command's false nonblocking-pipe claim. README distinguishes forwarded shared flags from Python-only options; configuration/troubleshooting/spec documentation no longer requires automatic headless flags or claims a fixed 120-second inference timeout. Related feature specifications are identified as requirements/history rather than incorrectly declaring implemented features absent. Existing model-memory, normalization and metadata-privacy constraints remain intact. Python AST comparison with docstrings removed confirmed unchanged executable statements in the documentation increment.
+
+Final local gates on the current functional tree: `uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -q`: 1,313 passed, 20 skipped, 42 deselected, one xfailed in 199.35 seconds. The warning is the intentional decompression-bomb warning fixture. `npm run check && npm test`: 148 passed with the current source bundle rebuilt. `cargo test --bin textbrush`: 62 passed, one intentionally ignored child probe exercised by its parent test. Ruff lint/format, Rust fmt/Clippy and git diff --check passed. No marked integration/model-heavy tests ran.
+
+The final `make package` rebuilt the current Linux ARM64 release .deb, including R27's asset/CSP policy. The artifact collector and SHA-256 verification passed for tar/deb outputs. A fresh wheel was installed with exactly declared base dependencies into a new system-Python-3.12 venv in a path containing spaces. Its console help passed; under Xvfb/DBus, the installed console launched the extracted current release with a fresh HOME, restricted PATH and cwd outside the checkout, reached awaiting_model through the real UI/sidecar flow, and propagated native close as exit 1 with empty stdout. Temporary wheel, venv, logs and probe scripts were removed. These are installed Linux ARM64 checks on the existing VM, not substitutes for the remaining clean-machine/platform matrix.
 
 Anchors: large CONTRACT/IMPLEMENTATION GUIDANCE blocks in backend, IPC, Rust main/exit handlers; README and docs.
 
@@ -588,15 +594,17 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 
 ## Final delivery gate and context handoff checklist
 
-- [ ] Every addressed task has a status, commit, and specific verification evidence; unresolved tasks remain visible.
+- [x] Every addressed task has a status, commit, and specific verification evidence; unresolved tasks remain visible.
 - [x] R17's baseline failure is resolved for the correct product contract, independent of local weights.
-- [ ] The fast Python suite, current-source frontend tests, Rust tests, and applicable lint/format checks pass after the final functional edits.
-- [ ] Saved outputs have correct encoding, destination, metadata, and ordering; save failures retain a usable recovery path.
-- [ ] Startup, configuration changes, worker failure, accept, abort, close, and child crash have deterministic behavioral tests.
-- [ ] The installed wheel is tested outside the checkout with exactly its declared dependencies.
-- [ ] Release readiness is withheld until the intended packaging contract is verified outside the build environment; remaining platform/model checks are stated explicitly.
+- [x] The fast Python suite, current-source frontend tests, Rust tests, and applicable lint/format checks pass after the final functional edits.
+- [x] Saved outputs have correct encoding, destination, metadata, and ordering; save failures retain a usable recovery path.
+- [x] Startup, configuration changes, worker failure, accept, abort, close, and child crash have deterministic behavioral tests.
+- [x] The installed wheel is tested outside the checkout with exactly its declared dependencies.
+- [x] Release readiness is withheld until the intended packaging contract is verified outside the build environment; remaining platform/model checks are stated explicitly.
 - [x] Existing unrelated schema changes are preserved byte-for-byte under the explicit R16 ignore/untrack decision.
-- [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
-- [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
+- [x] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
+- [x] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: R27 is DONE in `fcb67c5`. Static assets now deny by default; native CLI/picker selection grants exact references and sidecar startup grants its private preview directory. CSP restricts the frontend to bundled resources, IPC and local image assets; drag-and-drop is disabled to prevent unused automatic grants. Real Tauri Scope tests prove unrelated-path denial; actual Linux WebKit pixels confirm preview and selected-reference rendering under the policy. Rust: 62 passed, one intentional probe ignored; fmt/Clippy/native build passed. Latest debug binary includes these changes; the release .deb does not yet, so rebuild for final installed-package validation. No processes remain running. Next task: R28 stale documentation/contract cleanup, then final broad Python/frontend/Rust delivery gates. R04/R05/R26 still need separate clean-machine and macOS/Linux x64 release validation. R15/R16 are DONE, BACKLOG.json has no findings, and generated schemas remain local/ignored with original files preserved. Temporary current-task artifacts were removed; an older empty /tmp/textbrush-preview-GBWhAf directory was left untouched because it predates this task. No model-heavy tests or remote release publication were run. The overall goal remains active.
+Next-context starting point: all locally implementable findings are DONE, including R28 in `edfe0ff`. Final local checks passed: Python 1,313 passed/20 skipped/42 deselected/one xfailed; frontend 148 passed; Rust 62 passed/one intentional child probe ignored; Ruff/fmt/Clippy passed. Latest release .deb includes R27; artifact checksums and installed-current-wheel/current-native startup and close passed outside the checkout under Linux ARM64. BACKLOG.json has no findings, and local schema files remain preserved/ignored. Temporary current-task artifacts were removed and no build/test process remains running.
+
+The only incomplete task statuses are R04/R05/R26: clean-machine provisioning plus macOS ARM64/x64 and Linux x64 packaging/runtime matrix evidence. This environment is Linux aarch64 with no gh CLI, Docker/Podman or x64 emulator found. Available connector tools do not provide a GitHub/runner interface. A read-only git ls-remote origin HEAD using BatchMode SSH failed host-key verification; no trust settings were bypassed, remote commits pushed, or release jobs run. An asynchronous question asks the user for an existing runner/CI environment. Do not mark these tasks complete from Linux ARM64 evidence, and do not publish a release to obtain validation. There is no active process to wait on. If no runner response arrives, revalidate available safe validation routes before treating this as an impasse. This is the first goal turn ending with only that external validation blocker; prior turns made implementation progress. The overall goal remains active, not complete.
