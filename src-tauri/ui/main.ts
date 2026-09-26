@@ -255,6 +255,7 @@ async function init(): Promise<void> {
       modelId: launchArgs.model_id ?? null,
       references: launchArgs.references ?? null,
       preset: launchArgs.preset ?? null,
+      bufferMax: launchArgs.buffer_max ?? null,
     });
 
     console.log('Application initialized successfully');

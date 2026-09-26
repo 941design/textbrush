@@ -65,6 +65,16 @@ pixel dimensions it currently produces, and the `−`/`+` step moves all of them
 up or down the ladder together. The `4:3` and `3:4` options are the same sizes
 the `landscape-*` and `portrait-*` preset names refer to.
 
+The native executable accepts `--prompt`, `--out`, `--seed`, `--aspect-ratio`,
+`--width` with `--height`, `--buffer-max`, `--model`, repeated `--reference`,
+and `--preset`. Unknown options and missing values are errors. Reference order
+and duplicates are preserved. A preset selects its named canvas and cannot be
+combined with a ratio or explicit dimensions; otherwise explicit dimensions
+win over the ratio's smallest desktop size. Buffer capacity must be positive.
+Seeds must fit JavaScript's exact integer range (−9007199254740991 through
+9007199254740991); zero is preserved. Model capabilities and reference validity
+are checked by the backend. Python CLI flags are a separate interface.
+
 ## Requirements
 
 - **Python 3.11+** - For running the inference backend

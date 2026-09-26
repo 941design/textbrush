@@ -8,6 +8,30 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{command, Emitter, State, Window};
 
+/// The exact JSON payload sent to Python, shared by production and bridge tests.
+#[derive(serde::Serialize)]
+struct InitPayload {
+    prompt: String,
+    output_path: Option<String>,
+    seed: Option<i64>,
+    aspect_ratio: String,
+    width: Option<u32>,
+    height: Option<u32>,
+    model_id: Option<String>,
+    references: Option<Vec<String>>,
+    preset: Option<String>,
+    buffer_max: Option<u32>,
+}
+
+impl InitPayload {
+    fn into_message(self) -> IpcMessage {
+        IpcMessage {
+            msg_type: "init".into(),
+            payload: serde_json::to_value(self).expect("INIT contains only JSON-safe values"),
+        }
+    }
+}
+
 pub struct AppState {
     pub sidecar: Mutex<Option<Sidecar>>,
 }
@@ -130,6 +154,7 @@ pub async fn init_generation(
     model_id: Option<String>,
     references: Option<Vec<String>>,
     preset: Option<String>,
+    buffer_max: Option<u32>,
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])
@@ -163,20 +188,19 @@ pub async fn init_generation(
         window_clone.emit("sidecar-message", msg).ok();
     });
 
-    let message = IpcMessage {
-        msg_type: "init".to_string(),
-        payload: serde_json::json!({
-            "prompt": prompt,
-            "output_path": output_path,
-            "seed": seed,
-            "aspect_ratio": aspect_ratio,
-            "width": width,
-            "height": height,
-            "model_id": model_id,
-            "references": references,
-            "preset": preset,
-        }),
-    };
+    let message = InitPayload {
+        prompt,
+        output_path,
+        seed,
+        aspect_ratio,
+        width,
+        height,
+        model_id,
+        references,
+        preset,
+        buffer_max,
+    }
+    .into_message();
 
     sidecar.send(&message)?;
 
@@ -1222,5 +1246,37 @@ while True:
             prop_assert!(result.is_err());
             prop_assert_eq!(result.unwrap_err(), "No sidecar running");
         }
+    }
+}
+
+#[cfg(test)]
+mod init_bridge_tests {
+    use super::*;
+
+    #[test]
+    fn init_serializes_native_options_exactly() {
+        let message = InitPayload {
+            prompt: "cat".into(),
+            output_path: Some("/output path/cat.png".into()),
+            seed: Some(0),
+            aspect_ratio: "3:4".into(),
+            width: Some(576),
+            height: Some(768),
+            model_id: Some("flux2-klein-4b".into()),
+            references: Some(vec!["/a b.png".into(), "/c.png".into(), "/a b.png".into()]),
+            preset: Some("portrait-medium".into()),
+            buffer_max: Some(3),
+        }
+        .into_message();
+        assert_eq!(message.msg_type, "init");
+        assert_eq!(
+            message.payload,
+            serde_json::json!({
+                "prompt": "cat", "output_path": "/output path/cat.png", "seed": 0,
+                "aspect_ratio": "3:4", "width": 576, "height": 768,
+                "model_id": "flux2-klein-4b", "references": ["/a b.png", "/c.png", "/a b.png"],
+                "preset": "portrait-medium", "buffer_max": 3,
+            })
+        );
     }
 }

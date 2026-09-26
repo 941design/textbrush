@@ -65,6 +65,7 @@ class InitCommand:
     model_id: str | None = None
     references: list[str] | None = None
     preset: str | None = None
+    buffer_max: int | None = None
 
 
 @dataclass

@@ -207,6 +207,10 @@ class MessageHandler:
         from textbrush.ipc.protocol import InitCommand
 
         cmd = InitCommand(**payload)
+        if cmd.buffer_max is not None:
+            if type(cmd.buffer_max) is not int or cmd.buffer_max <= 0:
+                raise ValueError("buffer_max must be a positive integer")
+            self.config.model.buffer_size = cmd.buffer_max
         logger.info(
             f"INIT received: prompt='{cmd.prompt[:50]}...', "
             f"seed={cmd.seed}, width={cmd.width}, height={cmd.height}"

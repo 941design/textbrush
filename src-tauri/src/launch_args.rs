@@ -16,6 +16,9 @@ pub struct LaunchArgs {
     pub buffer_max: u32,
     pub width: u32,
     pub height: u32,
+    pub model_id: Option<String>,
+    pub references: Vec<String>,
+    pub preset: Option<String>,
 }
 
 /// Get default resolution for an aspect ratio.
@@ -37,42 +40,8 @@ fn get_default_resolution(aspect_ratio: &str) -> (u32, u32) {
     }
 }
 
-/// Get launch arguments for UI initialization.
-///
-/// CONTRACT:
-///   Inputs: None (reads from environment/CLI args)
-///
-///   Outputs:
-///     - Result<LaunchArgs, String>: Launch arguments or error message
-///
-///   Invariants:
-///     - Returns arguments used to launch the application
-///     - If no prompt argument is provided: returns bundled-app defaults
-///     - Arguments match what would be passed to init_generation
-///
-///   Properties:
-///     - Synchronous: returns immediately
-///     - Stateless: does not modify application state
-///     - Fallback: provides sensible defaults if no CLI args
-///
-///   LaunchArgs Structure:
-///     - prompt: text description for image generation
-///     - output_path: optional path where accepted image should be saved
-///     - seed: optional random seed for reproducibility
-///     - aspect_ratio: aspect ratio string (default "1:1")
-///
-///   Algorithm:
-///       1. Parse --prompt, --out, --seed, --aspect-ratio, --buffer-max,
-///          --width, and --height from process arguments
-///       2. If --prompt is omitted, use bundled-app defaults so Finder launches
-///          initialize the UI without extra CLI flags
-///       3. Resolve width/height from explicit values or aspect-ratio defaults
-///       4. Return LaunchArgs struct
-///
-/// IMPLEMENTATION GUIDANCE:
-///   - Mark as #[tauri::command]
-///   - Return Result<LaunchArgs, String> for error handling
-///   - Packaged app launches must work without requiring CLI flags
+/// Parse the native executable's options for frontend initialization.
+/// Model capability validation remains owned by the Python registry.
 #[tauri::command]
 pub fn get_launch_args() -> Result<LaunchArgs, String> {
     parse_launch_args(std::env::args())
@@ -92,71 +61,99 @@ where
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
 
-    let mut i = 1; // Skip program name
+    let mut model_id = None;
+    let mut references = Vec::new();
+    let mut preset = None;
+    let mut explicit_ratio = false;
+    let mut i = 1;
     while i < args.len() {
-        match args[i].as_str() {
-            "--prompt" => {
-                if i + 1 < args.len() {
-                    prompt = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    return Err("--prompt requires a value".to_string());
-                }
-            }
-            "--out" => {
-                if i + 1 < args.len() {
-                    output_path = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    return Err("--out requires a value".to_string());
-                }
-            }
+        let option = args[i].as_str();
+        // Older Finder launches may supply a process serial number.
+        if option.starts_with("-psn_") {
+            i += 1;
+            continue;
+        }
+        if !matches!(
+            option,
+            "--prompt"
+                | "--out"
+                | "--seed"
+                | "--aspect-ratio"
+                | "--buffer-max"
+                | "--width"
+                | "--height"
+                | "--model"
+                | "--reference"
+                | "--preset"
+        ) {
+            return Err(format!("Unsupported argument: {option}"));
+        }
+        let value = args
+            .get(i + 1)
+            .filter(|value| !value.is_empty() && !value.starts_with("--"))
+            .ok_or_else(|| format!("{option} requires a value"))?;
+        match option {
+            "--prompt" => prompt = value.clone(),
+            "--out" => output_path = Some(value.clone()),
             "--seed" => {
-                if i + 1 < args.len() {
-                    seed = Some(args[i + 1].parse().map_err(|_| "Invalid seed value")?);
-                    i += 2;
-                } else {
-                    return Err("--seed requires a value".to_string());
+                let parsed: i64 = value.parse().map_err(|_| "Invalid --seed value")?;
+                if !(-9_007_199_254_740_991..=9_007_199_254_740_991).contains(&parsed) {
+                    return Err("--seed must be an exactly representable JavaScript integer".into());
                 }
+                seed = Some(parsed);
             }
             "--aspect-ratio" => {
-                if i + 1 < args.len() {
-                    aspect_ratio = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    return Err("--aspect-ratio requires a value".to_string());
+                if !matches!(
+                    value.as_str(),
+                    "4:1" | "3:1" | "16:9" | "4:3" | "1:1" | "4:5" | "3:4" | "9:16"
+                ) {
+                    return Err(format!("Unsupported --aspect-ratio: {value}"));
+                }
+                aspect_ratio = value.clone();
+                explicit_ratio = true;
+            }
+            "--buffer-max" | "--width" | "--height" => {
+                let parsed: u32 = value
+                    .parse()
+                    .map_err(|_| format!("Invalid {option} value"))?;
+                if parsed == 0 {
+                    return Err(format!("{option} must be positive"));
+                }
+                match option {
+                    "--width" => width = Some(parsed),
+                    "--height" => height = Some(parsed),
+                    _ => buffer_max = parsed,
                 }
             }
-            "--buffer-max" => {
-                if i + 1 < args.len() {
-                    buffer_max = args[i + 1]
-                        .parse()
-                        .map_err(|_| "Invalid buffer-max value")?;
-                    i += 2;
-                } else {
-                    return Err("--buffer-max requires a value".to_string());
-                }
-            }
-            "--width" => {
-                if i + 1 < args.len() {
-                    width = Some(args[i + 1].parse().map_err(|_| "Invalid width value")?);
-                    i += 2;
-                } else {
-                    return Err("--width requires a value".to_string());
-                }
-            }
-            "--height" => {
-                if i + 1 < args.len() {
-                    height = Some(args[i + 1].parse().map_err(|_| "Invalid height value")?);
-                    i += 2;
-                } else {
-                    return Err("--height requires a value".to_string());
-                }
-            }
-            _ => {
-                i += 1; // Skip unknown arguments
-            }
+            "--model" => model_id = Some(value.clone()),
+            "--reference" => references.push(value.clone()),
+            "--preset" => preset = Some(value.clone()),
+            _ => unreachable!(),
         }
+        i += 2;
+    }
+    if width.is_some() != height.is_some() {
+        return Err("--width and --height must be supplied together".into());
+    }
+    if let Some(name) = preset.as_deref() {
+        if width.is_some() || explicit_ratio {
+            return Err(
+                "--preset cannot be combined with --width/--height or --aspect-ratio".into(),
+            );
+        }
+        // Keep these named canvases in sync with textbrush.validation.EDITING_PRESETS.
+        let (ratio, w, h) = match name {
+            "landscape-small" => ("4:3", 512, 384),
+            "landscape-medium" => ("4:3", 768, 576),
+            "landscape-large" => ("4:3", 1024, 768),
+            "portrait-small" => ("3:4", 384, 512),
+            "portrait-medium" => ("3:4", 576, 768),
+            "portrait-large" => ("3:4", 768, 1024),
+            _ => return Err(format!("Unsupported --preset: {name}")),
+        };
+        aspect_ratio = ratio.into();
+        width = Some(w);
+        height = Some(h);
     }
 
     // Finder launches packaged apps without CLI args. In that case, start with a
@@ -178,12 +175,109 @@ where
         buffer_max,
         width: final_width,
         height: final_height,
+        model_id,
+        references,
+        preset,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse(args: &[&str]) -> Result<LaunchArgs, String> {
+        parse_launch_args(
+            std::iter::once("textbrush")
+                .chain(args.iter().copied())
+                .map(String::from),
+        )
+    }
+
+    #[test]
+    fn forwards_model_ordered_duplicate_references_and_preset() {
+        let args = parse(&[
+            "--model",
+            "flux2-klein-4b",
+            "--reference",
+            "/a b.png",
+            "--reference",
+            "/c.png",
+            "--reference",
+            "/a b.png",
+            "--preset",
+            "portrait-medium",
+            "--buffer-max",
+            "3",
+            "--seed",
+            "0",
+        ])
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(args).unwrap(),
+            serde_json::json!({
+                "prompt": DEFAULT_PROMPT, "output_path": null, "seed": 0,
+                "aspect_ratio": "3:4", "buffer_max": 3, "width": 576, "height": 768,
+                "model_id": "flux2-klein-4b", "references": ["/a b.png", "/c.png", "/a b.png"],
+                "preset": "portrait-medium",
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_missing_invalid_and_unknown_options() {
+        for option in [
+            "--model",
+            "--reference",
+            "--preset",
+            "--prompt",
+            "--out",
+            "--seed",
+            "--aspect-ratio",
+            "--buffer-max",
+            "--width",
+            "--height",
+        ] {
+            assert_eq!(
+                parse(&[option]).unwrap_err(),
+                format!("{option} requires a value")
+            );
+            assert_eq!(
+                parse(&[option, "--prompt", "cat"]).unwrap_err(),
+                format!("{option} requires a value")
+            );
+        }
+        for args in [
+            vec!["--width", "0"],
+            vec!["--height", "bad"],
+            vec!["--buffer-max", "0"],
+            vec!["--seed", "bad"],
+            vec!["--seed", "9007199254740992"],
+            vec!["--aspect-ratio", "7:2"],
+            vec!["--preset", "unknown"],
+            vec!["--width", "512"],
+            vec!["--preset", "portrait-medium", "--aspect-ratio", "1:1"],
+            vec![
+                "--preset",
+                "portrait-medium",
+                "--width",
+                "512",
+                "--height",
+                "512",
+            ],
+            vec!["--headless"],
+            vec!["surprise"],
+        ] {
+            assert!(parse(&args).is_err(), "accepted invalid args: {args:?}");
+        }
+    }
+
+    #[test]
+    fn tolerates_finder_serial_and_uses_ratio_size() {
+        let args = parse(&["-psn_0_123", "--aspect-ratio", "16:9"]).unwrap();
+        assert_eq!((args.width, args.height), (640, 360));
+        assert!(args.model_id.is_none());
+        assert!(args.references.is_empty());
+    }
 
     #[test]
     fn get_launch_args_uses_default_prompt_when_omitted() {
@@ -221,6 +315,9 @@ mod tests {
             buffer_max: 4,
             width: 1920,
             height: 1080,
+            model_id: None,
+            references: vec![],
+            preset: None,
         };
         let json = serde_json::to_string(&args).unwrap();
         assert!(json.contains("test prompt"));

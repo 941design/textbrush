@@ -152,6 +152,79 @@ class TestInitCommand:
         assert backend.start_generation.call_count == 1
         assert backend.start_generation.call_args.kwargs["seed"] == seed
 
+    def test_native_launch_options_reach_selected_backend(
+        self, handler, mock_server, installed_models
+    ):
+        ready_callbacks = Queue()
+        references = ["/a b.png", "/c.png", "/a b.png"]
+        backend = Mock(spec=TextbrushBackend)
+        backend.model_id = FLUX2_KLEIN_4B
+        backend.canvas = (576, 768)
+        backend.is_paused.return_value = True
+        backend.is_settled.return_value = True
+        backend.apply_configuration.return_value = Mock(
+            model_id=FLUX2_KLEIN_4B,
+            reference_count=3,
+            reference_paths=references,
+            preset="portrait-medium",
+            compatible=True,
+            incompatibility_reason=None,
+            required_model=None,
+        )
+        with (
+            patch("textbrush.ipc.handler.TextbrushBackend", return_value=backend) as constructor,
+            patch.object(handler, "_emit_model_list"),
+            patch.object(
+                handler,
+                "_init_backend",
+                side_effect=lambda ready, server: ready_callbacks.put(ready),
+            ),
+            patch.object(handler, "_start_image_delivery") as delivery,
+        ):
+            handler.handle_init(
+                {
+                    "prompt": "cat",
+                    "output_path": "/output path/cat.png",
+                    "seed": 0,
+                    "aspect_ratio": "3:4",
+                    "width": 576,
+                    "height": 768,
+                    "model_id": FLUX2_KLEIN_4B,
+                    "references": references,
+                    "preset": "portrait-medium",
+                    "buffer_max": 3,
+                },
+                mock_server,
+            )
+            constructor.assert_called_once_with(handler.config)
+            assert handler.config.model.selected_id == FLUX2_KLEIN_4B
+            assert handler.config.model.buffer_size == 3
+            ready_callbacks.get(timeout=2)()
+            backend.apply_configuration.assert_called_once_with(
+                reference_paths=references,
+                preset="portrait-medium",
+                width=576,
+                height=768,
+            )
+            backend.start_generation.assert_called_once_with(
+                prompt="cat",
+                seed=0,
+                aspect_ratio="3:4",
+                width=576,
+                height=768,
+                on_generation_start=ANY,
+                start_paused=True,
+            )
+            delivery.assert_called_once_with(mock_server, "/output path/cat.png")
+        states = [call.args[0].payload.get("state") for call in mock_server.send.call_args_list]
+        assert "awaiting_model" not in states
+
+    @pytest.mark.parametrize("buffer_max", [0, -1, True, "3"])
+    def test_init_rejects_invalid_buffer_limit(self, handler, mock_server, buffer_max):
+        with pytest.raises(ValueError, match="buffer_max must be a positive integer"):
+            handler.handle_init({"prompt": "cat", "buffer_max": buffer_max}, mock_server)
+        assert handler.backend is None
+
     def test_init_creates_backend(self, handler, mock_server, installed_models):
         """Init command creates TextbrushBackend instance."""
         payload = {
