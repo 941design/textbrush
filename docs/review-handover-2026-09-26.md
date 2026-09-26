@@ -47,7 +47,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R11 | P2 | Code-confirmed | Release deleted-image pixel memory | DONE | `7472c1b`; see detailed evidence |
 | R12 | P2 | Code-confirmed | Surface unexpected sidecar exit | PLANNED | — |
 | R13 | P2 | Reproduced | Read installed distribution version correctly | DONE | `0b5563a`; see detailed evidence |
-| R14 | P2 | Code-confirmed | Preserve desktop seed zero | PLANNED | — |
+| R14 | P2 | Reproduced | Preserve desktop seed zero | DONE | `a4b4b18`; see detailed evidence |
 | R15 | P2 | Code-confirmed; existing backlog | Honor CLI aspect ratio for reference-capable models | PLANNED | — |
 | R16 | P3 | Code-confirmed; existing backlog | Resolve generated-schema tracking policy | PLANNED | — |
 | R17 | P2 | Reproduced | Fix stale FLUX.2 test and isolate model availability | DONE | `0b5563a`; see detailed evidence |
@@ -259,7 +259,9 @@ Acceptance: version detection works from a wheel outside the checkout; mocked ne
 
 ### R14 — Preserve seed zero
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `a4b4b18` — verification below.
+
+Frontend INIT uses nullish seed handling. Four rebuilt-application tests inspect actual invoke arguments for zero, positive, null and omitted seeds; three Python handler tests execute the initialization callback and assert the seed passed to backend.start_generation. Rust transports Option<i64> directly through serde_json; backend GenerationOptions and FLUX inference use explicit None handling (worker callback `seed or 0` retains zero). `npm test`: 163 passed; `uv run pytest tests/test_ipc_handler.py -m 'not integration and not slow' -q`: 97 passed. `npm run check`, Ruff lint/format and `git diff --check` passed. No real-model tests were run.
 
 Anchor: `src-tauri/ui/main.ts:249`.
 
@@ -541,4 +543,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R14/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is now complete in `feb1ae2` (159 frontend tests and TypeScript/ESLint passed). R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is complete in `feb1ae2`; R14 is complete in `a4b4b18`. Latest checks: 163 current-source frontend tests and 97 IPC handler tests passed, plus TypeScript/ESLint and Ruff lint/format. Continue with remaining tasks without treating these focused checks as the final project-wide gate. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
