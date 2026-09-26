@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from queue import Queue
 from unittest.mock import ANY, Mock, patch
 
 import pytest
@@ -122,6 +123,34 @@ class TestInitCommand:
 
         assert handler.backend is not None
         assert isinstance(handler.backend, TextbrushBackend)
+
+    @pytest.mark.parametrize("seed", [0, 42, None])
+    def test_init_forwards_seed_to_generation(self, handler, mock_server, installed_models, seed):
+        ready_callbacks = Queue()
+        backend = Mock(spec=TextbrushBackend)
+        backend.model_id = FLUX1_SCHNELL
+        backend.references = ()
+        backend.reference_paths = ()
+        backend.preset = None
+        backend.canvas = (256, 256)
+        backend.is_paused.return_value = True
+        backend.is_settled.return_value = True
+        with (
+            patch("textbrush.ipc.handler.TextbrushBackend", return_value=backend),
+            patch.object(handler, "_emit_model_list"),
+            patch.object(
+                handler,
+                "_init_backend",
+                side_effect=lambda ready, server: ready_callbacks.put(ready),
+            ),
+            patch.object(handler, "_start_image_delivery"),
+        ):
+            handler.handle_init(
+                {"prompt": "cat", "model_id": FLUX1_SCHNELL, "seed": seed}, mock_server
+            )
+            ready_callbacks.get(timeout=2)()
+        assert backend.start_generation.call_count == 1
+        assert backend.start_generation.call_args.kwargs["seed"] == seed
 
     def test_init_creates_backend(self, handler, mock_server, installed_models):
         """Init command creates TextbrushBackend instance."""

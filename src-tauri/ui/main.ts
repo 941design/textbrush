@@ -248,7 +248,7 @@ async function init(): Promise<void> {
     await invoke('init_generation', {
       prompt: state.prompt,
       outputPath: launchArgs.output_path || null,
-      seed: launchArgs.seed || null,
+      seed: launchArgs.seed ?? null,
       aspectRatio: launchArgs.aspect_ratio || '1:1',
       width: launchArgs.width,
       height: launchArgs.height,

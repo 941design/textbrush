@@ -111,6 +111,7 @@ async function setupMain(options = {}) {
         aspect_ratio: '1:1',
         width: 256,
         height: 256,
+        ...options.launchArgs,
       };
     }
     if (cmd === 'init_generation' && options.onInit) return options.onInit(window);
@@ -468,3 +469,13 @@ test('recovery with only deletion tombstones clears stale visible images', async
   assert.equal(app.state.currentIndex, -1);
   assert.ok(document.getElementById('current-image').classList.contains('hidden'));
 });
+
+
+for (const seed of [0, 42, null, undefined]) {
+  test(`INIT preserves launch seed ${seed}`, async () => {
+    const { calls } = await setupMain({ launchArgs: { seed } });
+    const initializations = countCalls(calls, 'init_generation');
+    assert.equal(initializations.length, 1);
+    assert.equal(initializations[0].args.seed, seed ?? null);
+  });
+}
