@@ -93,8 +93,7 @@ def test_delivery_reports_failure_that_occurs_during_empty_buffer_read(sample_co
         backend.shutdown()
 
 
-@pytest.mark.parametrize("headless", [False, True])
-def test_cli_reports_original_worker_failure_before_timeout(sample_config, capsys, headless):
+def test_cli_reports_original_worker_failure_before_timeout(sample_config, capsys):
     engine = Mock()
     engine.default_sampling_settings.return_value = {}
     engine.generate.side_effect = OSError("test inference device lost")
@@ -109,9 +108,7 @@ def test_cli_reports_original_worker_failure_before_timeout(sample_config, capsy
         ),
         pytest.raises(SystemExit) as exit_info,
     ):
-        main(
-            ["--prompt", "test", "--model", "flux1-schnell"] + (["--headless"] if headless else [])
-        )
+        main(["--headless", "--prompt", "test", "--model", "flux1-schnell"])
     assert exit_info.value.code == 1
     output = capsys.readouterr()
     assert output.out == ""

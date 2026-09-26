@@ -153,11 +153,30 @@ make build
 
 ### Basic Usage
 
-Generate an image from a text prompt:
+Open the installed desktop app with a text prompt:
 
 ```bash
 uv run textbrush --prompt "a watercolor painting of a cat"
 ```
+
+The Python CLI launches the native desktop by default. It finds standard macOS
+and Linux installations, or a `textbrush-desktop` executable on PATH. For a
+custom installation or a source build, point it to the native executable:
+
+```bash
+# macOS installed app
+export TEXTBRUSH_DESKTOP="/Applications/Textbrush.app/Contents/MacOS/textbrush"
+# Source release build (after make package)
+export TEXTBRUSH_DESKTOP="$PWD/src-tauri/target/release/textbrush"
+```
+
+Do not point `TEXTBRUSH_DESKTOP` at the Python console script. The launcher waits
+for the window to close, preserving accepted-path stdout and the desktop exit
+status. It forwards `--config`, `--format`, `--verbose`, model/reference options
+and seed zero; the sidecar uses the CLI's Python environment unless
+`TEXTBRUSH_PYTHON` is set explicitly. `--preset` and `--aspect-ratio` are mutually
+exclusive. Use `--headless` to generate and save one image without a desktop
+installation; `--auto-accept` and `--auto-abort` require `--headless`.
 
 ### Desktop UI Workflow
 

@@ -4,7 +4,9 @@ Entry point when Tauri spawns: python -m textbrush.ipc
 """
 
 import logging
+import os
 import sys
+from pathlib import Path
 
 from textbrush.config import load_config
 from textbrush.ipc.handler import MessageHandler
@@ -26,7 +28,9 @@ def main():
     handler = None
     try:
         # Load configuration
-        config = load_config()
+        config_path = os.environ.get("TEXTBRUSH_CONFIG_PATH")
+        config = load_config(Path(config_path) if config_path else None)
+        logging.getLogger().setLevel(config.logging.verbosity.upper())
 
         # Create handler and server
         handler = MessageHandler(config)

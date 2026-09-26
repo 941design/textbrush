@@ -533,7 +533,7 @@ class TestMain:
         mock_create_engine.return_value = mock_engine
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["--prompt", "test"])
+            main(["--headless", "--prompt", "test"])
         assert exc_info.value.code == 0
 
     @patch("textbrush.cli.load_config")
@@ -545,7 +545,7 @@ class TestMain:
         mock_load_config.return_value = sample_config
         mock_create_engine.return_value = mock_engine
         try:
-            main(["--prompt", "test"])
+            main(["--headless", "--prompt", "test"])
         except SystemExit:
             pass
         mock_load_config.assert_called()
@@ -561,7 +561,7 @@ class TestMain:
         config_file = tmp_path / "config.toml"
         config_file.write_text("[test]\n")
         try:
-            main(["--prompt", "test", "--config", str(config_file)])
+            main(["--headless", "--prompt", "test", "--config", str(config_file)])
         except SystemExit:
             pass
         mock_load_config.assert_called()
@@ -592,7 +592,7 @@ class TestMain:
         mock_create_engine.return_value = mock_engine
 
         try:
-            main(["--prompt", "test"])
+            main(["--headless", "--prompt", "test"])
         except SystemExit:
             pass
         captured = capsys.readouterr()
@@ -625,7 +625,7 @@ class TestMain:
         mock_create_engine.return_value = mock_engine
 
         try:
-            main(["--prompt", "test"])
+            main(["--headless", "--prompt", "test"])
         except SystemExit:
             pass
         captured = capsys.readouterr()
@@ -745,7 +745,17 @@ def test_explicit_unavailable_model_never_substitutes(sample_config, tmp_path, c
         patch("textbrush.backend.TextbrushBackend") as backend_class,
         pytest.raises(SystemExit) as error,
     ):
-        main(["--prompt", "edit", "--model", "flux1-kontext-dev", "--reference", str(reference)])
+        main(
+            [
+                "--headless",
+                "--prompt",
+                "edit",
+                "--model",
+                "flux1-kontext-dev",
+                "--reference",
+                str(reference),
+            ]
+        )
     assert error.value.code == 1
     assert backend_class.call_count == 0
     output = capsys.readouterr()
@@ -787,6 +797,7 @@ class TestParserIntegration:
         try:
             main(
                 [
+                    "--headless",
                     "--prompt",
                     "test prompt",
                     "--out",
@@ -1007,6 +1018,7 @@ class TestAspectRatioIsNotANoOp:
         try:
             main(
                 [
+                    "--headless",
                     "--prompt",
                     "a cat",
                     "--out",

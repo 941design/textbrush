@@ -244,7 +244,7 @@ class TestEndToEndCLIWorkflow:
         """E2E: CLI invocation → config loading → validation → backend → output.
 
         This is the E2E scenario specified by the architect:
-        Entry: CLI command "textbrush --prompt 'test' --config custom.toml --verbose"
+        Entry: CLI command "textbrush --headless --prompt 'test' --config custom.toml --verbose"
         Flow: cli.main() → load_config() → merge_cli_args_with_config() → validate_args()
               → backend.initialize() → backend.start_generation() → backend.accept_current()
         Output: Configuration loaded with correct priority, image generated and saved
@@ -264,7 +264,16 @@ class TestEndToEndCLIWorkflow:
         # Run complete CLI workflow
         with patch("textbrush.backend.create_engine", return_value=mock_engine):
             with pytest.raises(SystemExit) as exc_info:
-                main(["--prompt", "test prompt", "--config", str(config_file), "--verbose"])
+                main(
+                    [
+                        "--headless",
+                        "--prompt",
+                        "test prompt",
+                        "--config",
+                        str(config_file),
+                        "--verbose",
+                    ]
+                )
 
             # Verify exit code (should be 0 for success)
             assert exc_info.value.code == 0
@@ -285,7 +294,7 @@ class TestEndToEndCLIWorkflow:
         """E2E: CLI with invalid args → validation error → helpful message."""
         # Run with empty prompt (validation should fail)
         with pytest.raises(SystemExit) as exc_info:
-            main(["--prompt", "  "])
+            main(["--headless", "--prompt", "  "])
 
         # Should exit with error code
         assert exc_info.value.code != 0
@@ -310,7 +319,7 @@ class TestEndToEndCLIWorkflow:
 
         # Run with negative seed
         with pytest.raises(SystemExit) as exc_info:
-            main(["--prompt", "test", "--config", str(config_file), "--seed", "-42"])
+            main(["--headless", "--prompt", "test", "--config", str(config_file), "--seed", "-42"])
 
         # Should exit with error
         assert exc_info.value.code != 0
@@ -332,6 +341,7 @@ class TestCLIGenerateIntegration:
             with pytest.raises(SystemExit) as exc_info:
                 main(
                     [
+                        "--headless",
                         "--prompt",
                         "a test image",
                         "--config",
@@ -351,7 +361,7 @@ class TestCLIGenerateIntegration:
         """Successful generation exits with code 0."""
         with patch("textbrush.backend.create_engine", return_value=mock_engine):
             with pytest.raises(SystemExit) as exc_info:
-                main(["--prompt", "test", "--config", str(config_file)])
+                main(["--headless", "--prompt", "test", "--config", str(config_file)])
 
             assert exc_info.value.code == 0
 
@@ -362,7 +372,7 @@ class TestCLIGenerateIntegration:
 
         with patch("textbrush.backend.create_engine", return_value=failing_engine):
             with pytest.raises(SystemExit) as exc_info:
-                main(["--prompt", "test", "--config", str(config_file)])
+                main(["--headless", "--prompt", "test", "--config", str(config_file)])
 
             assert exc_info.value.code == 1
 
@@ -385,7 +395,7 @@ class TestCLIGenerateIntegration:
 
         with patch("textbrush.backend.create_engine", return_value=failing_engine):
             with pytest.raises(SystemExit):
-                main(["--prompt", "test", "--config", str(config_file)])
+                main(["--headless", "--prompt", "test", "--config", str(config_file)])
 
         assert len(unload_called) > 0
 
@@ -398,6 +408,7 @@ class TestCLIGenerateIntegration:
             with pytest.raises(SystemExit) as exc_info:
                 main(
                     [
+                        "--headless",
                         "--prompt",
                         "test",
                         "--config",
@@ -418,7 +429,7 @@ class TestCLIGenerateIntegration:
         """Progress messages go to stderr, not stdout."""
         with patch("textbrush.backend.create_engine", return_value=mock_engine):
             with pytest.raises(SystemExit) as exc_info:
-                main(["--prompt", "test", "--config", str(config_file)])
+                main(["--headless", "--prompt", "test", "--config", str(config_file)])
 
             assert exc_info.value.code == 0
 

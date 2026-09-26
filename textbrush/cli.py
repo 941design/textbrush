@@ -402,80 +402,12 @@ def _wait_for_image(backend) -> None:
 
 
 def main(argv: List[str] | None = None) -> None:
-    """Main entry point for textbrush CLI.
+    """Dispatch downloads/updates, native desktop review, or headless generation.
 
-    CONTRACT:
-      Inputs:
-        - argv: command-line arguments (default: None uses sys.argv)
-          Example: ["--prompt", "a cat", "--seed", "42"]
-
-      Outputs:
-        - None (side effects: print to stdout, sys.exit with code)
-
-      Invariants:
-        - Exit code 0 + stdout path on success (generation)
-        - Exit code 0 + stderr path on success (--download-model)
-        - Exit code 1 + empty stdout on failure
-        - Exit code 2 on argument conflict (parser.error())
-        - Either --prompt or --download-model must be given (not both, not neither)
-          unless --check-updates is used (which exits early without those flags)
-        - --check-updates cannot be combined with --prompt, --download-model, or --headless
-        - Progress messages go to stderr
-        - Final output path goes to stdout (generation) or stderr (download)
-        - backend.shutdown() always called (even on error, generation path only)
-        - If --headless flag set, delegates to run_headless()
-        - Argument validation and one model resolution run before backend construction.
-          References decode once in backend.apply_configuration after initialize()
-          and before start_generation(), in both GUI and headless modes.
-
-      Properties:
-        - Configuration priority: CLI args > env vars > config file > defaults
-        - Error handling: user-facing error messages on stderr
-        - Output: success prints path to stdout (gen) or stderr (download)
-        - Cleanup: backend shutdown guaranteed via finally block
-        - Mode selection: download vs headless vs GUI based on flags
-
-      Algorithm:
-        1. Build argument parser via build_parser()
-        2. Parse arguments from argv (or sys.argv if None)
-        3. Mutual exclusivity checks (parser.error() → exit 2):
-           a. --download-model + --prompt → error
-           b. --download-model + --headless → error
-           c. neither --download-model nor --prompt → error
-        4. If --download-model:
-           a. Print license notice URL to stderr
-           b. Print "Downloading FLUX.1 schnell model (~23 GB)..." to stderr
-           c. Load config, resolve token (HF_TOKEN env var, then config.huggingface.token)
-           d. Set HF_TOKEN in env if resolved from config
-           e. Call download_model_weights(slug)
-           f. On TokenRequiredError: print instructions (HF_TOKEN, token URL) → exit 1
-           g. On other Exception: print "Download failed: ..." → exit 1
-           h. On success: print "Model downloaded successfully to: <path>" → exit 0
-        5. Determine config file path and load configuration
-        6. Validate arguments via validate_args()
-        7. If --headless flag is set:
-           a. Delegate to run_headless() with all parameters
-           b. run_headless() handles everything including exit
-        8. Otherwise (GUI mode):
-           a. Create TextbrushBackend with config
-           b. Initialize backend (load model, print "Loading model..." to stderr)
-           c. Start generation with prompt, seed, aspect_ratio
-           d. Print "Generating..." to stderr
-           e. Get next image from buffer (blocks until ready)
-           f. Determine output path (use args.out or generate automatically)
-           g. Accept and save current image
-           h. Print output path to stdout
-           i. Shutdown backend in finally block
-           j. Exit with code 0 on success
-        9. Error handling:
-           - Catch exceptions and print to stderr
-           - Call backend.shutdown() in finally
-           - Exit with code 1 on any error
-           - Never print to stdout on error
+    Desktop stdout and exit status belong to the native process. Only headless
+    generation constructs a backend here; the desktop sidecar owns its model.
     """
     parser = build_parser()
-    backend = None
-
     try:
         args = parser.parse_args(argv)
 
@@ -556,11 +488,22 @@ def main(argv: List[str] | None = None) -> None:
                 print(f"Download failed: {e}", file=sys.stderr)
                 sys.exit(1)
 
+        if (args.auto_accept or args.auto_abort) and not args.headless:
+            parser.error("--auto-accept and --auto-abort require --headless")
+        if args.preset and args.aspect_ratio:
+            parser.error("--preset cannot be combined with --aspect-ratio")
+
         validate_args(args)
 
         config_path = args.config if args.config is not None else CONFIG_PATH
         config = load_config(config_path)
         config = merge_cli_args_with_config(args, config)
+        if not args.headless:
+            from .desktop import run_desktop
+
+            run_desktop(args, config, config_path)
+            return
+
         references_paths = [str(p) for p in args.reference]
         preset = args.preset or (DEFAULT_EDITING_PRESET if references_paths else None)
 
@@ -613,51 +556,6 @@ def main(argv: List[str] | None = None) -> None:
             # run_headless() calls sys.exit(), so this line is unreachable
             return
 
-        from .backend import TextbrushBackend
-
-        backend = TextbrushBackend(config)
-
-        print("Loading model...", file=sys.stderr)
-        backend.initialize()
-
-        # T06 contract: model / references / preset are acknowledged via
-        # `apply_configuration` (the single decode-at-acknowledgement
-        # site); `start_generation` then reads them off the backend.
-        if references_paths or preset or selected_model != config.model.selected_id:
-            try:
-                ack = backend.apply_configuration(
-                    model_id=selected_model,
-                    reference_paths=references_paths,
-                    preset=preset,
-                )
-                if not ack.compatible:
-                    print(f"Error: {ack.incompatibility_reason}", file=sys.stderr)
-                    sys.exit(1)
-            except ReferenceImageError as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                sys.exit(1)
-            except Exception as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                sys.exit(1)
-
-        print("Generating...", file=sys.stderr)
-        backend.start_generation(
-            prompt=args.prompt,
-            seed=args.seed,
-            aspect_ratio=args.aspect_ratio if args.aspect_ratio else "custom",
-        )
-
-        _wait_for_image(backend)
-
-        if args.out is not None:
-            output_path = backend.accept_current(args.out)
-        else:
-            output_path = backend.accept_current()
-
-        print(str(output_path), file=sys.stdout)
-
-        sys.exit(0)
-
     except (ValueError, SystemExit) as e:
         if isinstance(e, SystemExit):
             raise
@@ -666,9 +564,6 @@ def main(argv: List[str] | None = None) -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        if backend is not None:
-            backend.shutdown()
 
 
 def run_headless(

@@ -22,7 +22,7 @@ def test_eof_cleans_delivered_previews_and_unloads(sample_config, monkeypatch):
     path = backend.save_to_preview(image)
     handler._assign_image_index(image)
     handler._current_image = image
-    monkeypatch.setattr(entry, "load_config", lambda: sample_config)
+    monkeypatch.setattr(entry, "load_config", lambda _path=None: sample_config)
     monkeypatch.setattr(entry, "MessageHandler", lambda _: handler)
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     entry.main()  # real IPCServer observes EOF
