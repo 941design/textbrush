@@ -40,7 +40,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R04 | P1 | Code-confirmed | Install frontend dependencies in release CI | PLANNED | — |
 | R05 | P1 | Code-confirmed | Bundle a portable Python runtime | PLANNED | — |
 | R06 | P2 | Code-confirmed | Resolve the CLI/desktop workflow mismatch | PLANNED | — |
-| R07 | P2 | Code-confirmed | Forward desktop model/reference launch arguments | PLANNED | — |
+| R07 | P2 | Reproduced | Forward desktop model/reference launch arguments | DONE | `8e7a908`; see detailed evidence |
 | R08 | P2 | Reproduced | Make configuration changes and image publication atomic | DONE | `52036ba`; see detailed evidence |
 | R09 | P2 | Reproduced | Encode actual JPEG output when requested | DONE | `7472c1b`; see detailed evidence |
 | R10 | P2 | Mixed: reproduced/code | Honor output path and directory overrides | DONE | `7472c1b`; see detailed evidence |
@@ -163,7 +163,10 @@ Acceptance: invoke the actual installed CLI entry point with and without `--head
 
 ### R07 — Forward desktop model/reference launch arguments
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `8e7a908` — verification below.
+
+Native parsing now forwards model, ordered duplicate references, preset and buffer capacity through LaunchArgs, the actual frontend invoke, Rust INIT serialization, and Python initialization. Named presets select their canonical dimensions; conflicting preset/ratio/dimensions are rejected, width/height must be paired, numeric values are validated, unsupported arguments fail explicitly, and Finder process-serial arguments are tolerated. Python applies buffer capacity before constructing the selected backend. Tests assert exact parser JSON, actual frontend invoke payload, production Rust IPC serialization, selected-backend startup and configuration arguments, and malformed option errors. `npm test`: 164 passed; `uv run pytest tests/test_ipc_handler.py -m 'not slow and not integration' -q`: 102 passed; `cargo test --bin textbrush`: 62 passed; TypeScript/ESLint, Ruff lint/format, Rust fmt/Clippy and `git diff --check` passed. Native options and sizing policy are documented in README. Real-model and packaged-app checks remain with R03/R05/R06/R26.
+
 
 Anchors: `src-tauri/src/launch_args.rs` (`LaunchArgs`, `parse_launch_args`, fallback at 156), `src-tauri/ui/main.ts:246`.
 
@@ -543,4 +546,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R07/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is complete in `feb1ae2`; R14 is complete in `a4b4b18`. Latest checks: 163 current-source frontend tests and 97 IPC handler tests passed, plus TypeScript/ESLint and Ruff lint/format. Continue with remaining tasks without treating these focused checks as the final project-wide gate. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. Worker tasks R08/R20/R23 are complete in `52036ba`; acceptance/output tasks R01/R09/R10/R11/R25 are complete in `7472c1b`. Continue with the remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI/launch R06/R15, lifecycle R19, R16/R18/R27/R28. Candidate cleanup R29 is complete in `fd46404` (71 focused tests passed, 1 skipped). The user resumed the overall goal after the earlier R29 stopping point. R21 is complete in `feb1ae2`; R14 is complete in `a4b4b18`. Latest checks: 163 current-source frontend tests and 97 IPC handler tests passed, plus TypeScript/ESLint and Ruff lint/format. Continue with remaining tasks without treating these focused checks as the final project-wide gate. R03 still needs model-enabled validation. Latest verification: 1,247 fast Python tests and 156 current-source frontend tests passed, plus focused final test refinements recorded above. Final Rust/platform/model gates remain open. Original macOS/Linux schema changes remain untouched. Temporary build/wheel/test-log artifacts have been removed. The overall goal is not complete.
