@@ -547,7 +547,6 @@ class TextbrushBackend:
                 model_id=candidate_model,
                 reference_ids=self.reference_ids,
             )
-            self.buffer.clear()
 
         # g. Return the ack.
         return ConfigurationAck(
@@ -1231,8 +1230,7 @@ class TextbrushBackend:
             2. Build a new GenerationOptions with the resolved
                dimensions and the existing acknowledged state.
             3. Call worker.update_config(prompt, options,
-               on_generation_start).
-            4. Clear the buffer.
+               on_generation_start), which atomically clears old buffered output.
         """
         if not self._worker:
             raise RuntimeError("No worker to update. Call start_generation() first.")
@@ -1285,7 +1283,6 @@ class TextbrushBackend:
             model_id=self.model_id,
             reference_ids=self.reference_ids,
         )
-        self.buffer.clear()
 
     def _generate_output_path(self) -> Path:
         """Generate output path for accepted image.

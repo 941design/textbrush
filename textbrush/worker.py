@@ -1,26 +1,76 @@
-"""Background worker for continuous image generation."""
+"""Background inference with atomic configuration and bounded publication."""
 
 from __future__ import annotations
 
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from textbrush.buffer import BufferedImage, ImageBuffer
 from textbrush.inference.base import GenerationOptions, InferenceEngine
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from textbrush.references import NormalizedReference
 
-# Callback type for generation start notification
-# Args: seed (int), queue_position (int)
+logger = logging.getLogger(__name__)
 OnGenerationStartCallback = Callable[[int, int], None]
 
 
-class GenerationWorker:
-    """Background worker that continuously fills buffer with generated images.
+@dataclass(frozen=True)
+class _Inputs:
+    """Owned value snapshot; mutable sampling dictionaries never cross the boundary."""
 
-    Runs in daemon thread until stopped.
+    seed: int | None
+    width: int | None
+    height: int | None
+    steps: int
+    aspect_ratio: str
+    references: tuple[NormalizedReference, ...]
+    model_id: str
+    sampling_settings: tuple[tuple[str, float | int], ...]
+
+    @classmethod
+    def capture(cls, options: GenerationOptions) -> _Inputs:
+        return cls(
+            seed=options.seed,
+            width=options.width,
+            height=options.height,
+            steps=options.steps,
+            aspect_ratio=options.aspect_ratio,
+            references=tuple(options.references),
+            model_id=options.model_id,
+            sampling_settings=tuple(options.sampling_settings.items()),
+        )
+
+    def as_options(self) -> GenerationOptions:
+        return GenerationOptions(
+            **{**vars(self), "sampling_settings": dict(self.sampling_settings)}
+        )
+
+
+@dataclass(frozen=True)
+class _Configuration:
+    prompt: str
+    inputs: _Inputs
+    epoch: int
+    model_id: str | None
+    reference_ids: tuple[str, ...]
+    on_start: OnGenerationStartCallback | None
+
+
+class GenerationWorker:
+    """Run one inference at a time, keeping at most one unpublished result.
+
+    Configuration replacement, buffer clearing, publication, and seed advancement
+    share `_changed`'s lock. Publication never waits for capacity with that lock
+    held. No old result can enter the buffer after update_config returns.
+
+    Pause allows active inference to finish. If its result cannot fit, it remains
+    pending while the worker settles; resume publishes it before doing more work.
+    Configuration replacement or stop discards a pending result. Engine replacement
+    by the backend is permitted only while the worker is paused and settled.
     """
 
     def __init__(
@@ -33,471 +83,214 @@ class GenerationWorker:
         on_settled: Callable[[], None] | None = None,
         start_paused: bool = False,
     ):
-        """Initialize worker with engine, buffer, and generation parameters.
-
-        CONTRACT:
-          Inputs:
-            - engine: InferenceEngine, must be loaded (is_loaded() = True)
-            - buffer: ImageBuffer to fill with images
-            - prompt: non-empty string, text description for generation
-            - options: GenerationOptions with seed, dimensions, steps, aspect_ratio
-            - on_generation_start: optional callback invoked before each generation
-              with (seed, queue_position) args
-            - on_settled: optional callback invoked on the worker thread
-              the first time the worker enters the pause-wait state after
-              a pause request. One fire per settle; re-armed on resume.
-            - start_paused: if True, worker starts in paused state
-
-          Outputs: none (constructs instance)
-
-          Invariants:
-            - Worker starts in stopped state
-            - Thread is not started until start() is called
-            - If start_paused=True, worker starts paused (requires resume to generate)
-
-          Properties:
-            - Non-blocking: constructor returns immediately
-            - Lazy: thread is created in start(), not __init__
-        """
         self.engine = engine
         self.buffer = buffer
-        self.prompt = prompt
-        self.options = options
-        self._on_generation_start = on_generation_start
+        self._changed = threading.Condition()
+        self._config = _Configuration(
+            prompt, _Inputs.capture(options), 0, options.model_id, (), on_generation_start
+        )
         self._on_settled = on_settled
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         if not start_paused:
-            self._pause_event.set()  # Set = running state
-        # If start_paused=True, leave _pause_event cleared (paused state)
-        self._error_lock = threading.Lock()
-        self._error: Exception | None = None
+            self._pause_event.set()
         self._settled_event = threading.Event()
         if start_paused:
             self._settled_event.set()
-        self._generation_epoch = 0
-        # Per-iteration snapshot of the acknowledged configuration. Set
-        # by update_config(); captured per generation so the BufferedImage
-        # carries the model and reference ids that produced it
-        # (AC-STATE-2 / T05 step 2).
-        self._active_model_id: str | None = None
-        self._active_reference_ids: tuple[str, ...] = ()
+        self._settle_notified = False
+        self._error: Exception | None = None
+
+    @property
+    def prompt(self) -> str:
+        with self._changed:
+            return self._config.prompt
+
+    @prompt.setter
+    def prompt(self, prompt: str) -> None:
+        with self._changed:
+            self.update_config(prompt, self.options, reference_ids=self._config.reference_ids)
+
+    @property
+    def options(self) -> GenerationOptions:
+        """Return a detached options value; updates go through update_config."""
+        with self._changed:
+            return self._config.inputs.as_options()
+
+    @property
+    def _generation_epoch(self) -> int:
+        with self._changed:
+            return self._config.epoch
 
     def start(self) -> None:
-        """Start background generation thread.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - Creates and starts daemon thread
-            - Thread begins generating images immediately
-            - After start(), is_alive() returns True
-
-          Properties:
-            - Non-blocking: returns immediately, thread runs in background
-            - Daemon thread: won't block process exit
-            - Rejects a start while already running; a new run clears the prior error
-
-          Algorithm:
-            1. Clear stop_event
-            2. Create daemon thread targeting _run()
-            3. Start thread
-        """
-        if self._thread is not None and self._thread.is_alive():
-            raise RuntimeError("Generation worker is already running")
-        self.clear_error()
-        self.buffer.reset_shutdown()
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        with self._changed:
+            if self._thread is not None and self._thread.is_alive():
+                raise RuntimeError("Generation worker is already running")
+            self._error = None
+            self.buffer.reset_shutdown()
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
 
     def stop(self) -> None:
-        """Signal worker to stop gracefully.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - Sets stop_event to signal thread to exit
-            - Calls buffer.shutdown() to unblock waiting put()
-            - After stop(), thread will exit its loop
-
-          Properties:
-            - Non-blocking: returns immediately, thread stops asynchronously
-            - Graceful: allows current generation to complete
-            - Idempotent: calling multiple times is safe
-
-          Algorithm:
-            1. Set stop_event
-            2. Call buffer.shutdown() to wake thread if blocked
-        """
-        self._stop_event.set()
-        self._pause_event.set()  # Unblock pause wait if paused
-        self.buffer.shutdown(grace_period=0.0)
+        """Stop future publication immediately; active inference may finish later."""
+        with self._changed:
+            self._stop_event.set()
+            self._pause_event.set()
+            self.buffer.shutdown(grace_period=0.0)
+            self._changed.notify_all()
 
     def pause(self) -> None:
-        """Pause generation without stopping.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - After pause(), worker blocks before starting next generation
-            - Current generation (if any) completes before pause takes effect
-            - is_paused() returns True after this call
-
-          Properties:
-            - Non-blocking: returns immediately
-            - Graceful: current generation completes
-            - Idempotent: safe to call multiple times
-
-          Algorithm:
-            1. Clear pause_event (thread will block on wait())
-        """
-        logger.info("Pausing generation")
-        self._pause_event.clear()
-        self._settled_event.clear()
+        with self._changed:
+            if self._pause_event.is_set():
+                self._pause_event.clear()
+                self._settled_event.clear()
+            self._changed.notify_all()
 
     def resume(self) -> None:
-        """Resume paused generation.
+        with self._changed:
+            self._pause_event.set()
+            self._settled_event.clear()
+            self._settle_notified = False
+            self._changed.notify_all()
 
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - After resume(), worker continues generating
-            - is_paused() returns False after this call
-
-          Properties:
-            - Non-blocking: returns immediately
-            - Idempotent: safe to call multiple times
-
-          Algorithm:
-            1. Set pause_event (unblocks waiting thread)
-        """
-        logger.info("Resuming generation")
-        self._pause_event.set()
-        self._settled_event.clear()
+    def is_paused(self) -> bool:
+        return not self._pause_event.is_set()
 
     def is_settled(self) -> bool:
         return self.is_paused() and self._settled_event.is_set()
 
-    def set_on_settled(self, callback: Callable[[], None] | None) -> None:
-        """Set (or clear) the on-settled callback.
-
-        CONTRACT:
-          Inputs:
-            - callback: a zero-arg callable to invoke from the worker
-              thread the first time it enters the pause-wait state after
-              a pause request, or None to remove a previously-set
-              callback. The callback is invoked at most once per
-              pause-then-settle cycle (re-armed by `resume`).
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - Calling with None clears the callback; the next pause
-              cycle will not fire any callback.
-
-          Properties:
-            - Thread-safe: can be called from any thread; the worker
-              reads the callback under the same in-loop check that
-              decides whether to fire it.
-        """
-        self._on_settled = callback
-
     def wait_settled(self, timeout: float | None) -> bool:
-        """Block until the worker is paused AND settled, or `timeout`
-        elapses.
-
-        CONTRACT:
-          Inputs:
-            - timeout: maximum seconds to wait; None means wait
-              indefinitely (the underlying Event.wait call).
-
-          Outputs:
-            - True: the worker is paused and settled within the
-              timeout.
-            - False: the timeout expired first.
-
-          Invariants:
-            - Returns immediately with True if already settled on entry.
-            - Idempotent: callers may invoke it more than once.
-
-          Properties:
-            - Thin wrapper around `_settled_event.wait`; the IPC
-              handler uses this to wait for quiescence before applying
-              a configuration update (T07).
-        """
         return self._settled_event.wait(timeout)
+
+    def set_on_settled(self, callback: Callable[[], None] | None) -> None:
+        with self._changed:
+            self._on_settled = callback
 
     def update_config(
         self,
         prompt: str,
-        options: "GenerationOptions",
+        options: GenerationOptions,
         on_generation_start: OnGenerationStartCallback | None = None,
         *,
         model_id: str | None = None,
         reference_ids: tuple[str, ...] = (),
     ) -> None:
-        """Update generation configuration without restarting worker.
+        """Atomically replace inputs and clear superseded buffered output.
 
-        CONTRACT:
-          Inputs:
-            - prompt: non-empty string, text description for generation
-            - options: GenerationOptions with seed, dimensions, steps,
-              aspect_ratio
-            - on_generation_start: optional callback (if None, keeps
-              existing callback)
-            - model_id: short slug of the model whose acknowledged
-              configuration this is (e.g. ``"flux2-klein-4b"``). Passed
-              into the resulting BufferedImage as session-local
-              provenance (AC-META-1). None preserves the previous value.
-            - reference_ids: session-local reference identifiers
-              minted at acknowledgement. Tuple order matches
-              `options.references` order. The empty tuple is the "no
-              references" sentinel; the default is a separate empty
-              tuple, so callers wanting to keep the existing value must
-              pass the value they want, not a None.
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - Worker thread continues running (paused or active)
-            - New config takes effect on next generation iteration
-            - Pause state is preserved
-            - `self._generation_epoch` is incremented on every call.
-              This is the S6 discard primitive: any result the worker
-              has already produced but not yet buffered when the bump
-              happens is discarded (see `_run`). A prompt-only update
-              intentionally also bumps the epoch -- it means "this
-              in-flight result was generated under a configuration the
-              caller no longer considers current," which is exactly the
-              discard semantics S6 asks for.
-
-          Properties:
-            - Thread-safe: can be called while worker is paused or running
-            - Non-blocking: returns immediately
-            - Immediate: changes are visible to worker on next iteration
-
-          Algorithm:
-            1. Update self.prompt
-            2. Update self.options
-            3. Update self._active_model_id and self._active_reference_ids
-               (None for model_id preserves the previous value; default
-               empty tuple replaces; pass an explicit tuple to set)
-            4. Bump self._generation_epoch (discard in-flight results)
-            5. If on_generation_start provided, update callback
+        None preserves the previous model ID/callback. Reference IDs are replaced
+        (empty means no references). In-flight inference continues but cannot
+        publish or advance the seed of this new configuration.
         """
-        self.prompt = prompt
-        self.options = options
-        if model_id is not None:
-            self._active_model_id = model_id
-        self._active_reference_ids = reference_ids
-        self._generation_epoch += 1
-        if on_generation_start is not None:
-            self._on_generation_start = on_generation_start
-
-    def is_paused(self) -> bool:
-        """Check if generation is paused.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs:
-            - True if paused, False if running
-
-          Properties:
-            - Thread-safe: can be called from any thread
-            - Non-blocking: returns immediately
-        """
-        return not self._pause_event.is_set()
+        with self._changed:
+            old = self._config
+            self._config = _Configuration(
+                prompt,
+                _Inputs.capture(options),
+                old.epoch + 1,
+                old.model_id if model_id is None else model_id,
+                tuple(reference_ids),
+                old.on_start if on_generation_start is None else on_generation_start,
+            )
+            self.buffer.clear()
+            self._changed.notify_all()
 
     def join(self, timeout: float | None = None) -> None:
-        """Wait for worker thread to finish.
-
-        CONTRACT:
-          Inputs:
-            - timeout: optional timeout in seconds (None = wait indefinitely)
-
-          Outputs: none
-
-          Invariants:
-            - Blocks until thread exits or timeout expires
-            - If no thread exists, returns immediately
-
-          Properties:
-            - Blocking: waits for thread to finish
-            - Timeout respected: returns after timeout even if thread still running
-        """
         if self._thread:
             self._thread.join(timeout)
 
     def get_error(self) -> Exception | None:
-        """Return the terminal error for this run, without consuming it."""
-        with self._error_lock:
+        with self._changed:
             return self._error
 
     def clear_error(self) -> None:
-        """Clear the recorded error; starting a new run also clears it."""
-        with self._error_lock:
+        with self._changed:
             self._error = None
 
-    def _run(self) -> None:
-        """Worker loop - generate images until stopped.
-
-        CONTRACT:
-          Inputs: none (internal method, called by thread)
-
-          Outputs: none (loop until stopped)
-
-          Invariants:
-            - Continuously generates images and adds to buffer
-            - Increments seed after each successful generation
-            - Stops when stop_event is set
-            - Logs generation events and errors
-            - Each generation captures the snapshot's model_id /
-              reference_ids from the worker state at generation start,
-              so the BufferedImage carries the acknowledged
-              configuration that produced it (AC-STATE-2)
-            - On epoch mismatch (config update during in-flight
-              generate), the result is discarded and the event is
-              logged at info level with both epochs (S6 discard)
-
-          Properties:
-            - Loop: runs until stop_event or unrecoverable error
-            - Seed progression: seed increments by 1 for each image
-            - Inference errors terminate the run and wake buffer consumers
-            - Blocking: respects buffer.put() blocking when buffer full
-            - The on-settled callback fires once per settle (the first
-              iteration of the pause-wait loop after a pause request)
-              and re-arms on resume.
-
-          Algorithm:
-            1. Log worker start
-            2. Loop while not stopped:
-               a. Pause-wait: while paused, set _settled_event and (on
-                  first settle of this cycle) invoke on_settled, then
-                  wait on _pause_event. Clear the "needs to fire" flag
-                  when resuming so the next pause-then-settle cycle
-                  fires again.
-               b. On resume, clear _settled_event and re-arm the
-                  settle-callback flag.
-               c. Capture current prompt, options, epoch, model_id,
-                  reference_ids (these may change during generate()).
-               d. Notify the on_generation_start callback (if set).
-               e. Call engine.generate(prompt, options).
-               f. If the epoch has moved (discard), log at info level
-                  and continue.
-               g. Otherwise build a BufferedImage carrying the snapshot
-                  and put it in the buffer.
-               h. Increment seed for next iteration.
-            3. On exception: record error, close the buffer, and terminate
-            4. Log worker stop
-        """
-        logger.info("Worker started")
-
-        try:
-            # When True, the next entry into the pause-wait loop will
-            # fire `self._on_settled`. Set when transitioning from
-            # running to paused (or at construction with start_paused
-            # so the first settle cycle still fires).
-            _settle_callback_pending = True
-
-            while not self._stop_event.is_set():
-                # Wait while paused (blocks until resumed or stopped)
-                while not self._pause_event.is_set():
-                    self._settled_event.set()
-                    if _settle_callback_pending and self._on_settled is not None:
-                        try:
-                            self._on_settled()
-                        except Exception:
-                            logger.exception("on_settled callback raised")
-                        _settle_callback_pending = False
-                    if self._stop_event.is_set():
-                        break
-                    self._pause_event.wait(timeout=0.5)
-
-                if self._stop_event.is_set():
-                    break
-                self._settled_event.clear()
-                # Re-arm so the next pause-then-settle cycle fires again.
-                _settle_callback_pending = True
-
+    def _wait_until_running(self, epoch: int | None = None) -> bool:
+        while True:
+            callback = None
+            with self._changed:
+                if self._stop_event.is_set() or (epoch is not None and epoch != self._config.epoch):
+                    return False
+                if self._pause_event.is_set():
+                    self._settled_event.clear()
+                    return True
+                self._settled_event.set()
+                if not self._settle_notified:
+                    callback = self._on_settled
+                    self._settle_notified = True
+            # Callbacks may invoke backend methods; never call them with our lock held.
+            if callback is not None:
                 try:
-                    # Capture prompt and options before generation starts.
-                    # These may be changed by update_config() during generate(),
-                    # so we need to use the values that were active at generation start.
-                    generation_prompt = self.prompt
-                    generation_options = self.options
-                    generation_epoch = self._generation_epoch
-                    generation_model_id = self._active_model_id
-                    generation_reference_ids = self._active_reference_ids
+                    callback()
+                except Exception:
+                    logger.exception("on_settled callback raised")
+            with self._changed:
+                if not self._pause_event.is_set() and not self._stop_event.is_set():
+                    self._changed.wait()
 
-                    # Notify callback before starting generation
-                    if self._on_generation_start:
-                        current_seed = generation_options.seed or 0
-                        queue_position = len(self.buffer)
-                        self._on_generation_start(current_seed, queue_position)
+    def _publish(self, snapshot: _Configuration, image: BufferedImage) -> bool:
+        """Publish once or discard. A full buffer preserves the pending output."""
+        while True:
+            with self._changed:
+                if self._stop_event.is_set() or snapshot.epoch != self._config.epoch:
+                    return False
+                if self.buffer.put(image, timeout=0):
+                    seed = snapshot.inputs.seed
+                    next_seed = (image.seed if seed is None else seed) + 1
+                    self._config = replace(
+                        self._config, inputs=replace(snapshot.inputs, seed=next_seed)
+                    )
+                    logger.debug("Generated image with seed %s", image.seed)
+                    return True
+                # Release the configuration lock during backpressure. Configuration
+                # and lifecycle notifications wake this early; consumer capacity is
+                # rechecked at most 50 ms later. No new inference starts here.
+                self._changed.wait(timeout=0.05)
+            if not self._wait_until_running(snapshot.epoch):
+                return False
 
-                    result = self.engine.generate(generation_prompt, generation_options)
-                    if self._stop_event.is_set():
-                        result.image.close()
-                        break
-
-                    # A result from the configuration that was active before an
-                    # acknowledged update must never enter the cleared buffer.
-                    if generation_epoch != self._generation_epoch:
-                        logger.info(
-                            "Discarding stale generation result: "
-                            "started under epoch=%d, current epoch=%d",
-                            generation_epoch,
-                            self._generation_epoch,
-                        )
+    def _run(self) -> None:
+        logger.info("Worker started")
+        try:
+            while self._wait_until_running():
+                with self._changed:
+                    if self._stop_event.is_set() or not self._pause_event.is_set():
                         continue
-
-                    buffered_image = BufferedImage(
+                    snapshot = self._config
+                    engine = self.engine
+                image = None
+                try:
+                    if snapshot.on_start is not None:
+                        snapshot.on_start(snapshot.inputs.seed or 0, len(self.buffer))
+                    result = engine.generate(snapshot.prompt, snapshot.inputs.as_options())
+                    image = BufferedImage(
                         image=result.image,
                         seed=result.seed,
-                        prompt=generation_prompt,
+                        prompt=snapshot.prompt,
                         model_name=result.model_name,
-                        aspect_ratio=generation_options.aspect_ratio,
+                        aspect_ratio=snapshot.inputs.aspect_ratio,
                         generated_width=result.generated_width,
                         generated_height=result.generated_height,
-                        model_id=generation_model_id,
-                        reference_ids=generation_reference_ids,
+                        model_id=snapshot.model_id,
+                        reference_ids=snapshot.reference_ids,
                     )
-
-                    put_success = self.buffer.put(buffered_image, timeout=1.0)
-
-                    if not put_success and self._stop_event.is_set():
-                        break
-
-                    logger.debug(f"Generated image with seed {result.seed}")
-
-                    next_seed = (generation_options.seed or result.seed) + 1
-                    self.options = replace(self.options, seed=next_seed)
-
-                except Exception as e:
-                    logger.error(f"Error during generation: {e}", exc_info=True)
-
-                    with self._error_lock:
-                        self._error = e
-                    # Inference errors are terminal for this run. Wake blocked
-                    # consumers even when no image was ever produced. A fresh
-                    # generation run starts with an empty error state.
-                    self._stop_event.set()
-                    self.buffer.shutdown(grace_period=0.0)
+                    if self._publish(snapshot, image):
+                        image = None  # The buffer now owns it.
+                except Exception as exc:
+                    with self._changed:
+                        if snapshot.epoch != self._config.epoch or self._stop_event.is_set():
+                            continue
+                        logger.error("Error during generation: %s", exc, exc_info=True)
+                        self._error = exc
+                        self._stop_event.set()
+                        self.buffer.shutdown(grace_period=0.0)
+                        self._changed.notify_all()
                     break
+                finally:
+                    if image is not None:
+                        image.cleanup()
+                        image.image.close()
         finally:
             logger.info("Worker stopped")

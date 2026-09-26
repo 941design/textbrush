@@ -177,6 +177,8 @@ uv run textbrush --prompt "test" --headless --auto-abort
 # 1: Aborted or error (empty stdout)
 ```
 
+Generation uses a bounded queue. When it fills, the worker retains at most one completed image and waits for space; it does not discard images or keep generating. Pausing retains that pending image until resume. A configuration change discards pending and queued output from the previous configuration.
+
 Generation waits for an image without a fixed inference deadline. Inference errors end the run and report the original error; start a new run to retry. Python backend shutdown waits for active inference to return before releasing the model, so cleanup can take as long as the current generation.
 
 Headless mode is designed for:

@@ -41,7 +41,7 @@ def test_failure_wakes_consumer_without_retry_and_fresh_run_clears_error():
 
         engine.generate.side_effect = None
         engine.generate.return_value = result()
-        worker._on_generation_start = lambda *_: worker.pause()
+        worker.update_config("prompt", worker.options, lambda *_: worker.pause())
         worker.start()
         assert buffer.get(timeout=1) is not None
         assert worker.get_error() is None
