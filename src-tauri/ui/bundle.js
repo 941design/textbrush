@@ -9066,6 +9066,7 @@ var state = {
   isPaused: false,
   // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
+  acceptInFlight: false,
   prompt: "",
   generationPrompt: "",
   aspectRatio: "1:1",
@@ -9590,6 +9591,9 @@ function handleFatalError(message) {
   }, 3e3);
 }
 function handleErrorMessage(payload) {
+  if (payload.operation === "accept") {
+    showAcceptanceError(payload.message);
+  }
   if (state.configUpdateInFlight) {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
@@ -9646,7 +9650,10 @@ async function handleImageList(payload) {
   console.log("Received image_list event with", entries.length, "entries");
   const activeEntries = entries.filter((entry) => !entry.deleted);
   if (activeEntries.length === 0) {
-    console.log("image_list: no active images, skipping rebuild");
+    state.imageList = [];
+    state.currentIndex = -1;
+    state.currentImage = null;
+    showLoadingPlaceholder();
     return;
   }
   const newImageList = [];
@@ -10196,14 +10203,23 @@ function showLoadingPlaceholder() {
   clearMetadataPanel();
   updateNavDots();
 }
+function showAcceptanceError(message) {
+  state.acceptInFlight = false;
+  enableAcceptButton();
+  if (elements.validationError) {
+    elements.validationError.textContent = `Save failed: ${message}`;
+    elements.validationError.classList.remove("hidden");
+    elements.validationError.style.display = "block";
+  }
+}
 function accept() {
-  if (elements.acceptButton && !state.isTransitioning) {
+  if (elements.acceptButton && !state.isTransitioning && !state.acceptInFlight) {
+    state.acceptInFlight = true;
     elements.acceptButton.disabled = true;
+    if (elements.validationError) elements.validationError.textContent = "";
     invoke("accept_image").catch((err) => {
       console.error("Accept failed:", err);
-      if (elements.acceptButton) {
-        elements.acceptButton.disabled = false;
-      }
+      showAcceptanceError(err instanceof Error ? err.message : String(err));
     });
   }
 }
@@ -10263,7 +10279,7 @@ function deleteCurrentImage() {
   });
 }
 function enableAcceptButton() {
-  if (elements.acceptButton) {
+  if (elements.acceptButton && !state.acceptInFlight) {
     elements.acceptButton.disabled = false;
   }
 }

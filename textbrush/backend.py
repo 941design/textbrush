@@ -67,6 +67,14 @@ class ModelUnavailableError(Exception):
         )
 
 
+class AcceptanceError(OSError):
+    """A batch stopped after zero or more committed saves; retry the same images."""
+
+    def __init__(self, cause: Exception, completed_paths: list[Path]):
+        self.completed_paths = completed_paths
+        super().__init__(str(cause))
+
+
 class ModelSwitchError(Exception):
     """The engine swap failed and was recovered by reloading the previous
     engine. The backend's active model is unchanged; the new engine's
@@ -890,7 +898,7 @@ class TextbrushBackend:
             - Current image (from buffer.peek()) is saved to disk
             - Image remains in buffer (use get_next_image() to advance)
             - If output_path is None, generates path based on seed or timestamp
-            - EXIF metadata includes aspect ratio and dimensions
+            - PNG metadata includes aspect ratio and dimensions; JPEG has no custom metadata
 
           Properties:
             - Non-blocking: returns after save completes
@@ -901,7 +909,7 @@ class TextbrushBackend:
             1. Peek at current image
             2. If no image: raise RuntimeError
             3. If output_path is None: generate path using _generate_output_path()
-            4. Save image to output_path with EXIF metadata
+            4. Commit output without overwriting an existing destination
             5. Return output_path
         """
         current = self.buffer.peek()
@@ -911,12 +919,12 @@ class TextbrushBackend:
         if output_path is None:
             output_path = self._generate_output_path()
 
-        # Save with EXIF metadata
-        self._save_with_metadata(current, output_path)
-        return output_path
+        if current.temp_path is None and current.accepted_path is None:
+            self.save_to_preview(current)
+        return self.accept_from_preview(current, output_path)
 
     def _save_with_metadata(self, buffered_image: BufferedImage, output_path: Path) -> None:
-        """Save image with EXIF metadata including dimensions and generated dimensions.
+        """Save PNG metadata or encode JPEG without custom metadata.
 
         CONTRACT:
           Inputs:
@@ -938,7 +946,7 @@ class TextbrushBackend:
 
           Properties:
             - PNG: metadata stored in tEXt chunks
-            - JPEG: metadata stored in EXIF UserComment (TODO: not yet implemented)
+            - JPEG: no custom metadata is written
             - Backward compatibility: GeneratedWidth/GeneratedHeight optional
             - If generated dimensions absent (None), Width/Height fields sufficient
 
@@ -977,11 +985,15 @@ class TextbrushBackend:
             if buffered_image.generated_height is not None:
                 pnginfo.add_text("GeneratedHeight", str(buffered_image.generated_height))
             image.save(output_path, pnginfo=pnginfo)
+        elif ext in (".jpg", ".jpeg"):
+            # JPEG has no custom metadata. It cannot encode alpha/palette modes.
+            if image.mode in ("RGB", "L", "CMYK"):
+                image.save(output_path, format="JPEG")
+            else:
+                with image.convert("RGB") as converted:
+                    converted.save(output_path, format="JPEG")
         else:
-            # For JPEG and other formats, save without custom metadata
-            # (EXIF requires piexif which is not a dependency)
-            image.save(output_path)
-            # TODO: Add EXIF support for JPEG when piexif is added as dependency
+            raise ValueError("Output filename must end in .png, .jpg, or .jpeg")
 
     def abort(self) -> None:
         """Stop generation and discard all images.
@@ -1377,109 +1389,133 @@ class TextbrushBackend:
         filename = f"{uuid.uuid4()}.png"
         preview_path = preview_dir / filename
 
-        self._save_with_metadata(buffered_image, preview_path)
+        try:
+            self._save_with_metadata(buffered_image, preview_path)
+        except Exception:
+            preview_path.unlink(missing_ok=True)
+            raise
         buffered_image.temp_path = preview_path
 
         return preview_path
 
-    def accept_from_preview(
-        self, buffered_image: BufferedImage, output_path: Path | None = None
-    ) -> Path:
-        """Move image from preview to output directory.
+    @staticmethod
+    def _publish_output(source: Path, destination: Path) -> None:
+        """Publish complete bytes without overwriting an existing destination.
 
-        CONTRACT:
-          Inputs:
-            - buffered_image: BufferedImage with temp_path set to preview file
-            - output_path: optional Path for final location (None = auto-generate)
-
-          Outputs:
-            - Path: absolute path where image was moved
-
-          Invariants:
-            - File is moved from preview to output directory
-            - Preview file no longer exists after call
-            - buffered_image.temp_path is cleared (set to None)
-
-          Properties:
-            - Atomic on same filesystem: uses rename
-            - Falls back to copy+delete if rename fails
-            - Raises RuntimeError if no temp_path set
-
-          Algorithm:
-            1. Check buffered_image.temp_path exists
-            2. If output_path is None: generate path using _generate_output_path
-            3. Move file from temp_path to output_path
-            4. Clear buffered_image.temp_path
-            5. Return output_path
+        A hard link avoids copying PNG previews on the same filesystem. On a
+        filesystem without linking, exclusive creation still protects collisions;
+        any failed copy removes only the file created by this operation.
         """
+        import errno
+        import os
         import shutil
 
-        if buffered_image.temp_path is None or not buffered_image.temp_path.exists():
-            raise RuntimeError("No preview file to accept")
-
-        if output_path is None:
-            output_path = self._generate_output_path()
-
-        # Ensure output directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Move file (rename or copy+delete)
         try:
-            buffered_image.temp_path.rename(output_path)
-        except OSError:
-            # Cross-filesystem move: copy then delete
-            shutil.copy2(buffered_image.temp_path, output_path)
-            buffered_image.temp_path.unlink()
+            os.link(source, destination)
+        except OSError as exc:
+            if exc.errno not in (errno.EXDEV, errno.EPERM, errno.ENOTSUP):
+                raise
+            target = destination.open("xb")
+            try:
+                with target:
+                    with source.open("rb") as original:
+                        shutil.copyfileobj(original, target)
+                    target.flush()
+                    os.fsync(target.fileno())
+            except BaseException:
+                destination.unlink(missing_ok=True)
+                raise
 
-        buffered_image.temp_path = None
-        return output_path
+    def accept_from_preview(
+        self,
+        buffered_image: BufferedImage,
+        output_path: Path | None = None,
+        *,
+        retain_preview: bool = False,
+    ) -> Path:
+        """Commit one image, retaining a checkpoint if preview cleanup fails.
 
-    def accept_all(self, images: list[BufferedImage], output_dir: Path | None = None) -> list[Path]:
-        """Move all delivered images from preview to output directory.
-
-        CONTRACT:
-          Inputs:
-            - images: collection of BufferedImage, each with temp_path set to preview file
-            - output_dir: optional Path to output directory (None = use config.output.directory)
-
-          Outputs:
-            - collection of Path: absolute paths where images were moved, in same order as inputs
-
-          Invariants:
-            - len(output paths) equals len(images)
-            - All preview files are moved to output directory
-            - All preview files no longer exist after call
-            - All buffered_image.temp_path fields are cleared (set to None)
-            - Order preservation: output_paths[i] corresponds to images[i]
-
-          Properties:
-            - Batch operation: moves all images in sequence
-            - Error handling: if any move fails, raises exception (partial state possible)
-            - Auto-naming: generates unique filename for each image
-            - Directory creation: ensures output directory exists
-
-          Algorithm:
-            1. Determine output_dir (use parameter or config.output.directory)
-            2. Ensure output_dir exists
-            3. Initialize empty output_paths list
-            4. For each buffered_image in images (in order):
-               a. Call accept_from_preview(buffered_image, output_path=None)
-                  - This auto-generates unique path in output_dir
-               b. Append returned path to output_paths
-            5. Return output_paths list
+        A completed save is never repeated on retry. Existing destinations are
+        rejected. PNG preview bytes and metadata are preserved; JPEG is encoded
+        in the destination directory before publication, without custom metadata.
+        The preview survives any encoding/publication failure.
         """
-        if output_dir is None:
-            output_dir = self.config.output.directory
+        import tempfile
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if buffered_image.accepted_path is None:
+            preview = buffered_image.temp_path
+            if preview is None or not preview.exists():
+                raise RuntimeError("No preview file to accept")
+            destination = (output_path or self._generate_output_path()).absolute()
+            if destination.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+                raise ValueError("Output filename must end in .png, .jpg, or .jpeg")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.suffix.lower() == ".png":
+                self._publish_output(preview, destination)
+            else:
+                with tempfile.NamedTemporaryFile(
+                    prefix=".textbrush-",
+                    suffix=destination.suffix,
+                    dir=destination.parent,
+                    delete=False,
+                ) as temporary:
+                    staging = Path(temporary.name)
+                try:
+                    self._save_with_metadata(buffered_image, staging)
+                    self._publish_output(staging, destination)
+                finally:
+                    staging.unlink(missing_ok=True)
+            # Commit before cleanup. A failed unlink must not cause a duplicate save.
+            buffered_image.accepted_path = destination
 
-        output_paths: list[Path] = []
-        for buffered_image in images:
-            # accept_from_preview will auto-generate unique path
-            path = self.accept_from_preview(buffered_image, output_path=None)
-            output_paths.append(path)
+        if not retain_preview and buffered_image.temp_path is not None:
+            buffered_image.temp_path.unlink(missing_ok=True)
+            buffered_image.temp_path = None
+        return buffered_image.accepted_path
 
-        return output_paths
+    def accept_all(
+        self,
+        images: list[BufferedImage],
+        output_dir: Path | None = None,
+        *,
+        output_path: Path | None = None,
+    ) -> list[Path]:
+        """Save in delivery order, checkpointing every successful image.
+
+        An explicit filename names the first output. Further images receive
+        -002, -003, ... before its extension; existing files are never replaced.
+        Retries reuse each image's committed path, including after partial failure.
+        """
+        import uuid
+
+        if output_dir is not None and output_path is not None:
+            raise ValueError("Specify an output directory or filename, not both")
+        directory = output_dir if output_dir is not None else self.config.output.directory
+        paths: list[Path] = []
+        try:
+            for position, image in enumerate(images, start=1):
+                if output_path is None:
+                    destination = directory / f"{uuid.uuid4()}.{self.config.output.format}"
+                elif position == 1:
+                    destination = output_path
+                else:
+                    destination = output_path.with_name(
+                        f"{output_path.stem}-{position:03d}{output_path.suffix}"
+                    )
+                if image.planned_output_path is None:
+                    image.planned_output_path = destination
+                paths.append(
+                    self.accept_from_preview(image, image.planned_output_path, retain_preview=True)
+                )
+            # Retain every preview across partial save failure so review/retry
+            # still has usable images. Cleanup only after all output commits.
+            for image in images:
+                image.cleanup()
+                image.temp_path = None
+        except Exception as exc:
+            completed = [image.accepted_path for image in images if image.accepted_path is not None]
+            raise AcceptanceError(exc, completed) from exc
+        return paths
 
     def delete_preview(self, buffered_image: BufferedImage) -> None:
         """Delete preview file for skipped image.

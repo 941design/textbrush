@@ -79,31 +79,21 @@ class BufferedImage:
     generated_height: int | None = None
     model_id: str | None = None
     reference_ids: tuple[str, ...] = ()
+    planned_output_path: Path | None = None
+    accepted_path: Path | None = None  # Session checkpoint, never persisted as metadata.
 
     def cleanup(self) -> None:
-        """Delete temporary file if it exists.
+        """Release temporary storage and decoded pixels, retaining only metadata.
 
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (modifies filesystem)
-
-          Invariants:
-            - After cleanup(), temp_path file does not exist (if temp_path was set)
-            - If temp_path is None, no operation performed
-            - If temp_path file doesn't exist, no error raised
-
-          Properties:
-            - Idempotent: safe to call multiple times
-            - Safe: uses missing_ok=True to handle non-existent files
-            - Side effect: deletes file from filesystem
-
-          Algorithm:
-            1. If temp_path is None: return immediately
-            2. Call temp_path.unlink(missing_ok=True)
+        Pixel ownership ends even if unlink fails. The path is retained so a
+        later cleanup can retry; accepted output paths are never deleted here.
+        Pillow close is idempotent, as is unlink with missing_ok.
         """
-        if self.temp_path is not None:
-            self.temp_path.unlink(missing_ok=True)
+        try:
+            if self.temp_path is not None:
+                self.temp_path.unlink(missing_ok=True)
+        finally:
+            self.image.close()
 
     def __enter__(self) -> "BufferedImage":
         """Enter context manager.

@@ -291,6 +291,5 @@ class GenerationWorker:
                 finally:
                     if image is not None:
                         image.cleanup()
-                        image.image.close()
         finally:
             logger.info("Worker stopped")

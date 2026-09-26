@@ -150,6 +150,10 @@ uv run textbrush --prompt "a serene mountain landscape" --out output.png
 # Abort: exits with code 1 (empty stdout)
 ```
 
+Acceptance saves images in delivery order. If a save fails, completed files are reported and retained; retry finishes the remaining saves without duplicating them. Previews remain available across partial save failures. Delivery waits during acceptance and resumes if saving fails.
+
+`--out image.png` names the first image; additional images use `image-002.png`, `image-003.png`, and so on. Existing files are never overwritten. The filename extension chooses PNG or JPEG; without `--out`, the configured output directory and format apply. PNG retains generation metadata. JPEG is encoded as JPEG, converts unsupported pixel modes to RGB, and does not include custom metadata or reference provenance.
+
 The UI provides:
 - **Real-time buffer status**: Visual indicator showing how many images are ready to review
 - **Smooth transitions**: GPU-accelerated animations between images (<100ms skip latency)
@@ -274,7 +278,7 @@ For detailed technical guides and troubleshooting, see [docs/](docs/).
 
 ## TODO / Future Ideas
 
-- [ ] **JPEG output with EXIF metadata** - Support JPEG as well as PNG. Add a radio button group next to control buttons to toggle output format. Add corresponding CLI parameters. Default to PNG. For JPEG, use EXIF for metadata storage.
+- [ ] **JPEG metadata and desktop format selector** - JPEG encoding and CLI format selection are supported. EXIF metadata and a desktop format selector remain future work.
 
 - [ ] **Daemon mode for local models** - Since startup time is relatively high due to model loading, consider optionally running the service as a daemon for local models. This pairs well with pluggable model support.
 

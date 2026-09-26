@@ -103,6 +103,8 @@ export interface DeleteAckMessage {
 // (e.g. "No images to accept", "Backend not initialized", "Prompt cannot be empty")
 // Fatal errors are delivered via state_changed with state="error" instead.
 export interface ErrorPayload {
+  operation?: string;
+  saved_paths?: string[];
   message: string;
   fatal: boolean;
   cause?: string | null;
@@ -247,6 +249,7 @@ export interface AppState {
   backendState: BackendState | null;  // null until first state_changed event received from backend
   isPaused: boolean;           // DEPRECATED: Will be removed, use backendState.state === "paused"
   isTransitioning: boolean;
+  acceptInFlight: boolean;
   prompt: string;
   generationPrompt: string;    // Prompt currently being used for generation (from backendState.prompt)
   aspectRatio: string;

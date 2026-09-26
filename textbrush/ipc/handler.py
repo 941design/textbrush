@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 
 from textbrush.backend import (
     FatalModelError,
@@ -114,6 +115,10 @@ class MessageHandler:
         self._action_event = threading.Event()
         self._state_lock = threading.Lock()  # Protects _current_image and _delivered_images access
         self._delivered_images: list[BufferedImage] = []  # Backend-owned list of delivered images
+        self._delivery_lock = threading.Lock()  # Preview publication / acceptance ownership.
+        self._accepting = False
+        self._session_closed = False
+        self._output_path: Path | None = None
         self._next_index = 0  # Monotonic counter for image indices
         self._image_index_map: dict[int, BufferedImage] = {}  # Maps index → BufferedImage
         self._deleted_indices: set[int] = set()  # Tracks soft-deleted indices
@@ -511,100 +516,60 @@ class MessageHandler:
         self._signal_action()
 
     def handle_accept(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle ACCEPT command: move all delivered images to output and report paths.
+        """Save a fully published batch; retain all ownership on failure.
 
-        CONTRACT:
-          Inputs:
-            - server: IPCServer instance for sending events
-
-          Outputs: none (moves all preview files, sends event, exits process)
-
-          Invariants:
-            - If no delivered images: sends non-fatal ERROR event
-            - If delivered_images non-empty: moves all from preview to output directory
-            - ACCEPTED event sent with all absolute paths where images were moved
-            - delivered_images list is cleared after successful save
-            - Image delivery thread is NOT signaled (process will exit)
-
-          Properties:
-            - Blocking: waits for all file moves to complete
-            - Error handling: sends non-fatal ERROR if no images or move fails
-            - Batch operation: all delivered images saved in one operation
-            - Order preservation: paths in ACCEPTED event match delivery order
-            - Terminal: process exits after this (no need to signal delivery thread)
-
-          Algorithm:
-            1. Acquire state lock
-            2. Check if delivered_images is empty or backend is None
-            3. If empty: send non-fatal ERROR event "No images to accept", return
-            4. Copy delivered_images to local variable
-            5. Clear delivered_images list
-            6. Release lock
-            7. Try:
-               a. Call backend.accept_all(images)
-               b. Get list of absolute paths returned
-               c. Create display_paths list using display_path() for each
-               d. Send ACCEPTED event with paths and display_paths
-               e. Log success
-            8. Catch exceptions:
-               a. Log error
-               b. Send non-fatal ERROR event
-            9. Do NOT signal delivery thread (process will exit via Rust handler)
+        Delivery waits during acceptance. On failure it resumes; committed images
+        retain backend checkpoints so the next attempt never saves them twice.
+        Success closes publication before releasing the delivery lock.
         """
         from textbrush.ipc.protocol import AcceptedEvent, ErrorEvent
 
         with self._state_lock:
-            # Build list of non-deleted images in delivery order (viewing order)
-            images_to_accept = [
-                self._image_index_map[idx]
-                for idx in self._delivery_order
-                if idx in self._image_index_map and idx not in self._deleted_indices
-            ]
-
-            if not images_to_accept or not self.backend:
+            if self._accepting or self._session_closed:
+                return
+            self._accepting = True
+        try:
+            with self._delivery_lock:
+                with self._state_lock:
+                    images = [
+                        self._image_index_map[idx]
+                        for idx in self._delivery_order
+                        if idx in self._image_index_map and idx not in self._deleted_indices
+                    ]
+                if not images or self.backend is None:
+                    raise ValueError("No images to accept")
+                paths = self.backend.accept_all(images, output_path=self._output_path)
+                with self._state_lock:
+                    self._session_closed = True
+                    self._image_index_map.clear()
+                    self._deleted_indices.clear()
+                    self._delivery_order.clear()
+                    self._delivered_images.clear()
+                    self._current_image = None
                 server.send(
                     Message(
-                        MessageType.ERROR,
-                        dataclass_to_dict(ErrorEvent(message="No images to accept", fatal=False)),
+                        MessageType.ACCEPTED,
+                        dataclass_to_dict(
+                            AcceptedEvent(
+                                paths=[str(p.absolute()) for p in paths],
+                                display_paths=[display_path(p) for p in paths],
+                            )
+                        ),
                     )
                 )
-                return
-
-            # Clear state after successful collection (backend no longer owns these)
-            self._image_index_map.clear()
-            self._deleted_indices.clear()
-            self._delivery_order.clear()
-            self._delivered_images.clear()  # Keep for compatibility
-
-        try:
-            # Batch save all delivered images
-            paths = self.backend.accept_all(images_to_accept)
-            display_paths = [display_path(p) for p in paths]
-
-            logger.info(f"Accepted {len(paths)} images")
-            for p in display_paths:
-                logger.info(f"  - {p}")
-
-            server.send(
-                Message(
-                    MessageType.ACCEPTED,
-                    dataclass_to_dict(
-                        AcceptedEvent(
-                            paths=[str(p.absolute()) for p in paths],
-                            display_paths=display_paths,
-                        )
-                    ),
+        except Exception as exc:
+            saved = [str(p.absolute()) for p in getattr(exc, "completed_paths", [])]
+            message = str(exc)
+            if saved:
+                message = (
+                    f"Saved {len(saved)} image(s); retry to finish the remaining saves. {message}"
                 )
-            )
-        except Exception as e:
-            logger.error(f"Failed to accept images: {e}")
-            server.send(
-                Message(
-                    MessageType.ERROR, dataclass_to_dict(ErrorEvent(message=str(e), fatal=False))
-                )
-            )
-
-        # Do NOT signal action - process will exit after ACCEPTED event
+            payload = dataclass_to_dict(ErrorEvent(message=message, fatal=False))
+            payload.update(operation="accept", saved_paths=saved)
+            server.send(Message(MessageType.ERROR, payload))
+        finally:
+            with self._state_lock:
+                self._accepting = False
 
     def handle_abort(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle ABORT command: stop generation, delete all delivered images, cleanup.
@@ -641,14 +606,16 @@ class MessageHandler:
             7. Send ABORTED event
             8. Trigger server shutdown (server.shutdown())
         """
-        with self._state_lock:
-            # Get all images for cleanup (including deleted ones that still have temp files)
-            images_to_cleanup = list(self._image_index_map.values())
-            self._image_index_map.clear()
-            self._deleted_indices.clear()
-            self._delivered_images.clear()  # Keep for compatibility
-            self._generation_started = False
-            self._pending_startup_config = None
+        with self._delivery_lock:
+            self._session_closed = True
+            with self._state_lock:
+                # Get all images for cleanup (including deleted ones that still have temp files)
+                images_to_cleanup = list(self._image_index_map.values())
+                self._image_index_map.clear()
+                self._deleted_indices.clear()
+                self._delivered_images.clear()  # Keep for compatibility
+                self._generation_started = False
+                self._pending_startup_config = None
 
         # Delete all delivered images temp files
         for buffered_image in images_to_cleanup:
@@ -1205,6 +1172,8 @@ class MessageHandler:
         """
         from textbrush.ipc.protocol import ImageReadyEvent
 
+        self._output_path = Path(output_path) if output_path is not None else None
+
         def deliver_loop():
             logger.info("Image delivery loop started")
             while True:
@@ -1226,34 +1195,30 @@ class MessageHandler:
                         logger.info("No more images, delivery loop ending")
                         break
 
-                    index = self._assign_image_index(buffered)
-
-                    with self._state_lock:
-                        self._current_image = buffered
-
-                    logger.info(f"Image ready: index={index}, seed={buffered.seed}")
-
-                    # Save to preview directory with full metadata in PNG tEXt chunks
-                    preview_path = self.backend.save_to_preview(buffered)
-                    logger.info(f"Saved preview: {display_path(preview_path)}")
-
-                    server.send(
-                        Message(
-                            MessageType.IMAGE_READY,
-                            dataclass_to_dict(
-                                ImageReadyEvent(
-                                    index=index,
-                                    path=str(preview_path.absolute()),
-                                    display_path=display_path(preview_path),
-                                )
-                            ),
+                    with self._delivery_lock:
+                        if self._session_closed:
+                            buffered.cleanup()
+                            break
+                        # Only a complete preview may enter the acceptance index.
+                        preview_path = self.backend.save_to_preview(buffered)
+                        index = self._assign_image_index(buffered)
+                        with self._state_lock:
+                            self._current_image = buffered
+                        server.send(
+                            Message(
+                                MessageType.IMAGE_READY,
+                                dataclass_to_dict(
+                                    ImageReadyEvent(
+                                        index=index,
+                                        path=str(preview_path.absolute()),
+                                        display_path=display_path(preview_path),
+                                    )
+                                ),
+                            )
                         )
-                    )
-
-                    if self.backend.is_paused():
-                        self._emit_state_changed(server, "paused")
-                    else:
-                        self._emit_state_changed(server, "idle")
+                        self._emit_state_changed(
+                            server, "paused" if self.backend.is_paused() else "idle"
+                        )
 
                 except Exception as e:
                     logger.error(f"Image delivery error: {e}")

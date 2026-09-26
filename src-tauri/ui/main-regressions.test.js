@@ -113,6 +113,7 @@ async function setupMain(options = {}) {
         height: 256,
       };
     }
+    if (cmd === 'accept_image' && options.failAccept) throw new Error('Dispatch failed');
     if (cmd === 'update_generation_config' && failConfigUpdates) {
       throw new Error('Simulated config update failure');
     }
@@ -329,4 +330,53 @@ describe('Main UI regression tests', () => {
     assert.strictEqual(decreaseBtn.disabled, true, 'decrease button matches rolled-back size');
     assert.strictEqual(increaseBtn.disabled, false, 'increase button matches rolled-back size');
   });
+});
+
+
+describe('Acceptance recovery', () => {
+  test('prevents overlapping accepts and restores retry after asynchronous save error', async () => {
+    const { window, document, calls } = await setupMain();
+    const app = window.textbrushApp;
+    app.showLoading(false);
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    await Promise.resolve();
+    assert.equal(countCalls(calls, 'accept_image').length, 1);
+    assert.equal(document.getElementById('accept-btn').disabled, true);
+    app.handleMessage({type: 'error', payload: {
+      operation: 'accept', message: 'Disk full; one image saved', fatal: false,
+      saved_paths: ['/output/first.png'],
+    }});
+    assert.equal(document.getElementById('accept-btn').disabled, false);
+    assert.match(document.getElementById('validation-error').textContent, /Disk full/);
+    assert.equal(document.getElementById('validation-error').style.display, 'block');
+    document.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    await Promise.resolve();
+    assert.equal(countCalls(calls, 'accept_image').length, 2);
+  });
+});
+
+
+test('accept invoke rejection restores retry and shows a visible error', async () => {
+  const { window, document, calls } = await setupMain({failAccept: true});
+  window.textbrushApp.accept();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(document.getElementById('accept-btn').disabled, false);
+  assert.match(document.getElementById('validation-error').textContent, /Dispatch failed/);
+  window.textbrushApp.accept();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(countCalls(calls, 'accept_image').length, 2);
+});
+
+test('recovery with only deletion tombstones clears stale visible images', async () => {
+  const { window, document } = await setupMain();
+  const app = window.textbrushApp;
+  app.state.imageList = [{index: 0, path: '/old.png'}];
+  app.state.currentIndex = 0;
+  app.handleMessage({type: 'image_list', payload: {images: [
+    {index: 0, deleted: true, path: '', display_path: ''},
+  ]}});
+  assert.deepEqual(app.state.imageList, []);
+  assert.equal(app.state.currentIndex, -1);
+  assert.ok(document.getElementById('current-image').classList.contains('hidden'));
 });

@@ -40,6 +40,7 @@ const state: AppState = {
   backendState: null,  // null until first state_changed(loading) event arrives from backend
   isPaused: false,  // DEPRECATED - kept for compatibility, use backendState.state === "paused"
   isTransitioning: false,
+  acceptInFlight: false,
   prompt: '',
   generationPrompt: '',
   aspectRatio: '1:1',
@@ -754,6 +755,9 @@ function handleFatalError(message: string): void {
  * Non-fatal errors display a transient notification in the loading prompt area.
  */
 function handleErrorMessage(payload: ErrorPayload): void {
+  if (payload.operation === 'accept') {
+    showAcceptanceError(payload.message);
+  }
   if (state.configUpdateInFlight) {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
@@ -826,8 +830,11 @@ async function handleImageList(payload: ImageListPayload): Promise<void> {
   const activeEntries = entries.filter(entry => !entry.deleted);
 
   if (activeEntries.length === 0) {
-    // Empty list is a no-op — normal startup case
-    console.log('image_list: no active images, skipping rebuild');
+    // Recovery is authoritative, including when the last retained image was deleted.
+    state.imageList = [];
+    state.currentIndex = -1;
+    state.currentImage = null;
+    showLoadingPlaceholder();
     return;
   }
 
@@ -1574,14 +1581,24 @@ function showLoadingPlaceholder(): void {
   updateNavDots();
 }
 
+function showAcceptanceError(message: string): void {
+  state.acceptInFlight = false;
+  enableAcceptButton();
+  if (elements.validationError) {
+    elements.validationError.textContent = `Save failed: ${message}`;
+    elements.validationError.classList.remove('hidden');
+    elements.validationError.style.display = 'block';
+  }
+}
+
 function accept(): void {
-  if (elements.acceptButton && !state.isTransitioning) {
+  if (elements.acceptButton && !state.isTransitioning && !state.acceptInFlight) {
+    state.acceptInFlight = true;
     elements.acceptButton.disabled = true;
-    invoke('accept_image').catch(err => {
+    if (elements.validationError) elements.validationError.textContent = '';
+    invoke('accept_image').catch((err: unknown) => {
       console.error('Accept failed:', err);
-      if (elements.acceptButton) {
-        elements.acceptButton.disabled = false;
-      }
+      showAcceptanceError(err instanceof Error ? err.message : String(err));
     });
   }
 }
@@ -1661,7 +1678,7 @@ function deleteCurrentImage(): void {
 }
 
 function enableAcceptButton(): void {
-  if (elements.acceptButton) {
+  if (elements.acceptButton && !state.acceptInFlight) {
     elements.acceptButton.disabled = false;
   }
 }
