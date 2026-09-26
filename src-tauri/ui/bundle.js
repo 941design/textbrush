@@ -9137,7 +9137,7 @@ var imageReadyQueue = Promise.resolve();
 var pendingDisplayRequest = null;
 var recoveryAttempted = false;
 var initPromise = null;
-var messageListenerInitialized = false;
+var messageUnlisten = null;
 var buttonListenersInitialized = false;
 var keyboardListenersInitialized = false;
 var pauseCommandInFlight = false;
@@ -9204,76 +9204,81 @@ async function init() {
   }
   initPromise = (async () => {
     console.log("Textbrush UI initializing...");
-    try {
-      initTheme();
-      initFontSize();
-      cacheElements();
-      if (!allElementsPresent()) {
-        const missing = Object.entries(elements).filter(([, el]) => el === null).map(([key]) => key);
-        console.error("Missing DOM elements:", missing);
-        throw new Error(`Missing DOM elements: ${missing.join(", ")}`);
-      }
-      console.log("DOM elements cached, getting launch args...");
-      const launchArgs = await invoke("get_launch_args");
-      console.log("Launch args received:", launchArgs);
-      state.prompt = launchArgs.prompt || "";
-      state.generationPrompt = launchArgs.prompt || "";
-      state.aspectRatio = launchArgs.aspect_ratio || "1:1";
-      state.outputPath = launchArgs.output_path || null;
-      if (elements.promptDisplay) {
-        elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
-      }
-      state.width = launchArgs.width;
-      state.height = launchArgs.height;
-      initConfigControls(
-        state.prompt,
-        state.aspectRatio,
-        launchArgs.width,
-        launchArgs.height,
-        state,
-        elements,
-        claimOutputSizeChange
-      );
-      setupMessageListener();
-      setupButtonListeners();
-      setupKeyboardListeners();
-      setupEditingControls();
-      renderEditingControls();
-      updatePauseButton();
-      await invoke("init_generation", {
-        prompt: state.prompt,
-        outputPath: launchArgs.output_path || null,
-        seed: launchArgs.seed || null,
-        aspectRatio: launchArgs.aspect_ratio || "1:1",
-        width: launchArgs.width,
-        height: launchArgs.height,
-        modelId: launchArgs.model_id ?? null,
-        references: launchArgs.references ?? null,
-        preset: launchArgs.preset ?? null
-      });
-      console.log("Application initialized successfully");
-    } catch (error) {
-      console.error("Initialization failed:", error);
-      if (elements.loadingPrompt) {
-        elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
-      }
+    initTheme();
+    initFontSize();
+    cacheElements();
+    if (!allElementsPresent()) {
+      const missing = Object.entries(elements).filter(([, el]) => el === null).map(([key]) => key);
+      console.error("Missing DOM elements:", missing);
+      throw new Error(`Missing DOM elements: ${missing.join(", ")}`);
     }
-  })();
+    console.log("DOM elements cached, getting launch args...");
+    const launchArgs = await invoke("get_launch_args");
+    console.log("Launch args received:", launchArgs);
+    state.prompt = launchArgs.prompt || "";
+    state.generationPrompt = launchArgs.prompt || "";
+    state.aspectRatio = launchArgs.aspect_ratio || "1:1";
+    state.outputPath = launchArgs.output_path || null;
+    if (elements.promptDisplay) {
+      elements.promptDisplay.textContent = `Prompt: ${state.prompt}`;
+    }
+    state.width = launchArgs.width;
+    state.height = launchArgs.height;
+    initConfigControls(
+      state.prompt,
+      state.aspectRatio,
+      launchArgs.width,
+      launchArgs.height,
+      state,
+      elements,
+      claimOutputSizeChange
+    );
+    if (elements.loadingPrompt) elements.loadingPrompt.textContent = "";
+    await setupMessageListener();
+    setupButtonListeners();
+    setupKeyboardListeners();
+    setupEditingControls();
+    renderEditingControls();
+    updatePauseButton();
+    await invoke("init_generation", {
+      prompt: state.prompt,
+      outputPath: launchArgs.output_path || null,
+      seed: launchArgs.seed || null,
+      aspectRatio: launchArgs.aspect_ratio || "1:1",
+      width: launchArgs.width,
+      height: launchArgs.height,
+      modelId: launchArgs.model_id ?? null,
+      references: launchArgs.references ?? null,
+      preset: launchArgs.preset ?? null
+    });
+    console.log("Application initialized successfully");
+  })().catch((error) => {
+    initPromise = null;
+    console.error("Initialization failed:", error);
+    if (elements.loadingPrompt) {
+      showLoading(true);
+      elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Retry initialization";
+      retry.addEventListener("click", () => {
+        retry.disabled = true;
+        void init();
+      }, { once: true });
+      elements.loadingPrompt.append(retry);
+    }
+  });
   return initPromise;
 }
-function setupMessageListener() {
-  if (messageListenerInitialized) {
-    return;
-  }
-  messageListenerInitialized = true;
-  console.log("Setting up sidecar message listener...");
-  listen("sidecar-message", (event) => {
-    const msg = event.payload;
-    console.log("Received sidecar message:", msg.type, msg);
-    handleMessage(msg);
-  }).catch((err) => {
-    console.error("Failed to setup message listener:", err);
+async function setupMessageListener() {
+  if (messageUnlisten) return;
+  messageUnlisten = await listen("sidecar-message", (event) => {
+    handleMessage(event.payload);
   });
+  window.addEventListener("pagehide", () => {
+    messageUnlisten?.();
+    messageUnlisten = null;
+  }, { once: true });
 }
 function activeReferencePaths() {
   return state.pendingReferences ?? state.references;

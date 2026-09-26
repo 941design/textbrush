@@ -113,6 +113,7 @@ async function setupMain(options = {}) {
         height: 256,
       };
     }
+    if (cmd === 'init_generation' && options.onInit) return options.onInit(window);
     if (cmd === 'accept_image' && options.failAccept) throw new Error('Dispatch failed');
     if (cmd === 'update_generation_config' && failConfigUpdates) {
       throw new Error('Simulated config update failure');
@@ -120,9 +121,13 @@ async function setupMain(options = {}) {
     return null;
   }, { shouldMockEvents: true });
 
+  if (options.wrapInvoke) {
+    window.__TAURI_INTERNALS__.invoke = options.wrapInvoke(window.__TAURI_INTERNALS__.invoke);
+  }
+
   const modUrl = new URL(`./bundle.js?test=${Date.now()}-${Math.random()}`, import.meta.url);
   await import(modUrl.href);
-  await window.textbrushApp?.init();
+  if (!options.skipInitWait) await window.textbrushApp?.init();
 
   return { dom, window, document, calls };
 }
@@ -130,6 +135,89 @@ async function setupMain(options = {}) {
 function countCalls(calls, cmd) {
   return calls.filter((entry) => entry.cmd === cmd);
 }
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+test('INIT waits for subscription and observes immediate backend state', async () => {
+  const registration = deferred();
+  const started = deferred();
+  let subscriptions = 0;
+  let removals = 0;
+  const { window, calls } = await setupMain({
+    skipInitWait: true,
+    wrapInvoke: invoke => async (cmd, args) => {
+      if (cmd === 'plugin:event|listen') {
+        subscriptions++;
+        started.resolve();
+        await registration.promise;
+      }
+      if (cmd === 'plugin:event|unlisten') removals++;
+      return invoke(cmd, args);
+    },
+    onInit: window => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {
+      event: 'sidecar-message',
+      payload: { type: 'state_changed', payload: { state: 'awaiting_model', settled: true } },
+    }),
+  });
+  await started.promise;
+  const parallelInit = window.textbrushApp.init();
+  assert.equal(countCalls(calls, 'init_generation').length, 0);
+  registration.resolve();
+  await parallelInit;
+  assert.equal(window.textbrushApp.state.backendState.state, 'awaiting_model');
+  await window.textbrushApp.init();
+  assert.equal(subscriptions, 1);
+  assert.equal(countCalls(calls, 'init_generation').length, 1);
+  window.dispatchEvent(new window.Event('pagehide'));
+  await Promise.resolve();
+  assert.equal(removals, 1);
+});
+
+test('subscription failure shows a retry action without starting the backend', async () => {
+  let subscriptions = 0;
+  const { window, document, calls } = await setupMain({
+    wrapInvoke: invoke => async (cmd, args) => {
+      if (cmd === 'plugin:event|listen' && ++subscriptions === 1) {
+        throw new Error('Subscription unavailable');
+      }
+      return invoke(cmd, args);
+    },
+  });
+  assert.equal(countCalls(calls, 'init_generation').length, 0);
+  assert.match(document.getElementById('loading-prompt').textContent, /Subscription unavailable/);
+  const retry = document.querySelector('#loading-prompt button');
+  assert.ok(retry);
+  retry.click();
+  await window.textbrushApp.init();
+  assert.equal(subscriptions, 2);
+  assert.equal(countCalls(calls, 'init_generation').length, 1);
+  assert.equal(document.querySelector('#loading-prompt button'), null);
+  await window.textbrushApp.init();
+  assert.equal(subscriptions, 2);
+});
+
+test('retry after INIT rejection reuses the existing subscription', async () => {
+  let subscriptions = 0;
+  let attempts = 0;
+  const { window, document } = await setupMain({
+    wrapInvoke: invoke => async (cmd, args) => {
+      if (cmd === 'plugin:event|listen') subscriptions++;
+      return invoke(cmd, args);
+    },
+    onInit: () => {
+      if (++attempts === 1) throw new Error('Backend unavailable');
+    },
+  });
+  assert.match(document.getElementById('loading-prompt').textContent, /Backend unavailable/);
+  document.querySelector('#loading-prompt button').click();
+  await window.textbrushApp.init();
+  assert.equal(attempts, 2);
+  assert.equal(subscriptions, 1);
+});
 
 /**
  * Put the app in the state it reaches once a text-only model has been

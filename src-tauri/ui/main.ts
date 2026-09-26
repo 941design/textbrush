@@ -7,7 +7,7 @@ import * as FontSizeManager from './font-size-manager';
 import * as ListManager from './list-manager';
 import * as ButtonFlash from './button-flash';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { fetchAndParsePngMetadata } from './png-metadata';
 import {
@@ -117,7 +117,7 @@ let pendingDisplayRequest: { record: ImageRecord; listIdx: number | null } | nul
 // Recovery guard: prevent duplicate get_image_list invocations per session
 let recoveryAttempted = false;
 let initPromise: Promise<void> | null = null;
-let messageListenerInitialized = false;
+let messageUnlisten: UnlistenFn | null = null;
 let buttonListenersInitialized = false;
 let keyboardListenersInitialized = false;
 let pauseCommandInFlight = false;
@@ -189,8 +189,7 @@ async function init(): Promise<void> {
   }
 
   initPromise = (async () => {
-  console.log('Textbrush UI initializing...');
-  try {
+    console.log('Textbrush UI initializing...');
     // Initialize theme and font size before DOM manipulation
     ThemeManager.initTheme();
     FontSizeManager.initFontSize();
@@ -235,8 +234,10 @@ async function init(): Promise<void> {
       claimOutputSizeChange
     );
 
+    if (elements.loadingPrompt) elements.loadingPrompt.textContent = '';
+
     // Setup event listeners
-    setupMessageListener();
+    await setupMessageListener();
     setupButtonListeners();
     setupKeyboardListeners();
     setupEditingControls();
@@ -257,32 +258,38 @@ async function init(): Promise<void> {
     });
 
     console.log('Application initialized successfully');
-  } catch (error) {
+  })().catch((error: unknown) => {
+    initPromise = null;
     console.error('Initialization failed:', error);
     if (elements.loadingPrompt) {
+      showLoading(true);
       elements.loadingPrompt.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Retry initialization';
+      retry.addEventListener('click', () => {
+        retry.disabled = true;
+        void init();
+      }, { once: true });
+      elements.loadingPrompt.append(retry);
     }
-  }
-  })();
+  });
 
   return initPromise;
 }
 
 // Message Event Listener
-function setupMessageListener(): void {
-  if (messageListenerInitialized) {
-    return;
-  }
-  messageListenerInitialized = true;
+async function setupMessageListener(): Promise<void> {
+  if (messageUnlisten) return;
 
-  console.log('Setting up sidecar message listener...');
-  listen<SidecarMessage>('sidecar-message', (event) => {
-    const msg = event.payload;
-    console.log('Received sidecar message:', msg.type, msg);
-    handleMessage(msg);
-  }).catch(err => {
-    console.error('Failed to setup message listener:', err);
+  // INIT can emit immediately; subscription must be acknowledged first.
+  messageUnlisten = await listen<SidecarMessage>('sidecar-message', (event) => {
+    handleMessage(event.payload);
   });
+  window.addEventListener('pagehide', () => {
+    messageUnlisten?.();
+    messageUnlisten = null;
+  }, { once: true });
 }
 
 function activeReferencePaths(): string[] {
