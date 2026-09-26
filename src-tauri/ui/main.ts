@@ -122,6 +122,7 @@ let buttonListenersInitialized = false;
 let keyboardListenersInitialized = false;
 let pauseCommandInFlight = false;
 let desiredPausedState: boolean | null = null;
+let abortExitScheduled = false;
 
 function isBackendStatePaused(stateValue: string): boolean | null {
   if (stateValue === 'paused') {
@@ -917,6 +918,9 @@ async function handleAccepted(payload: AcceptedPayload): Promise<void> {
 }
 
 function handleAborted(): void {
+  if (abortExitScheduled) return;
+  abortExitScheduled = true;
+  state.isTransitioning = true;
   setTimeout(() => {
     void (async () => {
       try {
@@ -1617,9 +1621,10 @@ function abort(): void {
     return;
   }
 
+  state.isTransitioning = true;
   invoke('abort_generation').catch(err => {
     console.error('Abort failed:', err);
-  });
+  }).finally(handleAborted);
 }
 
 function togglePause(): void {

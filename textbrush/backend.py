@@ -6,6 +6,7 @@ Orchestrates model loading, generation workflow, and image buffer management.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -1332,7 +1333,7 @@ class TextbrushBackend:
           Inputs: none
 
           Outputs:
-            - Path: absolute path to preview directory (.preview/ under output dir)
+            - Path: desktop session preview directory, or .preview/ under output dir
 
           Invariants:
             - Preview directory exists after call
@@ -1348,7 +1349,12 @@ class TextbrushBackend:
             3. Create directory if it doesn't exist
             4. Return path
         """
-        preview_dir = self.config.output.directory / ".preview"
+        session_preview_dir = os.environ.get("TEXTBRUSH_PREVIEW_DIR")
+        preview_dir = (
+            Path(session_preview_dir)
+            if session_preview_dir
+            else self.config.output.directory / ".preview"
+        )
         preview_dir.mkdir(parents=True, exist_ok=True)
         return preview_dir
 

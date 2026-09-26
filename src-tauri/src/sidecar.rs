@@ -20,7 +20,49 @@ pub struct IpcMessage {
 pub struct Sidecar {
     process: Arc<Mutex<Child>>,
     expected_exit: Arc<AtomicBool>,
+    preview_dir: Arc<tempfile::TempDir>,
+    group_terminated: Arc<AtomicBool>,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
+}
+
+/// A writable pipe handle that does not keep the child or session alive.
+pub struct SidecarSender {
+    stdin: Arc<Mutex<std::process::ChildStdin>>,
+}
+
+impl SidecarSender {
+    pub fn send(&self, message: &IpcMessage) -> Result<(), String> {
+        let json = serde_json::to_string(message).map_err(|e| e.to_string())?;
+        let mut stdin = self.stdin.lock().map_err(|e| e.to_string())?;
+        writeln!(stdin, "{json}").map_err(|e| format!("Failed to write to stdin: {e}"))?;
+        stdin
+            .flush()
+            .map_err(|e| format!("Failed to flush stdin: {e}"))
+    }
+}
+
+/// Kill the session's process group at most once, including launcher children.
+fn terminate_group(child: &mut Child, terminated: &AtomicBool) -> std::io::Result<()> {
+    if terminated.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        // spawn() made the child a new group leader; negative pid targets only
+        // that group. No shell interpolation or caller-provided pid is involved.
+        let result = unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        child.kill()
+    }
 }
 
 impl Sidecar {
@@ -55,13 +97,27 @@ impl Sidecar {
     ///     4. Extract stdin handle and wrap in Arc<Mutex<>>
     ///     5. Return Sidecar instance with process and stdin
     pub fn spawn(python_path: &str, args: &[&str]) -> Result<Self, String> {
-        let mut process = Command::new(python_path)
+        let preview_dir = Arc::new(
+            tempfile::Builder::new()
+                .prefix("textbrush-preview-")
+                .tempdir()
+                .map_err(|e| format!("Failed to create session preview directory: {e}"))?,
+        );
+        let mut command = Command::new(python_path);
+        command
             .args(args)
+            .env("TEXTBRUSH_PREVIEW_DIR", preview_dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let mut process = command
             .spawn()
-            .map_err(|e| format!("Failed to spawn process: {}", e))?;
+            .map_err(|e| format!("Failed to spawn process: {e}"))?;
 
         let stdin = process
             .stdin
@@ -71,54 +127,16 @@ impl Sidecar {
         Ok(Self {
             process: Arc::new(Mutex::new(process)),
             expected_exit: Arc::new(AtomicBool::new(false)),
+            preview_dir,
+            group_terminated: Arc::new(AtomicBool::new(false)),
             stdin: Arc::new(Mutex::new(stdin)),
         })
     }
 
-    /// Send JSON message to sidecar via stdin (thread-safe).
-    ///
-    /// CONTRACT:
-    ///   Inputs:
-    ///     - message: IpcMessage to send
-    ///
-    ///   Outputs:
-    ///     - Result<(), String>: Ok on success, error message on failure
-    ///
-    ///   Invariants:
-    ///     - Message is serialized to JSON
-    ///     - JSON string is written to stdin followed by newline
-    ///     - stdin is flushed immediately
-    ///     - Write operation is atomic (protected by mutex)
-    ///
-    ///   Properties:
-    ///     - Thread-safe: can be called concurrently from multiple threads
-    ///     - Blocking: waits for mutex lock and I/O
-    ///     - Newline-delimited: each message is a single line
-    ///     - Error handling: returns Result with error description
-    ///
-    ///   Algorithm:
-    ///     1. Serialize message to JSON string
-    ///     2. Acquire stdin mutex lock
-    ///     3. Write JSON string + newline to stdin
-    ///     4. Flush stdin
-    ///     5. Release mutex lock
-    ///     6. Return Ok or Err with error message
-    pub fn send(&self, message: &IpcMessage) -> Result<(), String> {
-        let json = serde_json::to_string(message)
-            .map_err(|e| format!("Failed to serialize message: {}", e))?;
-
-        let mut stdin = self
-            .stdin
-            .lock()
-            .map_err(|e| format!("Failed to acquire stdin lock: {}", e))?;
-
-        writeln!(stdin, "{}", json).map_err(|e| format!("Failed to write to stdin: {}", e))?;
-
-        stdin
-            .flush()
-            .map_err(|e| format!("Failed to flush stdin: {}", e))?;
-
-        Ok(())
+    pub fn sender(&self) -> SidecarSender {
+        SidecarSender {
+            stdin: Arc::clone(&self.stdin),
+        }
     }
 
     /// Forward complete JSON lines, then reap the child and report unexpected EOF.
@@ -137,6 +155,21 @@ impl Sidecar {
             .expect("stdout was already taken");
         let process = Arc::clone(&self.process);
         let expected_exit = Arc::clone(&self.expected_exit);
+        let preview_dir = Arc::clone(&self.preview_dir);
+        let group_terminated = Arc::clone(&self.group_terminated);
+        // A launcher can exit while its child still holds stdout open. Reap
+        // the leader independently so inherited pipes cannot hide its exit.
+        let monitor_process = Arc::clone(&self.process);
+        let monitor_group = Arc::clone(&self.group_terminated);
+        std::thread::spawn(move || loop {
+            let mut child = monitor_process.lock().unwrap();
+            if !matches!(child.try_wait(), Ok(None)) {
+                let _ = terminate_group(&mut child, &monitor_group);
+                break;
+            }
+            drop(child);
+            std::thread::sleep(Duration::from_millis(20));
+        });
         std::thread::spawn(move || {
             let mut read_error = false;
             for line in BufReader::new(stdout).lines() {
@@ -164,8 +197,7 @@ impl Sidecar {
                     Ok(Some(status)) => break Ok(status),
                     Err(error) => break Err(error.to_string()),
                     Ok(None) if Instant::now() >= deadline => {
-                        break child
-                            .kill()
+                        break terminate_group(&mut child, &group_terminated)
                             .and_then(|()| child.wait())
                             .map_err(|e| e.to_string());
                     }
@@ -174,6 +206,7 @@ impl Sidecar {
                 drop(child);
                 std::thread::sleep(Duration::from_millis(10));
             };
+            let _ = std::fs::remove_dir_all(preview_dir.path());
             if !expected_exit.load(Ordering::SeqCst) {
                 let reason = match outcome {
                     Ok(status) => format!("Backend connection closed unexpectedly ({status})."),
@@ -198,18 +231,47 @@ impl Sidecar {
         });
     }
 
+    /// Give ABORT a bounded chance to finish, then kill/reap and remove only
+    /// this session's previews. A blocked stdin writer cannot extend the bound.
+    pub fn shutdown(&mut self, grace: Duration) -> Result<(), String> {
+        self.expected_exit.store(true, Ordering::SeqCst);
+        let stdin = Arc::clone(&self.stdin);
+        std::thread::spawn(move || {
+            if let Ok(mut pipe) = stdin.lock() {
+                let _ = writeln!(pipe, "{{\"type\":\"abort\",\"payload\":null}}");
+                let _ = pipe.flush();
+            }
+        });
+        let deadline = Instant::now() + grace;
+        loop {
+            if self
+                .process
+                .lock()
+                .map_err(|e| e.to_string())?
+                .try_wait()
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.kill()
+    }
+
     /// Intentional termination is idempotent and always reaps the child.
     pub fn kill(&mut self) -> Result<(), String> {
         self.expected_exit.store(true, Ordering::SeqCst);
         let mut child = self.process.lock().map_err(|e| e.to_string())?;
-        if child.try_wait().map_err(|e| e.to_string())?.is_none() {
-            child
-                .kill()
-                .map_err(|e| format!("Failed to kill process: {e}"))?;
-        }
+        terminate_group(&mut child, &self.group_terminated)
+            .map_err(|e| format!("Failed to kill process group: {e}"))?;
         child
             .wait()
             .map_err(|e| format!("Failed to reap process: {e}"))?;
+        let _ = std::fs::remove_dir_all(self.preview_dir.path());
         Ok(())
     }
 }
@@ -317,6 +379,129 @@ mod tests {
         }
     }
 
+    #[test]
+    fn shutdown_allows_cleanup_then_reaps_and_removes_session_only() {
+        let retained = tempfile::tempdir().unwrap();
+        let marker = retained.path().join("saved output.png");
+        let script = r#"
+import json, os, pathlib, sys, time
+pathlib.Path(sys.argv[1]).write_text('accepted output')
+preview = pathlib.Path(os.environ['TEXTBRUSH_PREVIEW_DIR']) / 'preview.png'
+preview.write_text('preview')
+print(json.dumps({'type': 'ready', 'payload': {}}), flush=True)
+assert json.loads(sys.stdin.readline())['type'] == 'abort'
+time.sleep(0.1)
+preview.unlink()
+print(json.dumps({'type': 'aborted', 'payload': {}}), flush=True)
+"#;
+        let mut sidecar =
+            Sidecar::spawn("python3", &["-c", script, marker.to_str().unwrap()]).unwrap();
+        let directory = sidecar.preview_dir.path().to_path_buf();
+        let pid = sidecar.process.lock().unwrap().id();
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).unwrap();
+        });
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)).unwrap().msg_type,
+            "ready"
+        );
+        sidecar.shutdown(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)).unwrap().msg_type,
+            "aborted"
+        );
+        assert!(sidecar
+            .process
+            .lock()
+            .unwrap()
+            .try_wait()
+            .unwrap()
+            .unwrap()
+            .success());
+        assert!(!directory.exists());
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "accepted output");
+        #[cfg(unix)]
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn shutdown_deadline_survives_blocked_stdin_and_cleans_previews() {
+        let script = r#"
+import json, os, pathlib, time
+(pathlib.Path(os.environ['TEXTBRUSH_PREVIEW_DIR']) / 'preview.png').write_text('preview')
+print(json.dumps({'type': 'ready', 'payload': {}}), flush=True)
+time.sleep(60)
+"#;
+        let mut sidecar = Sidecar::spawn("python3", &["-c", script]).unwrap();
+        let directory = sidecar.preview_dir.path().to_path_buf();
+        let pid = sidecar.process.lock().unwrap().id();
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let stdin = Arc::clone(&sidecar.stdin);
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            let mut pipe = stdin.lock().unwrap();
+            locked_tx.send(()).unwrap();
+            let _ = pipe.write_all(&vec![b'x'; 1_000_000]);
+        });
+        locked_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let start = Instant::now();
+        sidecar.shutdown(Duration::from_millis(200)).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(2));
+        writer.join().unwrap();
+        assert!(!directory.exists());
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(2)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        #[cfg(unix)]
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn crash_removes_private_previews_before_reporting_error() {
+        let script = "import os,pathlib; (pathlib.Path(os.environ['TEXTBRUSH_PREVIEW_DIR'])/'preview.png').write_text('preview')";
+        let mut sidecar = Sidecar::spawn("python3", &["-c", script]).unwrap();
+        let directory = sidecar.preview_dir.path().to_path_buf();
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).unwrap();
+        });
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)).unwrap().msg_type,
+            "error"
+        );
+        assert!(!directory.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launcher_exit_does_not_leave_descendant_holding_stdout() {
+        let script = r#"
+import subprocess, sys, json
+subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+print(json.dumps({'type': 'ready', 'payload': {}}), flush=True)
+"#;
+        let mut sidecar = Sidecar::spawn("python3", &["-c", script]).unwrap();
+        let (tx, rx) = mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).unwrap();
+        });
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(3)).unwrap().msg_type,
+            "ready"
+        );
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(3)).unwrap().msg_type,
+            "error"
+        );
+        assert!(!sidecar.preview_dir.path().exists());
+    }
+
     fn python_echo_script() -> &'static str {
         r#"
 import sys
@@ -359,7 +544,7 @@ while True:
                 payload: serde_json::json!(payload_value),
             };
 
-            let result = sidecar.send(&message);
+            let result = sidecar.sender().send(&message);
             prop_assert!(result.is_ok());
 
             let _ = sidecar.kill();
@@ -414,7 +599,7 @@ while True:
             payload: serde_json::json!({"key": "value"}),
         };
 
-        let result = sidecar.send(&message);
+        let result = sidecar.sender().send(&message);
         assert!(result.is_ok());
 
         std::thread::sleep(Duration::from_millis(100));
@@ -436,7 +621,7 @@ while True:
                     msg_type: format!("msg_{}", i),
                     payload: serde_json::json!(i),
                 };
-                sidecar_clone.send(&message)
+                sidecar_clone.sender().send(&message)
             });
             handles.push(handle);
         }
@@ -610,7 +795,7 @@ for i in range(5):
             }),
         };
 
-        let send_result = sidecar.send(&test_message);
+        let send_result = sidecar.sender().send(&test_message);
         assert!(send_result.is_ok());
 
         let received = rx.recv_timeout(Duration::from_secs(2));

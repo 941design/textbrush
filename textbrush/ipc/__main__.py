@@ -42,9 +42,9 @@ def main():
         sys.exit(1)
     finally:
         # Ensure backend resources are cleaned up
-        if handler and handler.backend:
+        if handler:
             try:
-                handler.backend.shutdown()
+                handler.shutdown()
                 logger.info("Backend shutdown complete")
             except Exception as e:
                 logger.error(f"Backend shutdown error: {e}")

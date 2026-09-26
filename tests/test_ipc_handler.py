@@ -615,14 +615,14 @@ class TestAcceptCommand:
 class TestAbortCommand:
     """Property-based tests for ABORT command handling."""
 
-    def test_abort_calls_backend_abort(self, handler, mock_server):
-        """Abort command calls backend.abort if backend exists."""
+    def test_abort_shuts_down_backend(self, handler, mock_server):
+        """Abort settles and unloads the backend before acknowledgement."""
         mock_backend = Mock(spec=TextbrushBackend)
         handler.backend = mock_backend
 
         handler.handle_abort(mock_server)
 
-        mock_backend.abort.assert_called_once()
+        mock_backend.shutdown.assert_called_once()
 
     def test_abort_sends_aborted_event(self, handler, mock_server):
         """Abort command sends ABORTED event."""

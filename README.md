@@ -75,6 +75,14 @@ Seeds must fit JavaScript's exact integer range (−9007199254740991 through
 9007199254740991); zero is preserved. Model capabilities and reference validity
 are checked by the backend. Python CLI flags are a separate interface.
 
+Desktop abort and window close give the backend five seconds to finish cleanup,
+then terminate and reap it if needed. Abort adds a short (500 ms) UI exit delay.
+Each desktop session keeps previews in its own temporary directory, removed on
+normal exit or a backend crash; accepted output files remain in the chosen output
+directory. Shutdown waits for any active model load or inference inside Python;
+the desktop enforces the process deadline. Headless Python keeps its existing
+`.preview` location under the output directory.
+
 ## Requirements
 
 - **Python 3.11+** - For running the inference backend

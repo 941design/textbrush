@@ -1,50 +1,29 @@
-// Exit handlers for CLI contract compliance
-//
-// Provides Tauri commands for controlled application exit with proper stdout handling
-// and exit codes as required by the CLI specification.
+// Exit commands settle the sidecar before publishing the CLI exit contract.
+use crate::commands::AppState;
+use tauri::State;
 
-/// Print multiple accepted image paths to stdout and exit with success code.
-///
-/// CONTRACT:
-///   Inputs:
-///     - paths: Vector of file path strings (absolute or relative) to saved images
-///
-///   Outputs:
-///     - Prints each path to stdout, one per line
-///     - Process exits with code 0 (success) if paths non-empty
-///     - Process exits with code 1 (failure) if paths empty (no images to accept)
-///
-///   Invariants:
-///     - Each path is printed exactly as provided (no modification)
-///     - Paths separated by newlines (one path per line)
-///     - Stdout is flushed before exit (ensures output visible)
-///     - Exit code is 0 if paths.len() > 0, else 1
-///     - No other output to stdout (no logging, no extra formatting)
-///
-///   Properties:
-///     - Newline-separated: each path on its own line
-///     - Order preserved: paths printed in same order as input vector
-///     - Empty handling: empty vector exits with code 1 (same as abort)
-///     - Backward compatible: single-element vector behaves like print_and_exit
-///     - CLI contract: satisfies multi-path output requirement
-///
-///   Algorithm:
-///     1. Check if paths.is_empty()
-///     2. If yes: call std::process::exit(1) (nothing to accept)
-///     3. For each path in paths:
-///        a. Call println!("{}", path)
-///     4. Call std::process::exit(0) to terminate with success code
-///
-/// IMPLEMENTATION GUIDANCE:
-///   - Use for loop over paths vector
-///   - Use println! for each path (automatically newline-separated)
-///   - Exit code 1 if empty (no images = abort scenario)
-///   - Exit code 0 if at least one path printed
-///   - Mark as #[tauri::command] for IPC registration
 #[tauri::command]
-pub fn print_paths_and_exit(paths: Vec<String>) {
+pub async fn print_paths_and_exit(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    if let Err(error) = state.shutdown() {
+        eprintln!("Backend shutdown failed: {error}");
+    }
+    exit_with_paths(paths);
+}
+
+#[tauri::command]
+pub async fn abort_exit(state: State<'_, AppState>) -> Result<(), String> {
+    if let Err(error) = state.shutdown() {
+        eprintln!("Backend shutdown failed: {error}");
+    }
+    exit_abort();
+}
+
+fn exit_with_paths(paths: Vec<String>) -> ! {
     if paths.is_empty() {
-        std::process::exit(1);
+        exit_abort();
     }
     for path in paths {
         println!("{}", path);
@@ -52,34 +31,7 @@ pub fn print_paths_and_exit(paths: Vec<String>) {
     std::process::exit(0);
 }
 
-/// Exit process with abort code (non-zero).
-///
-/// CONTRACT:
-///   Inputs: None
-///
-///   Outputs:
-///     - No output to stdout (empty stdout)
-///     - Process exits with code 1 (failure/abort)
-///
-///   Invariants:
-///     - Exit code is always 1 (failure)
-///     - No stdout output (silent exit)
-///     - No stderr output (quiet abort)
-///
-///   Properties:
-///     - Synchronous: immediately exits
-///     - Terminal: does not return (process terminates)
-///     - CLI contract: satisfies "no output, exit non-zero" requirement for abort
-///
-///   Algorithm:
-///     1. Call std::process::exit(1) to terminate with failure code
-///
-/// IMPLEMENTATION GUIDANCE:
-///   - Use std::process::exit(1) directly
-///   - No println! or eprintln! (must be silent)
-///   - Mark as #[tauri::command] for IPC registration
-#[tauri::command]
-pub fn abort_exit() {
+fn exit_abort() -> ! {
     std::process::exit(1);
 }
 
@@ -94,10 +46,10 @@ mod tests {
     #[ignore]
     fn exit_probe() {
         match std::env::var("TEXTBRUSH_EXIT_TEST_CASE").unwrap().as_str() {
-            "abort" => abort_exit(),
-            "empty" => print_paths_and_exit(vec![]),
-            "single" => print_paths_and_exit(vec!["/tmp/a path.png".into()]),
-            "multiple" => print_paths_and_exit(vec![
+            "abort" => exit_abort(),
+            "empty" => exit_with_paths(vec![]),
+            "single" => exit_with_paths(vec!["/tmp/a path.png".into()]),
+            "multiple" => exit_with_paths(vec![
                 "/tmp/z last.png".into(),
                 "/tmp/ä first.png".into(),
                 "/tmp/z last.png".into(),
@@ -105,7 +57,6 @@ mod tests {
             ]),
             _ => panic!("unknown exit scenario"),
         }
-        panic!("exit handler returned");
     }
 
     #[test]

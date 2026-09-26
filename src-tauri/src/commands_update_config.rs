@@ -37,7 +37,7 @@ use tauri::{command, State};
 ///        a. Create IpcMessage:
 ///           - msg_type: "update_config"
 ///           - payload: JSON object with prompt, dimensions, model, references, preset
-///        b. Send message via sidecar.send()
+///        b. Send message via sidecar.sender().send()
 ///        c. Return Ok or Err from send operation
 ///     3. If no sidecar:
 ///        a. Return Err("No sidecar running")
@@ -54,26 +54,19 @@ pub async fn update_generation_config(
     references: Option<Vec<String>>,
     preset: Option<String>,
 ) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "update_config".to_string(),
-            payload: serde_json::json!({
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "width": width,
-                "height": height,
-                "model_id": model_id,
-                "references": references,
-                "preset": preset,
-            }),
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+    let message = IpcMessage {
+        msg_type: "update_config".to_string(),
+        payload: serde_json::json!({
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+            "model_id": model_id,
+            "references": references,
+            "preset": preset,
+        }),
+    };
+    state.send(&message)
 }
 
 #[cfg(test)]
@@ -81,7 +74,6 @@ mod tests {
     use super::*;
     use crate::sidecar::Sidecar;
     use std::sync::mpsc;
-    use std::sync::Mutex;
     use std::time::Duration;
 
     fn python_echo_script() -> &'static str {
@@ -100,9 +92,7 @@ while True:
 
     #[test]
     fn update_generation_config_returns_error_when_no_sidecar() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let sidecar_guard = state.sidecar.lock().unwrap();
         let result = if sidecar_guard.is_none() {
@@ -117,9 +107,7 @@ while True:
 
     #[test]
     fn update_generation_config_sends_update_config_message_when_sidecar_exists() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -144,7 +132,10 @@ while True:
                     "aspect_ratio": test_aspect_ratio,
                 }),
             };
-            sidecar.send(&message).expect("Send should succeed");
+            sidecar
+                .sender()
+                .send(&message)
+                .expect("Send should succeed");
         }
         drop(sidecar_guard);
 
@@ -166,9 +157,7 @@ while True:
 
     #[test]
     fn update_generation_config_accepts_valid_aspect_ratios() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -193,7 +182,7 @@ while True:
                         "aspect_ratio": ratio,
                     }),
                 };
-                let result = sidecar.send(&message);
+                let result = sidecar.sender().send(&message);
                 assert!(
                     result.is_ok(),
                     "Failed to send message with aspect ratio: {}",
@@ -227,7 +216,6 @@ mod proptests {
     use crate::sidecar::Sidecar;
     use proptest::prelude::*;
     use std::sync::mpsc;
-    use std::sync::Mutex;
     use std::time::Duration;
 
     fn python_echo_script() -> &'static str {
@@ -281,9 +269,7 @@ while True:
             prompt in "[a-zA-Z0-9 ,.!?'-]{1,200}",
             aspect_ratio in prop::sample::select(vec!["1:1", "16:9", "9:16"])
         ) {
-            let state = AppState {
-                sidecar: Mutex::new(None),
-            };
+            let state = AppState::default();
 
             let script = python_echo_script();
             let mut sidecar = Sidecar::spawn("python3", &["-c", script])
@@ -305,7 +291,7 @@ while True:
                         "aspect_ratio": &aspect_ratio,
                     }),
                 };
-                let result = sidecar.send(&message);
+                let result = sidecar.sender().send(&message);
                 prop_assert!(result.is_ok());
             }
             drop(sidecar_guard);

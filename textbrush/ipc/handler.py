@@ -115,6 +115,8 @@ class MessageHandler:
         self._action_event = threading.Event()
         self._state_lock = threading.Lock()  # Protects _current_image and _delivered_images access
         self._delivered_images: list[BufferedImage] = []  # Backend-owned list of delivered images
+        self._lifecycle_lock = threading.Lock()
+        self._shutdown_complete = False
         self._delivery_lock = threading.Lock()  # Preview publication / acceptance ownership.
         self._accepting = False
         self._session_closed = False
@@ -575,61 +577,41 @@ class MessageHandler:
             with self._state_lock:
                 self._accepting = False
 
-    def handle_abort(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle ABORT command: stop generation, delete all delivered images, cleanup.
+    def shutdown(self) -> None:
+        """Close publication, clean delivered previews and settle/unload the backend.
 
-        CONTRACT:
-          Inputs:
-            - server: IPCServer instance for sending events
-
-          Outputs: none (stops backend, deletes temp files, sends event)
-
-          Invariants:
-            - If backend exists: backend.abort() is called
-            - All delivered_images temp files are deleted
-            - delivered_images list is cleared
-            - All generation stops
-            - Buffer is cleared
-            - ABORTED event is sent
-            - Server shutdown is triggered
-
-          Properties:
-            - Blocking: waits for backend.abort() and file deletions to complete
-            - Comprehensive cleanup: deletes all delivered_images temp files
-            - Terminal: server will exit after this command
-            - Idempotent: safe to call even if no backend exists
-
-          Algorithm:
-            1. Acquire state lock
-            2. Copy delivered_images to local variable
-            3. Clear delivered_images list
-            4. Release lock
-            5. For each buffered_image in copied list:
-               a. Call buffered_image.cleanup() to delete temp file
-            6. If backend exists: call backend.abort() (blocks - clears buffer)
-            7. Send ABORTED event
-            8. Trigger server shutdown (server.shutdown())
+        Shutdown waits for model initialization and inference; the desktop owns
+        the deadline and can terminate the process if either operation stalls.
         """
         with self._delivery_lock:
-            self._session_closed = True
             with self._state_lock:
-                # Get all images for cleanup (including deleted ones that still have temp files)
-                images_to_cleanup = list(self._image_index_map.values())
+                self._session_closed = True
+                images = list(self._image_index_map.values())
                 self._image_index_map.clear()
                 self._deleted_indices.clear()
-                self._delivered_images.clear()  # Keep for compatibility
+                self._delivery_order.clear()
+                self._delivered_images.clear()
+                self._current_image = None
                 self._generation_started = False
                 self._pending_startup_config = None
+        for buffered in images:
+            try:
+                buffered.cleanup()
+            except OSError:
+                logger.exception("Failed to remove a delivered preview during shutdown")
+        with self._lifecycle_lock:
+            if not self._shutdown_complete:
+                if self.backend:
+                    self.backend.shutdown()
+                self._shutdown_complete = True
 
-        # Delete all delivered images temp files
-        for buffered_image in images_to_cleanup:
-            buffered_image.cleanup()
-
-        if self.backend:
-            self.backend.abort()
-
-        server.send(Message(MessageType.ABORTED))
-        server.shutdown()
+    def handle_abort(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+        """Acknowledge abort only after cleanup; always stop reading commands."""
+        try:
+            self.shutdown()
+            server.send(Message(MessageType.ABORTED))
+        finally:
+            server.shutdown()
 
     def handle_status(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Handle STATUS command: deprecated (buffer status removed).
@@ -1317,7 +1299,13 @@ class MessageHandler:
 
         return None
 
-    def _init_backend(self, on_ready, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
+    def _init_backend(self, on_ready, server) -> None:
+        with self._lifecycle_lock:
+            if self._session_closed:
+                return
+            self._load_backend(on_ready, server)
+
+    def _load_backend(self, on_ready, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
         """Load model in background and call ready callback.
 
         Helper for handle_init. Runs in background thread.
@@ -1453,7 +1441,8 @@ class MessageHandler:
             logger.info("Initializing backend (loading model)...")
             self.backend.initialize()
             logger.info("Backend initialized successfully")
-            on_ready()
+            if not self._session_closed:
+                on_ready()
         except Exception as e:
             logger.error(f"Backend init failed: {e}", exc_info=True)
             self._emit_state_changed(server, "error", message=str(e), fatal=True)

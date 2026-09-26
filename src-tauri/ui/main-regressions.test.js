@@ -361,3 +361,33 @@ test('sidecar crash event replaces loading with a visible fatal error', async (t
   await Promise.resolve();
   assert.equal(countCalls(calls, 'plugin:window|close').length, 1);
 });
+
+
+test('abort exits after command completion without requiring ABORTED', async (t) => {
+  const { window, calls } = await setupMain();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  window.textbrushApp.abort();
+  window.textbrushApp.abort();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(countCalls(calls, 'abort_generation').length, 1);
+  t.mock.timers.tick(500);
+  await Promise.resolve();
+  assert.equal(countCalls(calls, 'abort_exit').length, 1);
+  window.textbrushApp.handleMessage({ type: 'aborted', payload: {} });
+  t.mock.timers.tick(500);
+  await Promise.resolve();
+  assert.equal(countCalls(calls, 'abort_exit').length, 1);
+});
+
+test('abort command failure still invokes the exit cleanup path', async (t) => {
+  const { window, calls } = await setupMain({
+    wrapInvoke: invoke => (cmd, args) => cmd === 'abort_generation'
+      ? Promise.reject(new Error('Backend already gone')) : invoke(cmd, args),
+  });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  window.textbrushApp.abort();
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(500);
+  await Promise.resolve();
+  assert.equal(countCalls(calls, 'abort_exit').length, 1);
+});

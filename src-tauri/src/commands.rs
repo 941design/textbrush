@@ -32,8 +32,35 @@ impl InitPayload {
     }
 }
 
+#[derive(Default)]
 pub struct AppState {
     pub sidecar: Mutex<Option<Sidecar>>,
+    pub closing: std::sync::atomic::AtomicBool,
+}
+
+impl AppState {
+    pub fn send(&self, message: &IpcMessage) -> Result<(), String> {
+        let sender = {
+            let guard = self.sidecar.lock().map_err(|e| e.to_string())?;
+            if self.closing.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Application is closing".into());
+            }
+            guard.as_ref().ok_or("No sidecar running")?.sender()
+        };
+        // Never hold application ownership while writing a potentially full pipe.
+        sender.send(message)
+    }
+
+    pub fn shutdown(&self) -> Result<(), String> {
+        self.closing
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        // Serialize competing close/abort/accept exits until cleanup is complete.
+        let mut guard = self.sidecar.lock().map_err(|e| e.to_string())?;
+        if let Some(mut sidecar) = guard.take() {
+            sidecar.shutdown(std::time::Duration::from_secs(5))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(any(test, not(debug_assertions)))]
@@ -101,45 +128,7 @@ fn resolve_release_python_command() -> (String, Vec<String>) {
     )
 }
 
-/// Initialize backend and start generation.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing optional Sidecar
-///     - window: Tauri Window for emitting events to UI
-///     - prompt: text description for image generation
-///     - output_path: optional path where accepted image should be saved
-///     - seed: optional random seed for reproducibility
-///     - aspect_ratio: aspect ratio string (e.g., "1:1", "16:9", "9:16")
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - Spawns Python sidecar process if not already running
-///     - Sets up message reader to forward events to UI via window.emit()
-///     - Sends INIT command to sidecar with provided parameters
-///     - Stores sidecar instance in AppState for later commands
-///
-///   Properties:
-///     - Async: returns immediately after spawning and sending INIT
-///     - Error handling: returns Result with error description
-///     - State mutation: stores sidecar in AppState
-///     - Event forwarding: sidecar messages are emitted as "sidecar-message" events
-///
-///   Algorithm:
-///     1. Spawn sidecar using Sidecar::spawn("python", ["-m", "textbrush.ipc"])
-///     2. Clone window for use in reader thread
-///     3. Start reader thread that emits "sidecar-message" events to window
-///     4. Send INIT command with JSON payload:
-///        {
-///          "prompt": prompt,
-///          "output_path": output_path,
-///          "seed": seed,
-///          "aspect_ratio": aspect_ratio
-///        }
-///     5. Store sidecar in AppState.sidecar mutex
-///     6. Return Ok or Err
+/// Store the child before sending INIT so shutdown can reach a blocked pipe.
 #[command]
 #[allow(clippy::too_many_arguments)]
 pub async fn init_generation(
@@ -156,6 +145,10 @@ pub async fn init_generation(
     preset: Option<String>,
     buffer_max: Option<u32>,
 ) -> Result<(), String> {
+    let mut sidecar_guard = state.sidecar.lock().map_err(|e| e.to_string())?;
+    if state.closing.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Application is closing".into());
+    }
     #[cfg(debug_assertions)]
     let mut sidecar = Sidecar::spawn("uv", &["run", "python", "-m", "textbrush.ipc"])
         .map_err(|e| {
@@ -202,269 +195,68 @@ pub async fn init_generation(
     }
     .into_message();
 
-    sidecar.send(&message)?;
-
-    *state.sidecar.lock().unwrap() = Some(sidecar);
-    Ok(())
+    let sender = sidecar.sender();
+    *sidecar_guard = Some(sidecar);
+    drop(sidecar_guard);
+    sender.send(&message)
 }
 
-/// Skip current image and show next.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends SKIP command
-///     - If no sidecar: returns error
-///
-///   Properties:
-///     - Synchronous: returns after sending command
-///     - Error handling: returns Result with error if no sidecar
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Send SKIP message (type: "skip", payload: null)
-///        b. Return Ok
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
+/// Dispatch skip without holding app-state ownership during the pipe write.
 #[command]
-pub fn skip_image(state: State<'_, AppState>) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "skip".to_string(),
-            payload: serde_json::Value::Null,
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+pub async fn skip_image(state: State<'_, AppState>) -> Result<(), String> {
+    let message = IpcMessage {
+        msg_type: "skip".to_string(),
+        payload: serde_json::Value::Null,
+    };
+    state.send(&message)
 }
 
-/// Accept current image and save to disk.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends ACCEPT command
-///     - If no sidecar: returns error
-///     - Python handler will save image and send ACCEPTED event with path
-///
-///   Properties:
-///     - Synchronous: returns after sending command
-///     - Error handling: returns Result with error if no sidecar
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Send ACCEPT message (type: "accept", payload: null)
-///        b. Return Ok
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
+/// Dispatch acceptance; saved paths arrive asynchronously from Python.
 #[command]
-pub fn accept_image(state: State<'_, AppState>) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "accept".to_string(),
-            payload: serde_json::Value::Null,
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+pub async fn accept_image(state: State<'_, AppState>) -> Result<(), String> {
+    let message = IpcMessage {
+        msg_type: "accept".to_string(),
+        payload: serde_json::Value::Null,
+    };
+    state.send(&message)
 }
 
-/// Toggle pause/resume generation.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends PAUSE command
-///     - If no sidecar: returns error
-///
-///   Properties:
-///     - Synchronous: returns after sending command
-///     - Error handling: returns Result with error if no sidecar
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Send PAUSE message (type: "pause", payload: null)
-///        b. Return Ok
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
+/// Dispatch pause/resume; Python reports the settled worker state.
 #[command]
-pub fn pause_generation(state: State<'_, AppState>) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "pause".to_string(),
-            payload: serde_json::Value::Null,
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+pub async fn pause_generation(state: State<'_, AppState>) -> Result<(), String> {
+    let message = IpcMessage {
+        msg_type: "pause".to_string(),
+        payload: serde_json::Value::Null,
+    };
+    state.send(&message)
 }
 
-/// Delete image from delivered list by backend index.
-///
-/// CONTRACT:
-///   Inputs:
-///     - index: stable backend index of image to delete
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends DELETE command with index in payload
-///     - If no sidecar: returns error
-///     - Python handler will soft-delete image and delete temp file
-///     - Handler sends DELETE_ACK or ERROR event based on success
-///
-///   Properties:
-///     - Synchronous: returns after sending command
-///     - Error handling: returns Result with error if no sidecar
-///     - Idempotent: backend handles missing/deleted indices gracefully
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Create DELETE message with payload: {"index": index}
-///        b. Send message via sidecar
-///        c. Return Ok
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
+/// Dispatch deletion by stable image index.
 #[command]
-pub fn delete_image(index: i32, state: State<'_, AppState>) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "delete".to_string(),
-            payload: serde_json::json!({
-                "index": index,
-            }),
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+pub async fn delete_image(index: i32, state: State<'_, AppState>) -> Result<(), String> {
+    let message = IpcMessage {
+        msg_type: "delete".to_string(),
+        payload: serde_json::json!({
+            "index": index,
+        }),
+    };
+    state.send(&message)
 }
 
-/// Request full image list from backend for state recovery.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends GET_IMAGE_LIST command with null payload
-///     - If no sidecar: returns error
-///     - Python handler responds with IMAGE_LIST event containing all images
-///
-///   Properties:
-///     - Synchronous: returns after sending command
-///     - Error handling: returns Result with error if no sidecar
-///     - Used for recovery: frontend calls this after reconnect or reload
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Send GET_IMAGE_LIST message (type: "get_image_list", payload: null)
-///        b. Return Ok
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
+/// Request the current list of delivered images.
 #[command]
-pub fn get_image_list(state: State<'_, AppState>) -> Result<(), String> {
-    let sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(sidecar) = sidecar_guard.as_ref() {
-        let message = IpcMessage {
-            msg_type: "get_image_list".to_string(),
-            payload: serde_json::Value::Null,
-        };
-        sidecar.send(&message)?;
-        Ok(())
-    } else {
-        Err("No sidecar running".to_string())
-    }
+pub async fn get_image_list(state: State<'_, AppState>) -> Result<(), String> {
+    let message = IpcMessage {
+        msg_type: "get_image_list".to_string(),
+        payload: serde_json::Value::Null,
+    };
+    state.send(&message)
 }
 
-/// Abort generation and terminate sidecar.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists:
-///       * Sends ABORT command (optional: Python may not respond if killed)
-///       * Kills sidecar process
-///       * Removes sidecar from AppState
-///     - If no sidecar: returns Ok (idempotent)
-///
-///   Properties:
-///     - Blocking: waits for kill operation
-///     - Cleanup: removes sidecar from state
-///     - Idempotent: safe to call multiple times
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Try send ABORT message (type: "abort", payload: null)
-///           - Ignore errors (process may already be dead)
-///        b. Call sidecar.kill()
-///        c. Take sidecar out of AppState (replace with None)
-///        d. Return Ok or Err from kill operation
-///     3. If no sidecar:
-///        a. Return Ok (already aborted)
+/// Close the session with a five-second grace period, then kill/reap if necessary.
 #[command]
-pub fn abort_generation(state: State<'_, AppState>) -> Result<(), String> {
-    let mut sidecar_guard = state.sidecar.lock().unwrap();
-
-    if let Some(mut sidecar) = sidecar_guard.take() {
-        let message = IpcMessage {
-            msg_type: "abort".to_string(),
-            payload: serde_json::Value::Null,
-        };
-        let _ = sidecar.send(&message);
-
-        sidecar.kill()?;
-        Ok(())
-    } else {
-        Ok(())
-    }
+pub async fn abort_generation(state: State<'_, AppState>) -> Result<(), String> {
+    state.shutdown()
 }
 
 #[cfg(test)]
@@ -538,9 +330,7 @@ while True:
 
     #[test]
     fn skip_image_returns_error_when_no_sidecar() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let sidecar_guard = state.sidecar.lock().unwrap();
         let result = if sidecar_guard.is_none() {
@@ -555,9 +345,7 @@ while True:
 
     #[test]
     fn skip_image_sends_skip_message_when_sidecar_exists() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -576,7 +364,10 @@ while True:
                 msg_type: "skip".to_string(),
                 payload: serde_json::Value::Null,
             };
-            sidecar.send(&message).expect("Send should succeed");
+            sidecar
+                .sender()
+                .send(&message)
+                .expect("Send should succeed");
         }
         drop(sidecar_guard);
 
@@ -595,9 +386,7 @@ while True:
 
     #[test]
     fn accept_image_returns_error_when_no_sidecar() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let sidecar_guard = state.sidecar.lock().unwrap();
         let result = if sidecar_guard.is_none() {
@@ -612,9 +401,7 @@ while True:
 
     #[test]
     fn accept_image_sends_accept_message_when_sidecar_exists() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -633,7 +420,10 @@ while True:
                 msg_type: "accept".to_string(),
                 payload: serde_json::Value::Null,
             };
-            sidecar.send(&message).expect("Send should succeed");
+            sidecar
+                .sender()
+                .send(&message)
+                .expect("Send should succeed");
         }
         drop(sidecar_guard);
 
@@ -652,9 +442,7 @@ while True:
 
     #[test]
     fn abort_generation_is_idempotent() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let sidecar_guard = state.sidecar.lock().unwrap();
         let result1 = if sidecar_guard.is_none() {
@@ -679,9 +467,7 @@ while True:
 
     #[test]
     fn abort_generation_kills_sidecar_and_clears_state() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = "import time; time.sleep(10)";
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -696,7 +482,7 @@ while True:
                 msg_type: "abort".to_string(),
                 payload: serde_json::Value::Null,
             };
-            let _ = sidecar.send(&message);
+            let _ = sidecar.sender().send(&message);
             let result = sidecar.kill();
             assert!(result.is_ok());
         }
@@ -707,9 +493,7 @@ while True:
 
     #[test]
     fn abort_generation_attempts_to_send_abort_message() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -728,7 +512,7 @@ while True:
                 msg_type: "abort".to_string(),
                 payload: serde_json::Value::Null,
             };
-            let _ = sidecar.send(&message);
+            let _ = sidecar.sender().send(&message);
             let _ = sidecar.kill();
         }
         drop(sidecar_guard);
@@ -741,9 +525,7 @@ while True:
 
     #[test]
     fn concurrent_skip_calls_are_safe() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -762,7 +544,7 @@ while True:
                         msg_type: "skip".to_string(),
                         payload: serde_json::Value::Null,
                     };
-                    sidecar.send(&message)
+                    sidecar.sender().send(&message)
                 } else {
                     Err("No sidecar running".to_string())
                 }
@@ -783,9 +565,7 @@ while True:
 
     #[test]
     fn concurrent_accept_calls_are_safe() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -804,7 +584,7 @@ while True:
                         msg_type: "accept".to_string(),
                         payload: serde_json::Value::Null,
                     };
-                    sidecar.send(&message)
+                    sidecar.sender().send(&message)
                 } else {
                     Err("No sidecar running".to_string())
                 }
@@ -825,9 +605,7 @@ while True:
 
     #[test]
     fn skip_after_abort_returns_error() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -853,9 +631,7 @@ while True:
 
     #[test]
     fn accept_after_abort_returns_error() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -881,9 +657,7 @@ while True:
 
     #[test]
     fn delete_image_returns_error_when_no_sidecar() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let sidecar_guard = state.sidecar.lock().unwrap();
         let result = if sidecar_guard.is_none() {
@@ -898,9 +672,7 @@ while True:
 
     #[test]
     fn delete_image_sends_delete_message_when_sidecar_exists() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -922,7 +694,10 @@ while True:
                     "index": index,
                 }),
             };
-            sidecar.send(&message).expect("Send should succeed");
+            sidecar
+                .sender()
+                .send(&message)
+                .expect("Send should succeed");
         }
         drop(sidecar_guard);
 
@@ -941,9 +716,7 @@ while True:
 
     #[test]
     fn delete_image_sends_correct_json_structure() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -965,7 +738,10 @@ while True:
                     "index": test_index,
                 }),
             };
-            sidecar.send(&message).expect("Send should succeed");
+            sidecar
+                .sender()
+                .send(&message)
+                .expect("Send should succeed");
         }
         drop(sidecar_guard);
 
@@ -986,9 +762,7 @@ while True:
 
     #[test]
     fn delete_image_with_various_indices() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let mut sidecar =
@@ -1012,7 +786,7 @@ while True:
                         "index": test_index,
                     }),
                 };
-                let result = sidecar.send(&message);
+                let result = sidecar.sender().send(&message);
                 assert!(
                     result.is_ok(),
                     "Failed to send delete for index: {}",
@@ -1030,9 +804,7 @@ while True:
 
     #[test]
     fn delete_image_after_abort_returns_error() {
-        let state = AppState {
-            sidecar: Mutex::new(None),
-        };
+        let state = AppState::default();
 
         let script = python_echo_script();
         let sidecar = Sidecar::spawn("python3", &["-c", script]).expect("Failed to spawn Python");
@@ -1069,9 +841,7 @@ mod delete_image_property_tests {
         fn delete_image_payload_has_correct_message_type(
             index in 0i32..10000
         ) {
-            let state = AppState {
-                sidecar: Mutex::new(None),
-            };
+            let state = AppState::default();
 
             let script = r#"
 import sys
@@ -1103,7 +873,7 @@ while True:
                         "index": index,
                     }),
                 };
-                sidecar.send(&message).expect("Send should succeed");
+                sidecar.sender().send(&message).expect("Send should succeed");
             }
             drop(sidecar_guard);
 
@@ -1123,9 +893,7 @@ while True:
         fn delete_image_payload_contains_index(
             index in 0i32..10000
         ) {
-            let state = AppState {
-                sidecar: Mutex::new(None),
-            };
+            let state = AppState::default();
 
             let script = r#"
 import sys
@@ -1157,7 +925,7 @@ while True:
                         "index": index,
                     }),
                 };
-                sidecar.send(&message).expect("Send should succeed");
+                sidecar.sender().send(&message).expect("Send should succeed");
             }
             drop(sidecar_guard);
 
@@ -1178,9 +946,7 @@ while True:
         fn delete_image_payload_is_json_object(
             index in 0i32..10000
         ) {
-            let state = AppState {
-                sidecar: Mutex::new(None),
-            };
+            let state = AppState::default();
 
             let script = r#"
 import sys
@@ -1212,7 +978,7 @@ while True:
                         "index": index,
                     }),
                 };
-                sidecar.send(&message).expect("Send should succeed");
+                sidecar.sender().send(&message).expect("Send should succeed");
             }
             drop(sidecar_guard);
 
@@ -1232,9 +998,7 @@ while True:
         fn delete_image_without_sidecar_always_fails(
             _index in 0i32..10000
         ) {
-            let state = AppState {
-                sidecar: Mutex::new(None),
-            };
+            let state = AppState::default();
 
             let sidecar_guard = state.sidecar.lock().unwrap();
             let result = if sidecar_guard.is_none() {
@@ -1278,5 +1042,65 @@ mod init_bridge_tests {
                 "preset": "portrait-medium", "buffer_max": 3,
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn shutdown_can_reach_child_while_a_command_write_is_blocked() {
+        let script = "import sys,json,time; sys.stdin.buffer.read(1); print(json.dumps({'type':'blocked','payload':{}}),flush=True); time.sleep(60)";
+        let mut sidecar = Sidecar::spawn("python3", &["-c", script]).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        sidecar.start_reader(move |msg| {
+            tx.send(msg).ok();
+        });
+        let state = Arc::new(AppState::default());
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+        let writer_state = Arc::clone(&state);
+        let writer = std::thread::spawn(move || {
+            writer_state.send(&IpcMessage {
+                msg_type: "update_config".into(),
+                payload: serde_json::json!({"prompt": "x".repeat(1_000_000)}),
+            })
+        });
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap()
+                .msg_type,
+            "blocked"
+        );
+        let start = std::time::Instant::now();
+        state.shutdown().unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(6));
+        assert!(writer.join().unwrap().is_err());
+        assert!(state.sidecar.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn concurrent_exit_paths_wait_for_shared_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let marker = temp.path().join("cleanup complete");
+        let script = "import sys,time,pathlib; sys.stdin.readline(); time.sleep(0.1); pathlib.Path(sys.argv[1]).write_text('cleaned')";
+        let sidecar = Sidecar::spawn("python3", &["-c", script, marker.to_str().unwrap()]).unwrap();
+        let state = Arc::new(AppState::default());
+        *state.sidecar.lock().unwrap() = Some(sidecar);
+        let mut exits = vec![];
+        for _ in 0..2 {
+            let state = Arc::clone(&state);
+            let marker = marker.clone();
+            exits.push(std::thread::spawn(move || {
+                state.shutdown().unwrap();
+                assert_eq!(std::fs::read_to_string(marker).unwrap(), "cleaned");
+            }));
+        }
+        for exit in exits {
+            exit.join().unwrap();
+        }
+        assert!(state.sidecar.lock().unwrap().is_none());
+        assert!(state.closing.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

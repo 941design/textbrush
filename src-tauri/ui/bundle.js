@@ -9142,6 +9142,7 @@ var buttonListenersInitialized = false;
 var keyboardListenersInitialized = false;
 var pauseCommandInFlight = false;
 var desiredPausedState = null;
+var abortExitScheduled = false;
 function isBackendStatePaused(stateValue) {
   if (stateValue === "paused") {
     return true;
@@ -9719,6 +9720,9 @@ async function handleAccepted(payload) {
   }, 500);
 }
 function handleAborted() {
+  if (abortExitScheduled) return;
+  abortExitScheduled = true;
+  state.isTransitioning = true;
   setTimeout(() => {
     void (async () => {
       try {
@@ -10234,9 +10238,10 @@ function abort() {
   if (state.isTransitioning) {
     return;
   }
+  state.isTransitioning = true;
   invoke("abort_generation").catch((err) => {
     console.error("Abort failed:", err);
-  });
+  }).finally(handleAborted);
 }
 function togglePause() {
   const backendStateValue = state.backendState?.state ?? null;
