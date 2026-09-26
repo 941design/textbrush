@@ -45,7 +45,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R09 | P2 | Reproduced | Encode actual JPEG output when requested | DONE | `7472c1b`; see detailed evidence |
 | R10 | P2 | Mixed: reproduced/code | Honor output path and directory overrides | DONE | `7472c1b`; see detailed evidence |
 | R11 | P2 | Code-confirmed | Release deleted-image pixel memory | DONE | `7472c1b`; see detailed evidence |
-| R12 | P2 | Code-confirmed | Surface unexpected sidecar exit | PLANNED | — |
+| R12 | P2 | Reproduced | Surface unexpected sidecar exit | DONE | `e3846cb`; see detailed evidence |
 | R13 | P2 | Reproduced | Read installed distribution version correctly | DONE | `0b5563a`; see detailed evidence |
 | R14 | P2 | Reproduced | Preserve desktop seed zero | DONE | `a4b4b18`; see detailed evidence |
 | R15 | P2 | Code-confirmed; existing backlog | Honor CLI aspect ratio for reference-capable models | PLANNED | — |
@@ -236,7 +236,10 @@ Acceptance: repeated delete cycles release image payloads; repeated delete still
 
 ### R12 — Surface unexpected sidecar exit
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `e3846cb` — verification below.
+
+The stdout reader now reports unexpected EOF/read failure through a fatal `error` event with operation `sidecar_exit`, process status and runtime/stderr diagnostic guidance. Stderr remains inherited and is not copied into UI messages. The reader reaps exiting children; after 100 ms an EOF-producing child that is still alive is force-terminated and reaped because it can no longer serve IPC. Accepted/aborted messages and intentional termination suppress crash reports. Explicit kill is idempotent and reaps; dropping a Sidecar also terminates/reaps it. Fake Python processes cover immediate failure, malformed JSON followed by exit, closed stdout while still alive, invalid UTF-8, normal accepted/aborted exit, intentional kill and drop. Unix tests assert the child PID no longer exists after notification/completion. A real frontend event-subscription test verifies visible fatal output, disabled controls, blocked Enter acceptance and scheduled window close. `cargo test --bin textbrush`: 54 passed, 1 child probe ignored by the outer runner; `npm test`: 146 passed; `cargo fmt --check`, `cargo clippy -- -D warnings`, `npm run check` and `git diff --check` passed. No Python production code changed. R19 still owns graceful abort/close, cleanup of previews after crashes and frontend exit independence from ABORTED; R12 does not claim those are fixed.
+
 
 Anchor: `src-tauri/src/sidecar.rs:162` (`start_reader`), `commands.rs` initialization.
 
@@ -549,4 +552,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: R07 is complete in `8e7a908` and R18 in `7b01878`; R21/R14 were completed in the preceding increment. Remaining tasks: release/runtime R03/R04/R05/R12/R26, CLI workflow/canvas R06/R15, lifecycle R19, schema/security/docs R16/R27/R28. R03 still needs model-enabled validation. Latest gates: 1,262 fast Python tests passed (18 skipped, 42 deselected, 1 xfailed); 145 current-source frontend tests passed; 51 Rust tests passed with one child-process probe marked ignored but explicitly exercised by its parent test. TypeScript/ESLint, Ruff lint/format and Rust fmt/Clippy passed. R18 mutations for exit code, path ordering, stdout and actual INIT seed payload were detected and restored. Original macOS/Linux schema changes remain untouched. Temporary logs were removed. Final gates must be refreshed after remaining functional work. No model-heavy tests, clean-machine packaged-app validation or remote release CI were run. The overall goal is not complete.
+Next-context starting point: R12 is complete in `e3846cb`; R07/R18 and R21/R14 were completed in preceding increments. Remaining tasks: release/runtime R03/R04/R05/R26, CLI workflow/canvas R06/R15, lifecycle R19, schema/security/docs R16/R27/R28. R19 is the next natural step: Rust still sends ABORT then kills immediately, frontend waits for ABORTED, process::exit bypasses cleanup on accepted/aborted/window-close paths, and Python IPC EOF finally only shuts down the backend rather than cleaning handler-owned delivered previews. R12 provides shared Child ownership, expected-exit signalling and reaping, with deterministic process tests. Latest gates: 54 Rust tests passed (one child probe is invoked by its parent test), 146 frontend tests passed, Rust fmt/Clippy and TypeScript/ESLint passed. Latest broad Python run before R12: 1,262 passed, 18 skipped, 42 deselected, 1 xfailed; R12 changes no Python. Existing macOS/Linux schema changes remain untouched. Temporary logs were removed. Refresh final gates after remaining functional edits. No model-heavy tests, clean-machine packaged-app validation or remote release CI were run. The overall goal is not complete.
