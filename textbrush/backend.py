@@ -388,9 +388,8 @@ class TextbrushBackend:
                 model wiped the references and answered `compatible=False`.
 
           Properties:
-            - Non-blocking (the only IO is one `normalize()` per
-              reference path, which is fast, and none at all in the
-              retain branch).
+            - May block while switching/loading models or normalizing references;
+              the caller must first settle the generation worker.
             - Idempotent on identical input: re-acknowledging the active
               configuration is a no-op down to the reference ids.
         """
@@ -882,32 +881,12 @@ class TextbrushBackend:
         return self.get_next_image(timeout=timeout)
 
     def accept_current(self, output_path: Path | None = None) -> Path:
-        """Save current image and return path.
+        """Save the buffered head image without consuming it.
 
-        CONTRACT:
-          Inputs:
-            - output_path: optional Path to save image (None = auto-generate)
-
-          Outputs:
-            - Path: absolute path where image was saved
-
-          Invariants:
-            - Current image (from buffer.peek()) is saved to disk
-            - Image remains in buffer (use get_next_image() to advance)
-            - If output_path is None, generates path based on seed or timestamp
-            - PNG metadata includes aspect ratio and dimensions; JPEG has no custom metadata
-
-          Properties:
-            - Non-blocking: returns after save completes
-            - Side effect: writes file to disk
-            - Error: raises RuntimeError if no image to accept
-
-          Algorithm:
-            1. Peek at current image
-            2. If no image: raise RuntimeError
-            3. If output_path is None: generate path using _generate_output_path()
-            4. Commit output without overwriting an existing destination
-            5. Return output_path
+        Create a preview if needed, then use the same checkpointed, collision-safe
+        output commit as desktop acceptance. An explicit output path wins over
+        configured directory/format defaults. PNG retains approved metadata;
+        JPEG is re-encoded without custom metadata. Saving performs disk IO.
         """
         current = self.buffer.peek()
         if not current:
@@ -1192,54 +1171,14 @@ class TextbrushBackend:
         height: int | None = None,
         on_generation_start: OnGenerationStartCallback | None = None,
     ) -> None:
-        """Update the prompt and (optionally) explicit dimensions without
-        changing the acknowledged model, references, or preset.
+        """Update prompt/options within the worker's publication epoch boundary.
 
-        T06 contract: editing field changes go through
-        `apply_configuration`; this method is a prompt-only update that
-        leaves `self.model_id / self.references / self.preset / sampling
-        settings` untouched. As a side effect, the worker's epoch bumps
-        (any in-flight result is from a now-superseded configuration;
-        see `GenerationWorker.update_config` and T05 step 2).
-
-        CONTRACT:
-          Inputs:
-            - prompt: non-empty string, text description
-            - aspect_ratio: aspect-ratio string (default "custom").
-            - width: optional int, and authoritative when given --
-              EXCEPT while references are held, where the acknowledged
-              canvas wins (a canvas move needs the re-decode only
-              `apply_configuration` does). With neither axis given, an
-              editing-capable model falls back to its preset. None
-              leaves the axis to aspect_ratio; no default is
-              substituted here.
-            - height: same as width.
-            - on_generation_start: optional callback; if None the
-              existing callback is kept.
-
-          Outputs: none (modifies internal state)
-
-          Invariants:
-            - Worker must exist (start_generation() called before)
-            - Worker thread continues running (not stopped/restarted)
-            - Buffer is cleared (old images are stale)
-            - Pause state is preserved
-            - The acknowledged (model, references, preset) tuple is
-              unchanged; this method does not re-run validation
-
-          Properties:
-            - Non-blocking: returns immediately
-            - Thread-safe: can be called while worker is paused or running
-            - Buffer cleared: existing images discarded since the prompt
-              changed
-
-          Algorithm:
-            1. Resolve dimensions (acknowledged canvas wins while
-               references are held; else explicit axes; else preset).
-            2. Build a new GenerationOptions with the resolved
-               dimensions and the existing acknowledged state.
-            3. Call worker.update_config(prompt, options,
-               on_generation_start), which atomically clears old buffered output.
+        Keep the acknowledged model, references and sampling settings. While
+        references are held, their acknowledged canvas wins: a canvas change
+        requires apply_configuration to normalize again. Otherwise explicit
+        dimensions win, followed by the editing preset fallback. The worker
+        clears queued output and discards stale in-flight results atomically
+        with its snapshot update, preserving pause state and thread ownership.
         """
         if not self._worker:
             raise RuntimeError("No worker to update. Call start_generation() first.")
@@ -1371,7 +1310,7 @@ class TextbrushBackend:
           Invariants:
             - Image is saved to preview directory with PNG metadata
             - buffered_image.temp_path is set to the saved file path
-            - File can be moved to output on accept or deleted on skip
+            - Preview can be committed to output on accept or deleted on skip
 
           Properties:
             - Side effect: writes file to disk

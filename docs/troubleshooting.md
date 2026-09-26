@@ -237,13 +237,15 @@ Timeout waiting for image generation
 2. **Check CPU vs GPU**
 ```bash
 # If using CPU, expect 60-120 seconds per image
-uv run textbrush --prompt "test" --verbose | grep "Using device"
+uv run textbrush --headless --prompt "test" --verbose
 ```
 
-3. **Increase timeout (headless mode only)**
-- Default: 120 seconds
-- CPU mode may need more time
-- Current implementation has fixed timeout (future: make configurable)
+3. **Check progress and worker errors**
+- Headless generation has no fixed inference timeout; slow successful inference is allowed.
+- Worker failures are reported on stderr, including failures before the first image.
+- Desktop abort/close allows five seconds for cleanup before terminating the backend.
+- If the desktop executable cannot be found, set `TEXTBRUSH_DESKTOP` to the native
+  executable or use `--headless`; see [installation and usage](../README.md).
 
 ### IPC communication errors
 

@@ -4,44 +4,9 @@ use crate::commands::AppState;
 use crate::sidecar::IpcMessage;
 use tauri::{command, State};
 
-/// Update generation configuration, including model, references, and preset.
-///
-/// CONTRACT:
-///   Inputs:
-///     - state: AppState containing sidecar
-///     - prompt: new text description for image generation, non-empty string
-///     - aspect_ratio: new aspect ratio string, one of "1:1", "16:9", "9:16"
-///     - width: optional image width in pixels (overrides aspect_ratio)
-///     - height: optional image height in pixels (overrides aspect_ratio)
-///     - model_id: optional selected model slug
-///     - references: optional ordered reference file paths
-///     - preset: optional editing output preset
-///
-///   Outputs:
-///     - Result<(), String>: Ok on success, error message on failure
-///
-///   Invariants:
-///     - If sidecar exists: sends UPDATE_CONFIG with all supplied fields
-///     - If no sidecar: returns error "No sidecar running"
-///
-///   Properties:
-///     - Synchronous: returns after sending command (backend acknowledgement is async)
-///     - Error handling: returns Result with error if no sidecar
-///     - Validation: input validation happens on frontend and Python backend
-///     - Non-blocking: command send is fast, configuration application happens in backend
-///     - Dimension priority: explicit width/height override aspect_ratio
-///
-///   Algorithm:
-///     1. Lock AppState.sidecar mutex
-///     2. If sidecar exists:
-///        a. Create IpcMessage:
-///           - msg_type: "update_config"
-///           - payload: JSON object with prompt, dimensions, model, references, preset
-///        b. Send message via sidecar.sender().send()
-///        c. Return Ok or Err from send operation
-///     3. If no sidecar:
-///        a. Return Err("No sidecar running")
-///
+/// Forward configuration changes; Python validates and acknowledges them asynchronously.
+/// Pipe writes use the sender outside the app-state ownership lock, allowing shutdown
+/// to reach a blocked child. This call can wait for pipe capacity.
 #[command]
 #[allow(clippy::too_many_arguments)]
 pub async fn update_generation_config(

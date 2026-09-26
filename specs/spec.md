@@ -93,8 +93,8 @@ CLI arguments override config file values.
 2. Launch UI immediately
 3. Discover local models and publish the catalogue to the UI
 4. **Defer model loading until a model is selected.** Loading a model
-   takes tens of seconds (and a multi-gigabyte download when the weights
-   are missing) during which no other model can be chosen, so no model is
+   may take tens of seconds, during which no other model can be chosen,
+   so no model is
    loaded speculatively. A model named on the command line or pinned in
    the config is already a selection and loads at once; otherwise the
    session waits in `awaiting_model` with the selector live
@@ -102,7 +102,7 @@ CLI arguments override config file values.
    command, and leave the selection open. (Automatic download applies to
    the explicit `--download-model` path; a selection is not a licence to
    spend a multi-gigabyte download on the user's behalf.)
-6. Start background image generation
+6. Initialize the background worker paused; generate when the user resumes
 7. Present slideshow review
 8. Exit on Accept or Abort
 
@@ -110,7 +110,7 @@ CLI arguments override config file values.
 1. Parse CLI + config
 2. Discover local models
 3. Initialize inference engine
-4. Generate single image (120-second timeout)
+4. Generate a single image without a fixed inference timeout; report worker failures
 5. Handle based on auto-action flag:
    * `--auto-accept`: Save image, print path to stdout, exit 0
    * `--auto-abort`: Exit 1 without saving
@@ -723,14 +723,14 @@ The config file is automatically created with defaults on first run if it does n
 
 **This specification describes ONLY the currently implemented functionality of Textbrush.**
 
-For planned features that are not yet implemented, see the following separate feature specifications in the `specs/` directory:
+Related feature specifications record requirements and design history; their original planning status is not an implementation-status index:
 
-* **`cli-download-model-spec.md`** - Planned `--download-model` CLI flag for automated model download
-* **`update-check-spec.md`** - Planned `--check-updates` CLI flag for release notifications
-* **`flux-dimension-alignment-spec.md`** - Planned automatic dimension rounding and metadata enhancement
-* **`feature-backend-owns-image-list.md`** - Planned refactor for backend-owned image lifecycle management
+* **`cli-download-model-spec.md`** - Model download CLI requirements
+* **`update-check-spec.md`** - Update-check CLI requirements
+* **`flux-dimension-alignment-spec.md`** - Dimension rounding and metadata requirements
+* **`feature-backend-owns-image-list.md`** - Backend-owned image lifecycle requirements
 
-These feature specifications are separate requirements documents describing WHAT to build, not HOW. They are not part of the current production system described in this spec.md.
+Use the current source, tests and review handover for implementation and verification status.
 
 ## Amendments
 

@@ -73,7 +73,9 @@ combined with a ratio or explicit dimensions; otherwise explicit dimensions
 win over the ratio's smallest desktop size. Buffer capacity must be positive.
 Seeds must fit JavaScript's exact integer range (−9007199254740991 through
 9007199254740991); zero is preserved. Model capabilities and reference validity
-are checked by the backend. Python CLI flags are a separate interface.
+are checked by the backend. The Python CLI forwards its shared launch flags to
+this interface; `--config`, `--format`, `--verbose`, downloads and headless mode
+belong to the Python CLI.
 
 Desktop abort and window close give the backend five seconds to finish cleanup,
 then terminate and reap it if needed. Abort adds a short (500 ms) UI exit delay.

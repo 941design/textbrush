@@ -576,66 +576,12 @@ def run_headless(
     model_id: str = FLUX1_SCHNELL,
     preset: str | None = None,
 ) -> None:
-    """Run textbrush in headless mode without GUI (for CI/testing).
+    """Generate and save one image without the desktop.
 
-    CONTRACT:
-      Inputs:
-        - prompt: non-empty string, text description for image generation
-        - out: optional Path for output file (None = auto-generate)
-        - config: Config object with all settings
-        - seed: optional integer seed for reproducibility (None = random)
-        - aspect_ratio: string, one of "1:1", "16:9", "9:16"
-        - auto_accept: boolean, if True accept first generated image
-        - auto_abort: boolean, if True abort immediately after starting
-
-      Outputs:
-        - None (side effects: print to stdout/stderr, sys.exit with code)
-
-      Invariants:
-        - Exit code 0 + stdout path if image saved successfully (auto_accept or neither flag)
-        - Exit code 1 + empty stdout if auto_abort or any error
-        - auto_abort takes precedence over auto_accept
-        - Progress messages go to stderr
-        - Final output path goes to stdout (only on accept)
-        - Backend shutdown guaranteed
-
-      Properties:
-        - Deterministic: same inputs produce same behavior
-        - Non-interactive: no UI launched
-        - Exit code contract: 0 on accept, 1 on abort/error
-        - Cleanup: backend always shut down
-
-      Algorithm:
-        1. Create TextbrushBackend with config
-        2. Print "Loading model..." to stderr
-        3. Initialize backend (load model)
-        4. Start generation with prompt, seed, aspect_ratio
-        5. If auto_abort:
-           a. Call backend.abort()
-           b. Shutdown backend
-           c. Exit with code 1 (no stdout)
-        6. Otherwise (auto_accept or neither flag): generate-and-save
-           a. Print "Generating..." to stderr
-           b. Wait for first image or terminal worker error:
-              - Poll buffer.peek() with 0.1s sleep intervals
-              - If worker fails: propagate its original error
-           c. If image available:
-              i. Determine output path (use 'out' or generate)
-              ii. Call backend.accept_current(output_path)
-              iii. Print absolute path to stdout
-              iv. Shutdown backend
-              v. Exit with code 0
-           d. If no image: exit with code 1
-        7. Error handling:
-           a. Catch exceptions and print to stderr
-           b. Shutdown backend in finally block
-           c. Exit with code 1
-           d. Never print to stdout on error
-
-    IMPLEMENTATION NOTE:
-      This function bypasses the Tauri GUI entirely. It uses the backend
-      directly for pure CLI-based generation, suitable for CI pipelines
-      and automated testing.
+    Acknowledge the launch canvas and references before starting the worker.
+    Wait without an arbitrary inference deadline, surfacing worker errors.
+    Success prints one output path and exits 0; auto-abort exits 1 without output.
+    Shutdown settles inference before unloading the engine.
     """
     from .backend import TextbrushBackend
 

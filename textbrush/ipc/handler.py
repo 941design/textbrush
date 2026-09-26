@@ -135,76 +135,14 @@ class MessageHandler:
         self._init_preset: str | None = None  # Preset from init command (T07)
 
     def handle_init(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle INIT command: publish the model catalogue, and load a
-        model only once one has been selected.
+        """Publish the model catalogue and initialize the selected session.
 
-        Loading is DEFERRED. A model takes tens of seconds (and, when the
-        weights are missing, a multi-gigabyte download) to load, and the
-        desktop UI cannot offer a different choice while that runs -- so
-        a session that starts with no model selected must not load one
-        speculatively. INIT therefore publishes `model_list` and parks in
-        `state_changed(awaiting_model)`; the load starts from the
-        UPDATE_CONFIG that carries the user's chosen `model_id`
-        (`handle_update_config` -> `_start_deferred_model`).
-
-        A model pinned in the config (`model.selected_id`) or passed on
-        the INIT command IS a selection -- it is loaded immediately, as
-        before, because the user already said which model they want.
-
-        CONTRACT:
-          Inputs:
-            - payload: dict with keys: prompt (str), output_path (str|None),
-                       seed (int|None), aspect_ratio (str), format (str),
-                       width (int|None), height (int|None), model_id
-                       (str|None), references (list|None), preset (str|None)
-            - server: IPCServer instance for sending events
-
-          Outputs: none (starts background processes, sends events)
-
-          Invariants:
-            - Emits exactly one `model_list` event, from a background
-              thread (availability discovery reads the filesystem and
-              must not delay the UI), before any model is loaded
-            - With no model selected: emits state_changed(awaiting_model)
-              and constructs NO backend
-            - With a model selected: creates TextbrushBackend instance
-            - Loads model in background thread
-            - After model loads: sends READY event
-            - After READY: starts generation via backend.start_generation()
-            - The launch-time `state_changed(paused)` (and the accompanying
-              `config_ack`) carry the worker's real settled state, not a
-              fixed settled=False
-            - Starts image delivery thread to send IMAGE_READY events
-
-          Properties:
-            - Non-blocking: returns immediately, model loading happens in background
-            - Error handling: sends fatal ERROR event if backend init fails
-            - Sequential: READY event sent before generation starts
-            - Thread coordination: image delivery waits for model load to complete
-
-          Algorithm:
-            1. Parse payload into InitCommand dataclass
-            2. Create TextbrushBackend instance with stored config
-            3. Define on_ready callback:
-               a. Send READY event
-               b. Call backend.start_generation() with prompt, seed, aspect_ratio, width, height
-               c. Start image delivery thread
-            4. Start background thread to:
-               a. Call backend.initialize() (blocks until model loaded)
-               b. Call on_ready callback
-               c. If exception: log error, send fatal ERROR event
-            5. Return immediately (model loading continues in background)
-
-        Image Delivery Thread:
-            Runs concurrently after model loads:
-            1. Loop:
-               a. Call backend.get_next_image() (blocks)
-               b. If None: break (shutdown)
-               c. Store as current_image
-               d. Encode image as base64 PNG
-               e. Send IMAGE_READY event with base64 data, seed, buffer stats
-               f. Wait for skip/accept action before delivering next
-            2. Exit on shutdown or error
+        With no explicit/configured model, emit awaiting_model and defer loading
+        until UPDATE_CONFIG selects one. Discovery checks local weights; loading
+        does not silently download missing models. A selected model starts in a
+        background thread, initially paused. References are acknowledged against
+        the launch canvas before generation. Delivery continuously publishes
+        indexed preview paths, not encoded image bytes or action-gated frames.
         """
         from textbrush.ipc.protocol import InitCommand
 
@@ -491,29 +429,10 @@ class MessageHandler:
         threading.Thread(target=self._init_backend, args=(on_ready, server), daemon=True).start()
 
     def handle_skip(self, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle SKIP command: delete preview and continue to next image.
+        """Delete the legacy current preview and clear its pointer.
 
-        CONTRACT:
-          Inputs:
-            - server: IPCServer instance for sending events
-
-          Outputs: none (deletes preview, clears current image, sends status)
-
-          Invariants:
-            - Preview file for current image is deleted
-            - Current image reference is cleared
-            - Image delivery thread is signaled to continue
-            - BUFFER_STATUS event is sent with updated buffer info
-
-          Properties:
-            - Non-blocking: returns immediately after file deletion
-            - Thread coordination: signals waiting delivery thread
-            - Status reporting: sends buffer status after skip
-
-          Algorithm:
-            1. Delete preview file for current image
-            2. Clear current_image reference (set to None)
-            3. Signal image delivery thread to continue (unblock wait)
+        Continuous delivery is independent of skip. Indexed UI deletion uses
+        handle_delete_image and acknowledgement events instead.
         """
         with self._state_lock:
             if self._current_image is not None and self.backend:
@@ -633,70 +552,15 @@ class MessageHandler:
         logger.debug("STATUS command received (deprecated, no-op)")
 
     def handle_update_config(self, payload: dict, server: "IPCServer") -> None:  # type: ignore  # noqa: F821
-        """Handle UPDATE_CONFIG command: update generation configuration.
+        """Apply prompt/canvas changes or acknowledge a model/reference selection.
 
-        CONTRACT:
-          Inputs:
-            - payload: dict with keys: prompt (str), aspect_ratio (str),
-                       width (int|None), height (int|None), and optionally
-                       model_id (str|None), references (list|None),
-                       preset (str|None)
-            - server: IPCServer instance for sending events
-
-          Outputs: none (modifies backend state, sends events)
-
-          Invariants:
-            - An editing update (any of model_id / references / preset set)
-              takes the editing branch: it requires a paused, settled worker,
-              applies the editing fields via apply_configuration, and then
-              applies the command's prompt too -- the prompt travels with
-              every editing update, so dropping it would discard an unblurred
-              edit and leave _current_prompt stale. An empty prompt is
-              skipped, not treated as an error.
-            - If backend not initialized: sends non-fatal ERROR event
-            - If backend exists:
-              * Calls backend.update_config() to update worker settings
-              * Buffer is cleared (old images are stale)
-              * Sends BUFFER_STATUS event showing reset buffer (count=0)
-              * Image delivery thread continues, will deliver new images
-            - Pause state is preserved: worker thread stays alive, not restarted
-
-          Properties:
-            - Thread-safe: uses backend's thread-safe update_config()
-            - Non-blocking: returns quickly after updating configuration
-            - Continuous delivery: image delivery thread not restarted, continues running
-            - Seed handling: new generation uses auto-generated seeds (seed=None)
-            - Buffer cleared: all pending images from old generation are purged
-            - Error handling: sends non-fatal ERROR if backend not initialized
-            - Dimension priority: explicit width/height override aspect_ratio
-            - Pause preservation: worker thread stays alive, pause state unchanged
-
-          Algorithm:
-            1. Parse payload into UpdateConfigCommand dataclass
-            2. If backend is None:
-               a. Send non-fatal ERROR event ("Backend not initialized")
-               b. Return
-            3. Validate aspect_ratio only if no explicit dimensions provided
-            4. Log config update with truncated prompt
-            5. Get current pause state via backend.is_paused()
-            6. Call backend.update_config():
-               - Updates worker's prompt and options in-place
-               - Clears buffer (old images are stale)
-               - Worker thread stays alive (not stopped/restarted)
-            7. Send BUFFER_STATUS event:
-               - count: 0 (buffer was just cleared)
-               - max: backend.buffer.max_size
-               - generating: True only if not paused
-            8. Clear current_image (now stale) and signal delivery thread to continue
-            9. Return (image delivery thread will deliver new images automatically)
-
-        Thread Safety:
-          - backend.update_config() is thread-safe: updates worker config
-          - buffer.clear() is atomic (called by update_config())
-          - Image delivery thread continues running, will automatically:
-            * Wait on empty buffer after clear
-            * Receive new images when worker produces them
-            * No race conditions: buffer operations are thread-safe
+        Model/reference/canvas updates require a paused, settled worker and pass
+        through apply_configuration so normalization and rollback stay coherent.
+        A selection can also start a deferred session; changes during loading are
+        retained for startup. Prompt-only updates advance the worker epoch and
+        invalidate queued/in-flight old results without restarting delivery.
+        Buffer and state events report the result; incompatible selections remain
+        visible but cannot resume. Acceptance/publication use a separate lock.
         """
         from textbrush.ipc.protocol import BufferStatusEvent, ErrorEvent, UpdateConfigCommand
 
@@ -927,8 +791,8 @@ class MessageHandler:
             )
         )
 
-        # Signal delivery thread to continue - it may be waiting for action after
-        # delivering the previous image. Clear current image since it's now stale.
+        # Clear the legacy current-image pointer after the worker epoch changed.
+        # Delivery independently waits on the buffer for current-epoch results.
         with self._state_lock:
             self._current_image = None
         self._signal_action()
@@ -1213,55 +1077,16 @@ class MessageHandler:
         threading.Thread(target=deliver_loop, daemon=True).start()
 
     def _wait_for_action(self) -> None:
-        """Block until skip or accept action is taken.
+        """Wait and clear the legacy action event.
 
-        Helper for image delivery thread. Implements synchronization primitive
-        that blocks delivery thread until UI responds with skip/accept.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (blocks until signaled)
-
-          Invariants:
-            - Blocks current thread
-            - Unblocks when _signal_action() is called
-
-          Properties:
-            - Thread synchronization: uses threading primitives
-            - One-time use per image: reset for each new image
-
-          Algorithm:
-            Use threading.Event or threading.Condition to block:
-            1. Wait on event/condition
-            2. Return when signaled
+        Retained for existing callers; continuous preview delivery does not use
+        this event. It is not the acceptance/publication synchronization boundary.
         """
         self._action_event.wait()
         self._action_event.clear()
 
     def _signal_action(self) -> None:
-        """Signal image delivery thread to continue.
-
-        Helper for skip/accept handlers. Unblocks waiting delivery thread.
-
-        CONTRACT:
-          Inputs: none
-
-          Outputs: none (signals waiting thread)
-
-          Invariants:
-            - Wakes waiting delivery thread
-            - Safe to call even if no thread waiting
-
-          Properties:
-            - Thread synchronization: uses same primitive as _wait_for_action()
-            - Non-blocking: returns immediately
-
-          Algorithm:
-            Use threading.Event or threading.Condition to signal:
-            1. Set event or notify condition
-            2. Return
-        """
+        """Set the legacy action event; continuous delivery does not wait on it."""
         self._action_event.set()
 
     def _detect_hf_credentials(self) -> str | None:

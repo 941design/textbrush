@@ -265,7 +265,8 @@ All options can be overridden on the command line (highest priority).
 **`--headless`**
 - Run without GUI
 - For CI/CD and automated workflows
-- Requires `--auto-accept` or `--auto-abort`
+- Saves the first image by default; `--auto-accept` makes this explicit
+- `--auto-abort` starts and then aborts without saving
 
 **`--auto-accept`**
 - Auto-accept first image in headless mode
