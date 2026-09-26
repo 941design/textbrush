@@ -31,7 +31,7 @@ fn exit_with_paths(paths: Vec<String>) -> ! {
     std::process::exit(0);
 }
 
-fn exit_abort() -> ! {
+pub(crate) fn exit_abort() -> ! {
     std::process::exit(1);
 }
 

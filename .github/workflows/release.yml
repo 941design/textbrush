@@ -71,7 +71,7 @@ jobs:
             pip install "textbrush[model]"
             ```
 
-            `uv` is **not** required on the target system — only the `python3` executable and the `textbrush` package.
+            `uv` is **not** required on the target system. Install the backend into a Python environment and set `TEXTBRUSH_PYTHON` to its executable, or activate it so `python3` is on `PATH`. Release imports exclude the current directory, PYTHONPATH and user-site packages.
 
             ## Installation
 

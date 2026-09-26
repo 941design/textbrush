@@ -108,6 +108,19 @@ pip install 'textbrush[model]'
 uv pip install 'textbrush[model]'
 ```
 
+For a dedicated backend environment, set `TEXTBRUSH_PYTHON` to its Python
+executable before launching the app. Paths containing spaces are supported:
+
+```bash
+export TEXTBRUSH_PYTHON="$HOME/.venvs/textbrush/bin/python"
+```
+
+An explicit interpreter is never silently replaced with a different one.
+Release builds isolate Python imports from the current directory, `PYTHONPATH`,
+and user-site packages; install the backend into the selected environment.
+Missing runtimes, unsupported Python versions and missing packages produce
+startup errors in the window. No checkout or copied virtual environment is used.
+
 Local `make package` and release CI use the same locked frontend tools and
 platform bundle configuration. They require Node.js 22 and install frontend
 packages with `npm ci`. Packages contain the desktop executable and runtime web

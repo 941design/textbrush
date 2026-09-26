@@ -176,7 +176,9 @@ impl Sidecar {
                 match line {
                     Ok(line) => {
                         if let Ok(msg) = serde_json::from_str::<IpcMessage>(&line) {
-                            if matches!(msg.msg_type.as_str(), "accepted" | "aborted") {
+                            if matches!(msg.msg_type.as_str(), "accepted" | "aborted")
+                                || (msg.msg_type == "error" && msg.payload["fatal"] == true)
+                            {
                                 expected_exit.store(true, Ordering::SeqCst);
                             }
                             on_message(msg);

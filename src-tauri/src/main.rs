@@ -6,6 +6,8 @@ mod commands_reference_dialog;
 mod commands_update_config;
 mod exit_handlers;
 mod launch_args;
+#[cfg(any(test, not(debug_assertions)))]
+mod python_runtime;
 mod sidecar;
 
 use commands::AppState;
@@ -41,7 +43,7 @@ fn main() {
                         if let Err(error) = handle.state::<AppState>().shutdown() {
                             eprintln!("Backend shutdown failed: {error}");
                         }
-                        handle.exit(1);
+                        exit_handlers::exit_abort();
                     });
                 }
             });
