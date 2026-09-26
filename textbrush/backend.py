@@ -127,8 +127,7 @@ class ConfigurationRejectedError(ModelSwitchError, ValueError):
 
 
 class FatalModelError(Exception):
-    """Both the new engine's load() and the recovery load() of the
-    previous engine failed. Backend is in an indeterminate state."""
+    """Engine release or recovery failed; the session cannot safely resume."""
 
     def __init__(
         self,
@@ -366,9 +365,8 @@ class TextbrushBackend:
           Invariants:
             - Requires either no worker, or a settled (paused) worker:
               a configuration change while generating is refused.
-            - At most one engine swap per call. Failure rolls back to the
-              previous engine (recoverable) or surfaces a fatal error
-              (when recovery also fails).
+            - A rejected configuration restores the previous engine; failed
+              restoration is fatal even if the candidate can still load.
             - On success, `references` holds the decoded tuple and
               `reference_ids` is the same length in the same order
               (session-local uuids).
@@ -488,24 +486,24 @@ class TextbrushBackend:
             reference_ids = self.reference_ids
         elif paths_to_decode:
             if canvas is None:
-                # Revert any swap we did for this candidate.
-                if swapped:
-                    self._swap_engine(self.model_id)
-                raise ValueError(
+                error = ValueError(
                     f"engine {candidate_model!r} accepts no references but "
                     f"{len(paths_to_decode)} path(s) were supplied"
                 )
+                if swapped:
+                    self._restore_engine_after_rejection(error)
+                raise error
             try:
                 decoded_references = tuple(
                     normalize(Path(p), target_size=canvas) for p in paths_to_decode
                 )
-            except ReferenceImageError:
+            except ReferenceImageError as exc:
                 # Decode failed; revert any swap we did so the
                 # backend's `engine` is left untouched (AC-RECOVERY-1,
                 # and the "state untouched on failure" invariant of
                 # apply_configuration).
                 if swapped:
-                    self._swap_engine(self.model_id)
+                    self._restore_engine_after_rejection(exc)
                 raise
             reference_ids = tuple(
                 f"{uuid.uuid4().hex}:{position}" for position in range(len(decoded_references))
@@ -583,48 +581,11 @@ class TextbrushBackend:
             raise ConfigurationRejectedError(f"unknown model: {slug}", model_id=slug) from exc
 
     def _swap_engine(self, candidate_model: str) -> None:
-        """Atomically swap the loaded engine for `candidate_model`.
+        """Swap a settled worker's engine with at most one resident pipeline.
 
-        Order per T06 design decision: (1) check availability; (2)
-        unload the previous engine; (3) load the new engine; (4) on
-        exception, attempt to reload the previous engine; if that
-        succeeds raise `ModelSwitchError(recoverable=True, ...)`; if
-        that also fails raise `FatalModelError`.
-
-        The unload-before-load order is not cosmetic and is not
-        negotiable: a FLUX pipeline is roughly 23 GB resident for
-        schnell, so loading the incoming engine while the outgoing one
-        is still resident needs both at once. That reliably exhausts a
-        consumer GPU, and on most machines system memory too, on every
-        single model switch. The code did it in that order until
-        gate-remediation round 7, finding 1, in contradiction of this
-        docstring.
-
-        Consequences of the correct order, all deliberate:
-          - The recovery reload at step 4 is now the NORMAL path when the
-            incoming load fails, not an edge case: the previous engine is
-            genuinely unloaded by then and must be reloaded for the
-            backend to stay usable. `InferenceEngine.load()` is
-            documented as reusable after `unload()`, which is what makes
-            this possible (`FluxInferenceEngine.unload` only drops the
-            pipeline/device/dtype references, and `load()` re-runs in
-            full because `is_loaded()` is False again).
-          - The error taxonomy is unchanged. Incoming load fails +
-            recovery succeeds -> `ModelSwitchError(recoverable=True)`;
-            incoming load fails + recovery fails -> `FatalModelError`.
-          - Peak residency during a swap is one pipeline, plus whatever
-            the failed load allocated before raising.
-
-        On any failure path, `self.engine` and `self.model_id` remain
-        unchanged: the swap is atomic from the caller's perspective.
-
-        The snapshot directory discovery validated for each model is
-        threaded into the corresponding load (gate-remediation round 7,
-        finding 3): `report.root` for the incoming engine,
-        `self._engine_root` -- the root validated for the model that is
-        still active -- for the recovery reload. A None root means
-        "resolve by repo id from the HuggingFace cache", the behavior
-        before roots were threaded at all.
+        Check availability before unloading. A partially loaded candidate must be
+        released before restoring the previous engine from its validated root.
+        Unload failures are fatal: continuing could load two full models at once.
         """
         # (1) availability check. Nothing is unloaded until this passes.
         report = self._check_availability(candidate_model)
@@ -643,24 +604,45 @@ class TextbrushBackend:
         previous_root = self._engine_root
         next_engine = create_engine(self.config.inference.backend, candidate_model)
 
-        # (2) unload the previous engine FIRST, so the incoming pipeline
-        # is not loaded alongside it. A failure here is logged and the
-        # swap continues: `unload()` is best-effort cleanup, and refusing
-        # to switch models because a release path complained would be
-        # worse than proceeding with whatever it did free.
         try:
             previous_engine.unload()
-        except Exception:
-            logger.exception(
-                "previous engine unload raised before swap to %r; continuing", candidate_model
-            )
+        except Exception as exc:
+            raise FatalModelError(
+                "previous engine could not be released; candidate was not loaded",
+                model_id=candidate_model,
+                original_cause=exc,
+            ) from exc
 
         # (3) load the new engine.
         try:
             next_engine.load_from(report.root)
         except Exception as exc:
-            # (4) The previous engine is unloaded at this point, so the
-            # reload is what keeps the backend usable -- not a nicety.
+            try:
+                next_engine.unload()
+            except Exception as cleanup_exc:
+                raise FatalModelError(
+                    "failed candidate could not be released; recovery was not attempted",
+                    model_id=candidate_model,
+                    original_cause=exc,
+                    recovery_cause=cleanup_exc,
+                ) from cleanup_exc
+            # Exception tracebacks can themselves retain a pipeline in load()/to()
+            # locals. Preserve the exception chain and stack locations, but release
+            # inactive frame locals before allocating the previous model again.
+            import traceback
+
+            pending = [exc]
+            seen = set()
+            while pending:
+                cause = pending.pop()
+                if id(cause) in seen:
+                    continue
+                seen.add(id(cause))
+                if cause.__traceback__ is not None:
+                    traceback.clear_frames(cause.__traceback__)
+                pending.extend(
+                    linked for linked in (cause.__cause__, cause.__context__) if linked is not None
+                )
             try:
                 previous_engine.load_from(previous_root)
             except Exception as recovery_exc:
@@ -681,6 +663,20 @@ class TextbrushBackend:
 
         self.engine = next_engine
         self._engine_root = report.root
+        if self._worker is not None:
+            self._worker.engine = next_engine
+
+    def _restore_engine_after_rejection(self, cause: Exception) -> None:
+        """A failed rollback is fatal even if its inner swap recovers the candidate."""
+        try:
+            self._swap_engine(self.model_id)
+        except Exception as recovery_exc:
+            raise FatalModelError(
+                "configuration was rejected and the previous model could not be restored",
+                model_id=self.model_id,
+                original_cause=cause,
+                recovery_cause=recovery_exc,
+            ) from recovery_exc
 
     def _canvas_dimensions(self, preset: str | None) -> tuple[int, int]:
         """Return the (width, height) the engine canvas will use for the
