@@ -41,7 +41,7 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R05 | P1 | Code-confirmed | Bundle a portable Python runtime | PLANNED | — |
 | R06 | P2 | Code-confirmed | Resolve the CLI/desktop workflow mismatch | PLANNED | — |
 | R07 | P2 | Code-confirmed | Forward desktop model/reference launch arguments | PLANNED | — |
-| R08 | P2 | Reproduced | Make configuration changes and image publication atomic | PLANNED | — |
+| R08 | P2 | Reproduced | Make configuration changes and image publication atomic | DONE | `52036ba`; see detailed evidence |
 | R09 | P2 | Reproduced | Encode actual JPEG output when requested | PLANNED | — |
 | R10 | P2 | Mixed: reproduced/code | Honor output path and directory overrides | PLANNED | — |
 | R11 | P2 | Code-confirmed | Release deleted-image pixel memory | PLANNED | — |
@@ -53,10 +53,10 @@ For each task replace its sign-off line with: `DONE — YYYY-MM-DD — implement
 | R17 | P2 | Reproduced | Fix stale FLUX.2 test and isolate model availability | DONE | `0b5563a`; see detailed evidence |
 | R18 | P3 | Code-confirmed | Replace vacuous contract tests with behavioral coverage | PLANNED | — |
 | R19 | P2 | Investigate | Coordinate abort/close, process cleanup, and UI exit | PLANNED | — |
-| R20 | P2 | Investigate | Settle worker before engine unload | IN_PROGRESS | `bf9eb15`; see detailed evidence |
+| R20 | P2 | Investigate | Settle worker before engine unload | DONE | `52036ba`; see detailed evidence |
 | R21 | P2 | Investigate | Await frontend event subscription before initialization | PLANNED | — |
 | R22 | P3 | Code-confirmed | Build current frontend bundle before regression tests | DONE | `0b5563a`; see detailed evidence |
-| R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | PLANNED | — |
+| R23 | P2 | Investigate | Preserve backpressure and results when buffer is full | DONE | `52036ba`; see detailed evidence |
 | R24 | P3 | Code-confirmed | Return the validated cached model snapshot | DONE | `0b5563a`; see detailed evidence |
 | R25 | P2 | Investigate | Reconcile UI acceptance errors and in-flight delivery | PLANNED | — |
 | R26 | P3 | Investigate | Check Linux packaging and release runner compatibility | PLANNED | — |
@@ -173,7 +173,9 @@ Acceptance: parser tests assert exact returned values; bridge tests assert the a
 
 ### R08 — Make configuration changes and publication atomic
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `52036ba` — verification below.
+
+An immutable input/configuration snapshot captures prompt, sampling, seed and provenance. Configuration replacement, clearing, nonblocking buffer insertion, and seed advancement share one lock. Backend no longer clears the buffer again after the atomic update. `tests/test_worker_publication.py` deterministically covers update during inference (including an obsolete error), update after epoch validation, active/paused full-buffer updates, detached caller/engine options, and publication before backend update returns. No stale seed overwrites the new configuration. Verification: `uv run pytest tests/test_worker_publication.py -q`: 9 passed; worker/quiescence/failure/backend group: 82 passed, 1 skipped (before the last two publication cases were added). Final `uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -q`: 1,232 passed, 18 skipped, 42 deselected, 1 xfailed in 193.45 seconds. Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/worker.py:240` (`update_config`), `_run` around 478–528; `textbrush/backend.py:1179` (`update_config`).
 
@@ -325,9 +327,9 @@ Acceptance: Abort always terminates the UI/backend within the documented bound; 
 
 ### R20 — Shutdown while inference is active
 
-**Status:** IN_PROGRESS. **Sign-off:** Pending task audit.
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `52036ba` — verification below.
 
-Implementation committed with R02 in `bf9eb15`: Python abort/shutdown joins active inference without a deadline before clearing resources or unloading the engine. Worker stop immediately closes the buffer, and an inference result returned after stop is closed and discarded. README documents the unbounded Python cleanup contract. `tests/test_generation_failures.py::test_shutdown_never_unloads_engine_during_inference` holds a fake engine beyond the old five-second timeout, proves unload has not run, then releases it and checks the worker stopped, unload ran once, and no late result entered the buffer. All six tests in that file pass. Separate task acceptance audit/sign-off remains pending because the user requested stopping after the next completed task (R02). Desktop bounded termination and delivered-preview cleanup remain R19/R25 work.
+Audited the implementation from `bf9eb15` against the revised worker. Backend abort joins without a deadline before engine unload; stop closes publication immediately. The blocking-engine regression exceeds five seconds, verifies unload has not run, releases inference, and verifies no late result is buffered and its pixels are closed. The Python unbounded-shutdown contract is documented. Desktop bounded process termination/delivered-preview cleanup remain separate R19/R25 work. Verification: `uv run pytest tests/test_worker_publication.py -q`: 9 passed; worker/quiescence/failure/backend group: 82 passed, 1 skipped (before the last two publication cases were added). Final `uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -q`: 1,232 passed, 18 skipped, 42 deselected, 1 xfailed in 193.45 seconds. Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchors: `textbrush/backend.py::abort/shutdown` (five-second join), `textbrush/inference/flux.py::unload`.
 
@@ -363,7 +365,9 @@ Acceptance: modifying a main.ts behavior is reflected by the next test invocatio
 
 ### R23 — Buffer-full backpressure and dropped results
 
-**Status:** PLANNED. **Sign-off:** —
+**Status:** DONE. **Sign-off:** DONE — 2026-09-26 — Codex — `52036ba` — verification below.
+
+The worker retains one completed result at capacity and retries insertion without generating again or advancing its seed. Pause settles while retaining that result; resume publishes it first. Stop/update discard and close superseded pending output. Capacity-one tests hold the full buffer beyond the old one-second insertion timeout and assert exact image identity and seed progression, plus pause/update/stop without a consuming thread. README documents the queue-plus-one-pending policy. Verification: `uv run pytest tests/test_worker_publication.py -q`: 9 passed; worker/quiescence/failure/backend group: 82 passed, 1 skipped (before the last two publication cases were added). Final `uv run pytest tests --ignore=tests/test_buffer_stress.py -m 'not slow and not integration' -q`: 1,232 passed, 18 skipped, 42 deselected, 1 xfailed in 193.45 seconds. Ruff lint/format and `git diff --check` passed. No model-heavy tests were run.
 
 Anchor: `textbrush/worker.py:520`.
 
@@ -523,4 +527,4 @@ Not executed: real-model/GPU inference, model-heavy integration tests, the compl
 - [ ] Temporary reproduction artifacts are removed; no credentials, reference-image contents, or machine-specific runtime paths are embedded in committed production configuration.
 - [ ] README/docs and canonical backlog records are updated through their appropriate workflow, without claiming deferred verification is complete.
 
-Next-context starting point: paused at the user's request after completing R02. On an explicit resume, re-read guidance and git status, audit/sign off the R20 implementation, then continue the remaining tasks (especially R08/R23 publication/backpressure and R01/R25 acceptance ownership). R13/R17/R22/R24 were completed in the previous increment. R03 still needs model-enabled validation. Source commits are `0b5563a` and `bf9eb15`; the final project-wide gate remains open. Original macOS/Linux schema changes remain untouched. Temporary wheel/build artifacts and test logs have been removed. The overall goal is not complete.
+Next-context starting point: user explicitly resumed after the R02 pause. R08/R20/R23 are now complete in `52036ba`; continue with R01/R09/R10/R25 acceptance/output recovery, then the remaining planned tasks. R03 still needs model-enabled validation. The full fast Python suite now passes (1,232 passed); final frontend/Rust/platform gates remain open. Original macOS/Linux schema changes remain untouched. The overall goal is not complete.
