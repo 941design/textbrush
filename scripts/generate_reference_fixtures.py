@@ -56,6 +56,14 @@ def main() -> None:
     square = Image.new("RGB", (400, 400), (60, 200, 90))
     square.save(FIXTURES_DIR / "valid_square.png", format="PNG")
 
+    # Landscape RGBA WebP (lossless, so the alpha region survives exactly):
+    # decoded in memory and composited like a PNG, never converted on disk.
+    webp = Image.new("RGBA", (600, 400), (200, 60, 60, 255))
+    for x in range(300, 600):
+        for y in range(400):
+            webp.putpixel((x, y), (0, 0, 255, 0))
+    webp.save(FIXTURES_DIR / "valid_landscape_alpha.webp", format="WEBP", lossless=True)
+
     # RGBA PNG with a genuinely semi-transparent region, for alpha-compositing tests.
     alpha = Image.new("RGBA", (200, 100), (255, 0, 0, 255))
     for x in range(100, 200):

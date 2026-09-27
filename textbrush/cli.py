@@ -172,7 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=[],
         metavar="PATH",
-        help="Reference image (repeat up to four times; order is preserved)",
+        help="Reference image, PNG/JPEG/WebP (repeat up to four times; order is preserved)",
     )
     parser.add_argument(
         "--preset", choices=list(EDITING_PRESETS), default=None, help="Editing output preset"

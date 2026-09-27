@@ -36,7 +36,12 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 # Case-insensitive by construction: callers compare against
 # `path.suffix.lower()`, never the raw suffix, so "IMG_1234.JPG" is accepted
 # (spec.md sec 5.2/6.2, AC-INPUT-3).
-SUPPORTED_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
+#
+# Every format here is decoded by Pillow straight into memory and converted
+# to RGB by `_to_rgb_with_neutral_fill`; nothing is ever re-encoded or
+# written to disk. WebP (lossy or lossless, with or without alpha) takes the
+# same path as PNG and JPEG.
+SUPPORTED_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 # The single documented neutral fill (spec.md sec 6.2: "a documented neutral
 # fill value"), applied to all three RGB channels. Used for BOTH alpha

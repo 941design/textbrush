@@ -1,6 +1,6 @@
 // Pure selection rules. The Python references and model registry remain authoritative.
 export const MAX_REFERENCES = 4;
-export const SUPPORTED_EXTENSIONS = ['.png', '.jpg', '.jpeg'] as const;
+export const SUPPORTED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'] as const;
 
 export interface ModelCapability {
   id: string;
@@ -65,7 +65,7 @@ export function applyPickedPaths(
   const errors: string[] = [];
   for (const path of picked) {
     if (!supported(path)) {
-      errors.push(`${basename(path)}: supported formats are PNG, JPG, and JPEG`);
+      errors.push(`${basename(path)}: supported formats are PNG, JPG, JPEG, and WebP`);
     } else if (references.length >= limit) {
       errors.push(`${basename(path)}: limit of ${limit} reference images`);
     } else {
@@ -84,7 +84,7 @@ export function replaceReference(current: string[], index: number, path: string)
     return { references: [...current], errors: [`Reference ${index + 1} does not exist`] };
   }
   if (!supported(path)) {
-    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, and JPEG`] };
+    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, JPEG, and WebP`] };
   }
   const references = [...current];
   references[index] = path;

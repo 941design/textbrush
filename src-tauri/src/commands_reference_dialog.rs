@@ -22,7 +22,10 @@ pub async fn pick_reference_files(app: AppHandle) -> Result<Vec<String>, String>
     let picked = app
         .dialog()
         .file()
-        .add_filter("Images", &["png", "jpg", "jpeg", "PNG", "JPG", "JPEG"])
+        .add_filter(
+            "Images",
+            &["png", "jpg", "jpeg", "webp", "PNG", "JPG", "JPEG", "WEBP"],
+        )
         .blocking_pick_files()
         .unwrap_or_default();
     let paths = paths_to_strings(picked)?;

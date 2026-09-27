@@ -28,7 +28,8 @@ images are **optional for the models that support them at all**:
 `flux1-schnell` is text-to-image only and accepts none; `flux1-kontext-dev`
 requires exactly one; `flux2-klein-4b` generates from a prompt alone and also
 accepts up to four, and is required for two or more. References are local PNG,
-JPG, or JPEG files (including `.JPG`); order preserved, duplicates allowed. See
+JPG, JPEG, or WebP files (including `.JPG`), decoded in memory; order
+preserved, duplicates allowed. See
 [Reference Editing](docs/reference-editing.md) for the full guide — model
 capabilities, output sizes, CLI and desktop flows, credentials, hardware,
 privacy, and limitations.

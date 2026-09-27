@@ -8989,7 +8989,7 @@ async function fetchAndParsePngMetadata(url) {
 
 // reference_picker.ts
 var MAX_REFERENCES = 4;
-var SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg"];
+var SUPPORTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
 var DEFAULT_MODELS = [
   { id: "flux1-schnell", displayName: "FLUX.1 [schnell]", minReferences: 0, maxReferences: 0 },
   { id: "flux1-kontext-dev", displayName: "FLUX.1 Kontext [dev]", minReferences: 1, maxReferences: 1 },
@@ -9019,7 +9019,7 @@ function applyPickedPaths(current, picked, limit = MAX_REFERENCES) {
   const errors = [];
   for (const path of picked) {
     if (!supported(path)) {
-      errors.push(`${basename(path)}: supported formats are PNG, JPG, and JPEG`);
+      errors.push(`${basename(path)}: supported formats are PNG, JPG, JPEG, and WebP`);
     } else if (references.length >= limit) {
       errors.push(`${basename(path)}: limit of ${limit} reference images`);
     } else {
@@ -9036,7 +9036,7 @@ function replaceReference(current, index, path) {
     return { references: [...current], errors: [`Reference ${index + 1} does not exist`] };
   }
   if (!supported(path)) {
-    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, and JPEG`] };
+    return { references: [...current], errors: [`${basename(path)}: supported formats are PNG, JPG, JPEG, and WebP`] };
   }
   const references = [...current];
   references[index] = path;

@@ -7,7 +7,7 @@ import {
 } from './reference_picker.js';
 
 test('picked paths keep order and duplicates, while formats and limit are enforced', () => {
-  const paths = ['a.png', 'a.png', 'b.JPG', 'c.jpeg', 'fifth.png', 'bad.bmp'];
+  const paths = ['a.png', 'a.png', 'b.JPG', 'c.WebP', 'fifth.png', 'bad.bmp'];
   const result = applyPickedPaths([], paths);
   assert.deepEqual(result.references, paths.slice(0, MAX_REFERENCES));
   assert.match(result.errors[0], /limit of 4/);

@@ -314,14 +314,41 @@ class TestCaseInsensitiveExtensionMatching:
         # Each candidate extension is paired with a source fixture whose
         # actual encoded format matches it -- renaming a JPEG's bytes to
         # ".png" would fail to decode as PNG and test the wrong thing.
-        source = FIXTURES_DIR / (
-            "valid_landscape.jpg" if extension != ".png" else "valid_square.png"
-        )
+        source = FIXTURES_DIR / {
+            ".png": "valid_square.png",
+            ".webp": "valid_landscape_alpha.webp",
+        }.get(extension, "valid_landscape.jpg")
         for candidate_ext in (extension, extension.upper()):
             candidate = tmp_path / f"ref{candidate_ext}"
             shutil.copy(source, candidate)
             result = normalize(candidate, target_size=(32, 32))
             assert isinstance(result, NormalizedReference)
+
+
+class TestWebPReferences:
+    """WebP is decoded and converted in memory like every other format:
+    the result is RGB pixel data, transparency lands on the neutral fill,
+    and nothing is written next to the source."""
+
+    def test_webp_with_alpha_decodes_to_rgb_in_memory(self, tmp_path: Path):
+        source = FIXTURES_DIR / "valid_landscape_alpha.webp"
+        candidate = tmp_path / "ref.webp"
+        shutil.copy(source, candidate)
+        before = sorted(p.name for p in tmp_path.iterdir())
+
+        result = normalize(candidate)
+
+        assert isinstance(result, NormalizedReference)
+        assert result.pixel_data.mode == "RGB"
+        assert (result.width, result.height) == (600, 400)
+        # Opaque left half keeps its colour; transparent right half is the fill.
+        assert result.pixel_data.getpixel((10, 10)) == (200, 60, 60)
+        assert result.pixel_data.getpixel((590, 10)) == (
+            NEUTRAL_FILL_VALUE,
+            NEUTRAL_FILL_VALUE,
+            NEUTRAL_FILL_VALUE,
+        )
+        assert sorted(p.name for p in tmp_path.iterdir()) == before, "no file was written"
 
 
 class TestNormalizedReferenceContract:

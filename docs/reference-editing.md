@@ -47,6 +47,11 @@ extension case-insensitively against this set:
 - `.png`
 - `.jpg`
 - `.jpeg` (including `.JPG`)
+- `.webp` (lossy or lossless, with or without transparency)
+
+Every file is decoded into memory and converted to RGB there — WebP
+exactly like PNG and JPEG. Nothing is re-encoded or written to disk, and
+transparency is composited onto the same neutral fill for all formats.
 
 Unsupported extensions are rejected with a message naming the file and
 the supported set. Corrupt or truncated files are rejected with a

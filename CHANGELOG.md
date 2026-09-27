@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. The command is now asynchronous and runs off the main thread, as
   the dialog plugin requires.
 
+### Added
+- **WebP reference images.** The file picker, the CLI, and the decoder
+  accept `.webp` alongside PNG and JPEG. WebP files are decoded and
+  converted to RGB in memory exactly like the other formats; nothing is
+  written to disk.
+
 ### Changed
 - **Model, reference, and output-size changes no longer require a
   manual pause.** The desktop app takes them while the worker is
