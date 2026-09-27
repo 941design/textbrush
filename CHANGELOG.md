@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- **Opening the reference file dialog froze the desktop app.** The
+  dialog command was synchronous, so Tauri ran its blocking file picker
+  on the main thread, stalling the event loop the picker itself waits
+  on. The command is now asynchronous and runs off the main thread, as
+  the dialog plugin requires.
+
 ### Changed
 - **Model, reference, and output-size changes no longer require a
   manual pause.** The desktop app takes them while the worker is

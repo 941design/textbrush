@@ -12,8 +12,13 @@ fn paths_to_strings(paths: Vec<FilePath>) -> Result<Vec<String>, String> {
         .collect()
 }
 
+// `async` is load-bearing: Tauri runs synchronous commands on the main
+// thread, and a blocking dialog there stalls the event loop the dialog
+// itself needs -- the window freezes with no error. An async command runs
+// on the async runtime's pool, where the plugin documents the blocking
+// pickers as safe.
 #[tauri::command]
-pub fn pick_reference_files(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn pick_reference_files(app: AppHandle) -> Result<Vec<String>, String> {
     let picked = app
         .dialog()
         .file()
