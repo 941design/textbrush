@@ -164,6 +164,9 @@ class ModelSpec:
     # how an unpinned value stays fail-safe.
     expected_class_name: str | None = None
     license_url: str = ""
+    # Tokenizers used through apply_chat_template need a default template
+    # in addition to their vocabulary, even when tokenizer construction succeeds.
+    chat_template_components: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Default `license_url` from `repo_id`, and enforce that
@@ -300,6 +303,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         # https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/raw/main/model_index.json
         # directly (no token required) and reading its `_class_name` key.
         expected_class_name="Flux2KleinPipeline",
+        chat_template_components=("tokenizer",),
     ),
 }
 

@@ -84,6 +84,7 @@ ALLOW_PATTERNS: list[str] = [
     "**/*.txt",
     "**/*.md",
     "**/*.model",  # For T5 tokenizer
+    "**/*.jinja",  # Tokenizer chat templates (required by FLUX.2 Klein)
 ]
 
 IGNORE_PATTERNS: list[str] = [
@@ -689,6 +690,44 @@ def _tokenizer_has_vocab_assets(component_dir: Path) -> bool:
     return (component_dir / vocab_file).exists() and (component_dir / merges_file).exists()
 
 
+def _tokenizer_has_chat_template(component_dir: Path) -> bool:
+    """Check the default-template formats loaded by Transformers, without importing it.
+
+    Standalone templates override tokenizer_config.json. Klein calls
+    apply_chat_template without a name or tools, so named-only templates
+    cannot substitute for a default. Template rendering is left to Transformers.
+    """
+    template_file = component_dir / "chat_template.jinja"
+    named_templates = {
+        path.stem: path
+        for path in (component_dir / "chat_templates").glob("*.jinja")
+        if path.is_file()
+    }
+    # Transformers loads named templates after the root default.
+    template_file = named_templates.get("default", template_file)
+    if template_file.is_file():
+        try:
+            return bool(template_file.read_text(encoding="utf-8").strip())
+        except UnicodeError:
+            return False
+    if named_templates:
+        return False
+    try:
+        config = json.loads((component_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
+    except (ValueError, UnicodeError):
+        return False
+    template = config.get("chat_template") if isinstance(config, dict) else None
+    if isinstance(template, list):
+        template = {
+            entry.get("name"): entry.get("template")
+            for entry in template
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+        }
+    if isinstance(template, dict):
+        template = template.get("default")
+    return isinstance(template, str) and bool(template.strip())
+
+
 def _missing_components(spec: ModelSpec, root: Path) -> list[str] | None:
     """Return declared components missing their config or weight files under
     `root`, or None if the index could not be parsed, or the filesystem
@@ -726,6 +765,11 @@ def _missing_components(spec: ModelSpec, root: Path) -> list[str] | None:
                 missing.append(component.name)
                 continue
             if component.weight_glob is None:
+                if (
+                    component.name in spec.chat_template_components
+                    and not _tokenizer_has_chat_template(component_dir)
+                ):
+                    missing.append(f"{component.name} (chat template)")
                 continue
             shard_status = _missing_shards(component_dir, component.weight_glob)
             if shard_status is not None:

@@ -1,0 +1,33 @@
+{
+  "model": "black-forest-labs/FLUX.2-klein-4B",
+  "snapshot": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+  "original_state": {
+    "discovery_reported_available": true,
+    "tokenizer_config_chat_template": null,
+    "standalone_chat_template_present": false,
+    "tokenizer_only_reproduction": "AutoTokenizer.from_pretrained(local_tokenizer_directory, local_files_only=True) succeeded; apply_chat_template raised the reported missing-chat_template ValueError"
+  },
+  "repair": {
+    "file": "tokenizer/chat_template.jinja",
+    "method": "hf_hub_download with exact snapshot revision and token=False; no force download",
+    "bytes": 4168,
+    "sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+  },
+  "verification": {
+    "tokenizer_loaded_locally": true,
+    "template_loaded": true,
+    "apply_chat_template": {
+      "tokenize": false,
+      "add_generation_prompt": true,
+      "enable_thinking": false,
+      "prompt_rendered": true
+    },
+    "tokenized_length_with_max_length_padding": 512,
+    "discovery_available_after_repair": true,
+    "model_weights_loaded": false,
+    "image_generation_run": false,
+    "focused_tests": "196 passed in 0.60 seconds: inference contract, chat templates, model weights and weights",
+    "broader_fast_suite": "1461 passed, 14 skipped, 62 deselected, 1 xfailed, 1 failed in 208.70 seconds. The sole failure was an existing six-ratio expectation despite the specified eight-ratio contract; corrected and verified by the complete inference-contract module in the final focused run. Two additional template-precedence cases were added after broad collection and passed in the focused run.",
+    "ruff_lint_and_format": "passed"
+  }
+}

@@ -699,6 +699,7 @@ class TestIndexDrivenDiscoveryLiteralFixtures:
         (model_dir / "text_encoder" / "model.safetensors").write_bytes(b"\x00")
         (model_dir / "tokenizer").mkdir()
         (model_dir / "tokenizer" / "tokenizer_config.json").write_text("{}")
+        (model_dir / "tokenizer" / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         # gate-remediation round 6, finding 3: a tokenizer needs a real vocab asset.
         (model_dir / "tokenizer" / "tokenizer.json").write_text("{}")
         (model_dir / "transformer").mkdir()
@@ -773,6 +774,7 @@ class TestIndexDrivenDiscoveryLiteralFixtures:
         (model_dir / "text_encoder" / "model.safetensors").write_bytes(b"\x00")
         (model_dir / "tokenizer").mkdir()
         (model_dir / "tokenizer" / "tokenizer_config.json").write_text("{}")
+        (model_dir / "tokenizer" / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         # gate-remediation round 6, finding 3: a tokenizer needs a real vocab asset.
         (model_dir / "tokenizer" / "tokenizer.json").write_text("{}")
         (model_dir / "transformer").mkdir()
@@ -945,6 +947,7 @@ class TestTokenizerVocabAssetCompleteness:
         tokenizer_dir = root / "tokenizer"
         tokenizer_dir.mkdir()
         (tokenizer_dir / "tokenizer_config.json").write_text("{}")
+        (tokenizer_dir / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         for filename, content in tokenizer_files.items():
             (tokenizer_dir / filename).write_text(content)
 
@@ -1162,6 +1165,7 @@ class TestIncompleteCustomDirDoesNotShadowCompleteCache:
         (root / "text_encoder" / "model.safetensors").write_bytes(b"\x00")
         (root / "tokenizer").mkdir()
         (root / "tokenizer" / "tokenizer_config.json").write_text("{}")
+        (root / "tokenizer" / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         # gate-remediation round 6, finding 3: a tokenizer needs a real vocab asset.
         (root / "tokenizer" / "tokenizer.json").write_text("{}")
         (root / "transformer").mkdir()
@@ -1241,6 +1245,7 @@ class TestShardedWeightCompleteness:
         (root / "text_encoder" / "model.safetensors").write_bytes(b"\x00")
         (root / "tokenizer").mkdir()
         (root / "tokenizer" / "tokenizer_config.json").write_text("{}")
+        (root / "tokenizer" / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         # gate-remediation round 6, finding 3: a tokenizer needs a real vocab asset.
         (root / "tokenizer" / "tokenizer.json").write_text("{}")
         (root / "vae").mkdir()
@@ -1404,6 +1409,7 @@ class TestShardedWeightCompletenessWithoutIndexFile:
         (root / "text_encoder" / "model.safetensors").write_bytes(b"\x00")
         (root / "tokenizer").mkdir()
         (root / "tokenizer" / "tokenizer_config.json").write_text("{}")
+        (root / "tokenizer" / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         # gate-remediation round 6, finding 3: a tokenizer needs a real vocab asset.
         (root / "tokenizer" / "tokenizer.json").write_text("{}")
         (root / "vae").mkdir()

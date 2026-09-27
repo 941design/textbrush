@@ -433,12 +433,12 @@ class TestSchnellNoReferences:
         engine._pipeline.assert_not_called()
 
     def test_aspect_ratios_unchanged(self) -> None:
-        """The text-only aspect-ratio vocabulary is unchanged for the
-        existing schnell path (AC-COMPAT-1: AC-MODEL-1, asserted via the
-        literal set today)."""
+        """Schnell supports all eight ratios in the shared output-size contract."""
         assert set(FluxInferenceEngine.ASPECT_RATIOS) == {
             "1:1",
             "16:9",
+            "4:3",
+            "3:4",
             "3:1",
             "4:1",
             "4:5",

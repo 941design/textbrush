@@ -69,6 +69,8 @@ def write_complete_snapshot(root: Path, model_id: str = "flux1-schnell") -> Mode
         (comp_dir / component.config_filename).write_text("{}")
         if component.name.startswith("tokenizer"):
             (comp_dir / "tokenizer.json").write_text("{}")
+        if model_id == "flux2-klein-4b" and component.name == "tokenizer":
+            (comp_dir / "chat_template.jinja").write_text("{{ messages[0]['content'] }}")
         if component.weight_glob is not None:
             weight_name = component.weight_glob.replace("*", "weights")
             (comp_dir / weight_name).write_bytes(b"\x00")
