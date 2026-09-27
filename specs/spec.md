@@ -479,6 +479,14 @@ The UI always shows the reference-image control and disables it for a
 model whose maximum is zero, so the capability is visible rather than
 merely absent.
 
+Model, reference, and output-size changes are applied only to a settled
+(paused) worker, but the user may request them while generation is
+running: the UI pauses the worker, applies the change once the in-flight
+generation has returned, and resumes generation if it was running when
+the request was made. The controls are unavailable only while a model
+loads, while a change is being applied, or while one is waiting for the
+worker to settle.
+
 #### 6.2 Model Discovery
 
 On startup, for every registered model:

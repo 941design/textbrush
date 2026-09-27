@@ -59,6 +59,7 @@ const state: AppState = {
   settled: false,
   compatibility: null,
   configUpdateInFlight: false,
+  deferredConfigChange: null,
 };
 
 // DOM Element References
@@ -122,6 +123,9 @@ let buttonListenersInitialized = false;
 let keyboardListenersInitialized = false;
 let pauseCommandInFlight = false;
 let desiredPausedState: boolean | null = null;
+// Set when a deferred configuration change paused a running worker; the
+// acknowledging config_ack resumes generation and clears it.
+let resumeAfterConfigAck = false;
 let abortExitScheduled = false;
 
 function isBackendStatePaused(stateValue: string): boolean | null {
@@ -303,20 +307,36 @@ function isAwaitingModel(): boolean {
   return state.backendState?.state === 'awaiting_model';
 }
 
+/** True while the worker is running (between or during generations). */
+function isWorkerRunning(): boolean {
+  const current = state.backendState?.state;
+  return current === 'idle' || current === 'generating';
+}
+
+/** True after a pause was requested but before the worker reported quiescence. */
+function isWorkerPausing(): boolean {
+  return state.backendState?.state === 'paused' && !state.settled;
+}
+
 /**
- * True when the model selector may be operated.
+ * True when a model, reference, or canvas change may be requested now.
  *
- * Deferred loading is the point of the `awaiting_model` case: at launch
- * nothing is loaded, so the selector is live immediately rather than
- * waiting for a settled worker that no one asked for.
+ * The backend only applies such a change to a settled worker, but the
+ * user does not have to arrange that by hand: while the worker is
+ * running (or still coming to rest after a pause) the request is
+ * deferred -- the UI pauses the worker, sends the change once it has
+ * settled, and resumes if generation was running when the user asked.
+ * What stays shut is a model load in progress (`loading`), a change
+ * already in flight, and one already waiting its turn.
  */
-function canSelectModel(): boolean {
-  return (state.settled || isAwaitingModel()) && !state.configUpdateInFlight;
+function canRequestEditingChange(): boolean {
+  if (state.configUpdateInFlight || state.deferredConfigChange) return false;
+  return state.settled || isAwaitingModel() || isWorkerRunning() || isWorkerPausing();
 }
 
 function renderEditingControls(): void {
-  const editable = state.settled && !state.configUpdateInFlight;
-  const selectable = canSelectModel();
+  const editable = canRequestEditingChange();
+  const selectable = editable;
   elements.modelRadios?.forEach(radio => {
     // Backend truth only: a click does not check the radio, the
     // acknowledgement does (FR9, no optimistic updates). While a
@@ -345,13 +365,15 @@ function renderEditingControls(): void {
 
   // The output-size group is the same group for every model, so it is
   // never hidden -- only the prompt waits for a settled worker.
-  if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
+  const promptEditable = state.settled && !state.configUpdateInFlight;
+  if (elements.promptInput) elements.promptInput.disabled = !promptEditable && !isAwaitingModel();
 
   // A model that takes references sizes its output through the
   // acknowledged-configuration seam (its references must be re-decoded
-  // onto the new canvas), and that seam is shut unless the worker has
-  // parked. Disable the group rather than letting a click move the
-  // controls while the backend keeps generating at the old canvas.
+  // onto the new canvas). A change requested while the worker runs is
+  // deferred like a model change; the group is shut only while a change
+  // is in flight or waiting, so a click cannot move the controls while
+  // the backend keeps generating at the old canvas.
   const sizeLocked = isEditingModel(state.modelId) && !editable;
   elements.aspectRatioRadios?.forEach(radio => {
     radio.disabled = sizeLocked;
@@ -390,7 +412,7 @@ function renderReferenceList(): void {
   if (!list) return;
   list.replaceChildren();
   const paths = activeReferencePaths();
-  const editable = state.settled && !state.configUpdateInFlight;
+  const editable = canRequestEditingChange();
   paths.forEach((path, index) => {
     const item = document.createElement('li');
     const preview = document.createElement('img');
@@ -405,7 +427,7 @@ function renderReferenceList(): void {
     remove.setAttribute('aria-label', `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
     remove.disabled = !editable;
     remove.addEventListener('click', () => {
-      sendEditingUpdate(state.modelId, removeReference(state.references, index));
+      requestEditingUpdate(state.modelId, removeReference(state.references, index));
     });
     const replace = document.createElement('button');
     replace.type = 'button';
@@ -413,14 +435,19 @@ function renderReferenceList(): void {
     replace.setAttribute('aria-label', `Replace reference ${index + 1} of ${paths.length}: ${filename}`);
     replace.disabled = !editable;
     replace.addEventListener('click', async () => {
-      const picked = await invoke<string[]>('pick_reference_files');
-      if (!picked.length) return;
-      const result = replaceReference(state.references, index, picked[0]!);
-      if (result.errors.length) {
-        if (elements.referenceError) elements.referenceError.textContent = result.errors.join(' ');
-        return;
+      if (!canRequestEditingChange()) return;
+      try {
+        const picked = await invoke<string[]>('pick_reference_files');
+        if (!picked.length) return;
+        const result = replaceReference(state.references, index, picked[0]!);
+        if (result.errors.length) {
+          if (elements.referenceError) elements.referenceError.textContent = result.errors.join(' ');
+          return;
+        }
+        requestEditingUpdate(state.modelId, result.references);
+      } catch (error) {
+        if (elements.referenceError) elements.referenceError.textContent = String(error);
       }
-      sendEditingUpdate(state.modelId, result.references);
     });
     item.append(preview, name, remove, replace);
     list.append(item);
@@ -476,6 +503,67 @@ function sendEditingUpdate(
 }
 
 /**
+ * Request a model/reference/canvas change from wherever the worker is.
+ *
+ * A settled worker (or none yet) takes the change at once. A running
+ * worker is paused for it: the change is parked in
+ * `state.deferredConfigChange`, `pumpDeferredConfigChange` sends it when
+ * `state_changed(paused, settled=true)` arrives, and `handleConfigAck`
+ * resumes generation afterwards if it was running when the user asked.
+ * A worker that is already coming to rest after a manual pause simply
+ * waits for the settled signal and stays paused afterwards.
+ *
+ * Returns whether the change was taken (sent or parked). Nothing is
+ * taken while a model loads, while a change is in flight, or while one
+ * is already parked; the controls are disabled in those cases so a
+ * refused click is not the normal path.
+ */
+function requestEditingUpdate(
+  modelId: string | null,
+  references: string[],
+  size?: { aspectRatio: string; width: number; height: number },
+): boolean {
+  if (!modelId || !canRequestEditingChange()) return false;
+  if (state.settled || isAwaitingModel()) {
+    return sendEditingUpdate(modelId, references, size);
+  }
+  state.deferredConfigChange = { modelId, references, size, resumeAfter: isWorkerRunning() };
+  // The viewer names the model being switched to and the list shows the
+  // references being applied, exactly as for an in-flight update.
+  state.pendingModelId = modelId;
+  state.pendingReferences = references;
+  renderEditingControls();
+  updateLoadingOverlayForState();
+  pumpDeferredConfigChange();
+  return true;
+}
+
+/**
+ * Advance a parked change: ask the worker to pause while it runs, and
+ * send the change the moment it reports quiescence. Called whenever the
+ * backend state moves.
+ */
+function pumpDeferredConfigChange(): void {
+  const deferred = state.deferredConfigChange;
+  if (!deferred) return;
+  if (state.settled) {
+    state.deferredConfigChange = null;
+    resumeAfterConfigAck = deferred.resumeAfter;
+    if (!sendEditingUpdate(deferred.modelId, deferred.references, deferred.size)) {
+      resumeAfterConfigAck = false;
+      state.pendingModelId = null;
+      state.pendingReferences = null;
+      renderEditingControls();
+    }
+    return;
+  }
+  if (isWorkerRunning() && !pauseCommandInFlight) {
+    requestPauseToggle();
+  }
+  // Otherwise the pause is under way; the settled signal drives the send.
+}
+
+/**
  * Claim an output-size change for the acknowledged-configuration seam.
  *
  * Returns true when this module owns the update -- whether it sent it or
@@ -495,7 +583,7 @@ function claimOutputSizeChange(aspectRatio: string, width: number, height: numbe
     return true;
   }
   if (!isEditingModel(state.modelId)) return false;
-  const sent = sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  const sent = requestEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
   if (!sent) {
     // The seam withheld the update (unsettled worker, or one already in
     // flight). Nothing reached the backend, so no ack will come back to
@@ -515,7 +603,7 @@ function setupEditingControls(): void {
       // previous model held; dropping them here keeps the update the
       // backend acknowledges the same one the user can see.
       const references = maxReferencesFor(requested) > 0 ? state.references : [];
-      sendEditingUpdate(requested, references, {
+      requestEditingUpdate(requested, references, {
         aspectRatio: state.aspectRatio,
         width: state.width,
         height: state.height,
@@ -523,7 +611,11 @@ function setupEditingControls(): void {
     });
   });
   elements.referenceAdd?.addEventListener('click', async () => {
-    if (!state.settled || state.configUpdateInFlight) return;
+    // The picker opens whether or not the worker is settled: choosing
+    // files needs nothing from the backend, and the change they produce
+    // is taken by `requestEditingUpdate`, which pauses the worker when
+    // it has to.
+    if (!canRequestEditingChange()) return;
     const limit = maxReferencesFor(state.modelId);
     if (limit === 0) return;
     try {
@@ -533,7 +625,7 @@ function setupEditingControls(): void {
         elements.referenceError.textContent = result.errors.join(' ');
       }
       if (result.references.length !== state.references.length) {
-        sendEditingUpdate(state.modelId, result.references);
+        requestEditingUpdate(state.modelId, result.references);
       }
     } catch (error) {
       if (elements.referenceError) elements.referenceError.textContent = String(error);
@@ -569,6 +661,14 @@ function handleConfigAck(payload: ConfigAckPayload): void {
     state.settled = payload.settled;
   }
   renderEditingControls();
+  // A change that interrupted a running worker hands generation back
+  // once it is acknowledged -- but only a compatible configuration can
+  // run, and the backend refuses to resume an incompatible one anyway.
+  const resume = resumeAfterConfigAck;
+  resumeAfterConfigAck = false;
+  if (resume && payload.compatible && state.backendState?.state === 'paused') {
+    requestPauseToggle();
+  }
 }
 
 /**
@@ -663,6 +763,13 @@ function handleStateChanged(payload: StateChangedPayload): void {
     pauseCommandInFlight = false;
     desiredPausedState = null;
   }
+  if (payload.state === 'error') {
+    // Whatever was waiting for a settled worker will not get one.
+    state.deferredConfigChange = null;
+    resumeAfterConfigAck = false;
+  } else {
+    pumpDeferredConfigChange();
+  }
 
   // Update deprecated isPaused flag for compatibility
   state.isPaused = payload.state === "paused";
@@ -708,6 +815,8 @@ function handleStateChanged(payload: StateChangedPayload): void {
 function handleFatalError(message: string): void {
   console.error('Fatal error received:', message);
   state.isTransitioning = true;
+  state.deferredConfigChange = null;
+  resumeAfterConfigAck = false;
 
   // Immediately disable all interactive buttons
   const buttons = [
@@ -772,6 +881,9 @@ function handleErrorMessage(payload: ErrorPayload): void {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
     state.pendingModelId = null;
+    // The worker stays paused with the message in view rather than
+    // resuming as if the change had gone through.
+    resumeAfterConfigAck = false;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = payload.message;
   }
@@ -1005,10 +1117,14 @@ function updateLoadingOverlayForState(): void {
         labelText = "ready";
         break;
       case "generating":
-        labelText = "generating";
+        labelText = state.deferredConfigChange
+          ? "finishing the current image before applying changes"
+          : "generating";
         break;
       case "paused":
-        labelText = "generation paused";
+        labelText = state.deferredConfigChange
+          ? "finishing the current image before applying changes"
+          : "generation paused";
         break;
       case "error":
         labelText = state.backendState.message || "error";
@@ -1056,7 +1172,9 @@ function updatePauseButton(): void {
       backendStateValue === 'idle' ||
       backendStateValue === 'generating' ||
       backendStateValue === 'paused';
-    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight;
+    elements.pauseButton.disabled =
+      !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight ||
+      state.deferredConfigChange !== null;
   }
 }
 
@@ -1627,7 +1745,16 @@ function abort(): void {
   }).finally(handleAborted);
 }
 
+/**
+ * The user's pause/resume. Withheld while a parked configuration change
+ * owns the pause: resuming under it would race the change it waits for.
+ */
 function togglePause(): void {
+  if (state.deferredConfigChange) return;
+  requestPauseToggle();
+}
+
+function requestPauseToggle(): void {
   const backendStateValue = state.backendState?.state ?? null;
   const backendAllowsPause =
     backendStateValue === 'idle' ||

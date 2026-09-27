@@ -168,6 +168,164 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
   }
 });
 
+test('a model change while generating pauses the worker, applies once settled, and resumes', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const updates = () => calls.filter(call => call.command === 'update_generation_config');
+    const pauses = () => calls.filter(call => call.command === 'pause_generation');
+
+    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+
+    // Running is not a locked door: the selector stays operable, and so
+    // does the picker, while the prompt still waits for a settled worker.
+    const kontext = document.querySelector('input[value="flux1-kontext-dev"]');
+    assert.equal(kontext.disabled, false);
+    assert.equal(document.getElementById('reference-add').disabled, false);
+    assert.equal(document.getElementById('prompt-input').disabled, true);
+
+    const updatesBefore = updates().length;
+    kontext.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // Nothing is sent to a running worker; it is asked to pause instead.
+    assert.equal(updates().length, updatesBefore);
+    assert.equal(pauses().length, 1);
+    assert.equal(window.textbrushApp.state.deferredConfigChange?.modelId, 'flux1-kontext-dev');
+    assert.equal(window.textbrushApp.state.deferredConfigChange?.resumeAfter, true);
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b',
+      'selection remains backend truth until the acknowledgement');
+    assert.match(document.querySelector('.loading-label').textContent, /before applying changes/);
+    // The pause belongs to the change now; Space must not resume under it.
+    assert.equal(document.getElementById('pause-btn').disabled, true);
+    window.textbrushApp.togglePause();
+    assert.equal(pauses().length, 1);
+
+    // Pause acknowledged but the in-flight image has not returned yet.
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: false } });
+    assert.equal(updates().length, updatesBefore);
+
+    // Quiescence sends the parked change, with the references carried over.
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(updates().length, updatesBefore + 1);
+    const update = updates().at(-1);
+    assert.equal(update.args.modelId, 'flux1-kontext-dev');
+    assert.deepEqual([...update.args.references], ['/tmp/one.png']);
+    assert.equal(window.textbrushApp.state.deferredConfigChange, null);
+    assert.equal(kontext.disabled, true, 'nothing else may be requested while the change is in flight');
+
+    // The acknowledgement hands generation back, because it was running.
+    emit(ack('flux1-kontext-dev', ['/tmp/one.png'], 'landscape-medium'));
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev');
+    assert.equal(pauses().length, 2, 'resumed after the acknowledgement');
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    assert.equal(pauses().length, 2, 'a running worker with nothing parked is left alone');
+    assert.equal(kontext.disabled, false);
+  } finally {
+    app.close();
+  }
+});
+
+test('adding a reference while generating opens the picker first and pauses for the change', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const picks = () => calls.filter(call => call.command === 'pick_reference_files');
+    const updates = () => calls.filter(call => call.command === 'update_generation_config');
+    const pauses = () => calls.filter(call => call.command === 'pause_generation');
+
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+
+    const add = document.getElementById('reference-add');
+    assert.equal(add.disabled, false);
+    app.setPicked(['/tmp/one.png']);
+    add.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(picks().length, 1, 'the file dialog opens without a manual pause');
+    assert.equal(pauses().length, 1);
+    assert.equal(updates().length, 0);
+    // The list already shows the file being applied.
+    assert.deepEqual([...document.querySelectorAll('#reference-list img')].map(img => img.alt),
+      ['Reference 1 of 1: one.png']);
+
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(updates().length, 1);
+    assert.deepEqual([...updates().at(-1).args.references], ['/tmp/one.png']);
+    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'landscape-medium'));
+    assert.equal(pauses().length, 2, 'generation resumes with the new reference');
+
+    // A cancelled dialog changes nothing and asks the worker for nothing.
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    app.setPicked([]);
+    add.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(picks().length, 2);
+    assert.equal(pauses().length, 2);
+    assert.equal(updates().length, 1);
+  } finally {
+    app.close();
+  }
+});
+
+test('a change requested during a manual pause waits for quiescence and stays paused', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const updates = () => calls.filter(call => call.command === 'update_generation_config');
+    const pauses = () => calls.filter(call => call.command === 'pause_generation');
+
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    window.textbrushApp.togglePause();
+    assert.equal(pauses().length, 1);
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: false } });
+
+    document.querySelector('input[value="flux1-schnell"]').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(pauses().length, 1, 'the pause already under way is not repeated');
+    assert.equal(updates().length, 0);
+    assert.equal(window.textbrushApp.state.deferredConfigChange?.resumeAfter, false);
+
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(updates().length, 1);
+    assert.equal(updates().at(-1).args.modelId, 'flux1-schnell');
+    emit(ack('flux1-schnell', []));
+    assert.equal(pauses().length, 1, 'the user paused, so the user resumes');
+    assert.equal(document.getElementById('pause-btn').disabled, false);
+  } finally {
+    app.close();
+  }
+});
+
+test('a rejected deferred change leaves the worker paused with the message in view', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const pauses = () => calls.filter(call => call.command === 'pause_generation');
+
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    document.querySelector('input[value="flux1-kontext-dev"]').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(pauses().length, 1);
+
+    emit({ type: 'error', payload: { message: 'model unavailable', fatal: false } });
+    emit(ack('flux2-klein-4b', [], 'landscape-medium'));
+    assert.equal(pauses().length, 1, 'no resume after a rejected change');
+    assert.match(document.getElementById('loading-prompt').textContent, /model unavailable/);
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    assert.equal(window.textbrushApp.state.deferredConfigChange, null);
+  } finally {
+    app.close();
+  }
+});
+
 test('config_ack opens the editing controls without a preceding state_changed', async () => {
   const app = await renderedApp();
   try {

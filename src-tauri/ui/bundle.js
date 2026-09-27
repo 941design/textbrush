@@ -9084,7 +9084,8 @@ var state = {
   preset: null,
   settled: false,
   compatibility: null,
-  configUpdateInFlight: false
+  configUpdateInFlight: false,
+  deferredConfigChange: null
 };
 var elements = {
   app: null,
@@ -9142,6 +9143,7 @@ var buttonListenersInitialized = false;
 var keyboardListenersInitialized = false;
 var pauseCommandInFlight = false;
 var desiredPausedState = null;
+var resumeAfterConfigAck = false;
 var abortExitScheduled = false;
 function isBackendStatePaused(stateValue) {
   if (stateValue === "paused") {
@@ -9288,12 +9290,20 @@ function activeReferencePaths() {
 function isAwaitingModel() {
   return state.backendState?.state === "awaiting_model";
 }
-function canSelectModel() {
-  return (state.settled || isAwaitingModel()) && !state.configUpdateInFlight;
+function isWorkerRunning() {
+  const current = state.backendState?.state;
+  return current === "idle" || current === "generating";
+}
+function isWorkerPausing() {
+  return state.backendState?.state === "paused" && !state.settled;
+}
+function canRequestEditingChange() {
+  if (state.configUpdateInFlight || state.deferredConfigChange) return false;
+  return state.settled || isAwaitingModel() || isWorkerRunning() || isWorkerPausing();
 }
 function renderEditingControls() {
-  const editable = state.settled && !state.configUpdateInFlight;
-  const selectable = canSelectModel();
+  const editable = canRequestEditingChange();
+  const selectable = editable;
   elements.modelRadios?.forEach((radio) => {
     radio.checked = radio.value === state.modelId;
     radio.disabled = !selectable;
@@ -9312,7 +9322,8 @@ function renderEditingControls() {
     }
     label?.classList.toggle("model-unavailable", capability?.available === false);
   });
-  if (elements.promptInput) elements.promptInput.disabled = !editable && !isAwaitingModel();
+  const promptEditable = state.settled && !state.configUpdateInFlight;
+  if (elements.promptInput) elements.promptInput.disabled = !promptEditable && !isAwaitingModel();
   const sizeLocked = isEditingModel(state.modelId) && !editable;
   elements.aspectRatioRadios?.forEach((radio) => {
     radio.disabled = sizeLocked;
@@ -9337,7 +9348,7 @@ function renderReferenceList() {
   if (!list) return;
   list.replaceChildren();
   const paths = activeReferencePaths();
-  const editable = state.settled && !state.configUpdateInFlight;
+  const editable = canRequestEditingChange();
   paths.forEach((path, index) => {
     const item = document.createElement("li");
     const preview = document.createElement("img");
@@ -9352,7 +9363,7 @@ function renderReferenceList() {
     remove.setAttribute("aria-label", `Remove reference ${index + 1} of ${paths.length}: ${filename}`);
     remove.disabled = !editable;
     remove.addEventListener("click", () => {
-      sendEditingUpdate(state.modelId, removeReference(state.references, index));
+      requestEditingUpdate(state.modelId, removeReference(state.references, index));
     });
     const replace = document.createElement("button");
     replace.type = "button";
@@ -9360,14 +9371,19 @@ function renderReferenceList() {
     replace.setAttribute("aria-label", `Replace reference ${index + 1} of ${paths.length}: ${filename}`);
     replace.disabled = !editable;
     replace.addEventListener("click", async () => {
-      const picked = await invoke("pick_reference_files");
-      if (!picked.length) return;
-      const result = replaceReference(state.references, index, picked[0]);
-      if (result.errors.length) {
-        if (elements.referenceError) elements.referenceError.textContent = result.errors.join(" ");
-        return;
+      if (!canRequestEditingChange()) return;
+      try {
+        const picked = await invoke("pick_reference_files");
+        if (!picked.length) return;
+        const result = replaceReference(state.references, index, picked[0]);
+        if (result.errors.length) {
+          if (elements.referenceError) elements.referenceError.textContent = result.errors.join(" ");
+          return;
+        }
+        requestEditingUpdate(state.modelId, result.references);
+      } catch (error) {
+        if (elements.referenceError) elements.referenceError.textContent = String(error);
       }
-      sendEditingUpdate(state.modelId, result.references);
     });
     item.append(preview, name, remove, replace);
     list.append(item);
@@ -9404,6 +9420,37 @@ function sendEditingUpdate(modelId, references, size) {
   });
   return true;
 }
+function requestEditingUpdate(modelId, references, size) {
+  if (!modelId || !canRequestEditingChange()) return false;
+  if (state.settled || isAwaitingModel()) {
+    return sendEditingUpdate(modelId, references, size);
+  }
+  state.deferredConfigChange = { modelId, references, size, resumeAfter: isWorkerRunning() };
+  state.pendingModelId = modelId;
+  state.pendingReferences = references;
+  renderEditingControls();
+  updateLoadingOverlayForState();
+  pumpDeferredConfigChange();
+  return true;
+}
+function pumpDeferredConfigChange() {
+  const deferred = state.deferredConfigChange;
+  if (!deferred) return;
+  if (state.settled) {
+    state.deferredConfigChange = null;
+    resumeAfterConfigAck = deferred.resumeAfter;
+    if (!sendEditingUpdate(deferred.modelId, deferred.references, deferred.size)) {
+      resumeAfterConfigAck = false;
+      state.pendingModelId = null;
+      state.pendingReferences = null;
+      renderEditingControls();
+    }
+    return;
+  }
+  if (isWorkerRunning() && !pauseCommandInFlight) {
+    requestPauseToggle();
+  }
+}
 function claimOutputSizeChange(aspectRatio, width, height) {
   if (!state.modelId) {
     state.aspectRatio = aspectRatio;
@@ -9412,7 +9459,7 @@ function claimOutputSizeChange(aspectRatio, width, height) {
     return true;
   }
   if (!isEditingModel(state.modelId)) return false;
-  const sent = sendEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
+  const sent = requestEditingUpdate(state.modelId, state.references, { aspectRatio, width, height });
   if (!sent) {
     syncOutputSizeControls(state);
   }
@@ -9424,7 +9471,7 @@ function setupEditingControls() {
       const requested = radio.value;
       renderEditingControls();
       const references = maxReferencesFor(requested) > 0 ? state.references : [];
-      sendEditingUpdate(requested, references, {
+      requestEditingUpdate(requested, references, {
         aspectRatio: state.aspectRatio,
         width: state.width,
         height: state.height
@@ -9432,7 +9479,7 @@ function setupEditingControls() {
     });
   });
   elements.referenceAdd?.addEventListener("click", async () => {
-    if (!state.settled || state.configUpdateInFlight) return;
+    if (!canRequestEditingChange()) return;
     const limit = maxReferencesFor(state.modelId);
     if (limit === 0) return;
     try {
@@ -9442,7 +9489,7 @@ function setupEditingControls() {
         elements.referenceError.textContent = result.errors.join(" ");
       }
       if (result.references.length !== state.references.length) {
-        sendEditingUpdate(state.modelId, result.references);
+        requestEditingUpdate(state.modelId, result.references);
       }
     } catch (error) {
       if (elements.referenceError) elements.referenceError.textContent = String(error);
@@ -9472,6 +9519,11 @@ function handleConfigAck(payload) {
     state.settled = payload.settled;
   }
   renderEditingControls();
+  const resume = resumeAfterConfigAck;
+  resumeAfterConfigAck = false;
+  if (resume && payload.compatible && state.backendState?.state === "paused") {
+    requestPauseToggle();
+  }
 }
 function handleModelList(payload) {
   adoptModelCapabilities(
@@ -9538,6 +9590,12 @@ function handleStateChanged(payload) {
     pauseCommandInFlight = false;
     desiredPausedState = null;
   }
+  if (payload.state === "error") {
+    state.deferredConfigChange = null;
+    resumeAfterConfigAck = false;
+  } else {
+    pumpDeferredConfigChange();
+  }
   state.isPaused = payload.state === "paused";
   if (payload.state === "generating" && "prompt" in payload) {
     state.generationPrompt = payload.prompt;
@@ -9559,6 +9617,8 @@ function handleStateChanged(payload) {
 function handleFatalError(message) {
   console.error("Fatal error received:", message);
   state.isTransitioning = true;
+  state.deferredConfigChange = null;
+  resumeAfterConfigAck = false;
   const buttons = [
     elements.prevButton,
     elements.nextButton,
@@ -9606,6 +9666,7 @@ function handleErrorMessage(payload) {
     state.configUpdateInFlight = false;
     state.pendingReferences = null;
     state.pendingModelId = null;
+    resumeAfterConfigAck = false;
     renderEditingControls();
     if (elements.referenceError) elements.referenceError.textContent = payload.message;
   }
@@ -9788,10 +9849,10 @@ function updateLoadingOverlayForState() {
         labelText = "ready";
         break;
       case "generating":
-        labelText = "generating";
+        labelText = state.deferredConfigChange ? "finishing the current image before applying changes" : "generating";
         break;
       case "paused":
-        labelText = "generation paused";
+        labelText = state.deferredConfigChange ? "finishing the current image before applying changes" : "generation paused";
         break;
       case "error":
         labelText = state.backendState.message || "error";
@@ -9830,7 +9891,7 @@ function updatePauseButton() {
   if (elements.pauseButton) {
     const backendStateValue = state.backendState?.state ?? null;
     const backendAllowsPause = backendStateValue === "idle" || backendStateValue === "generating" || backendStateValue === "paused";
-    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight;
+    elements.pauseButton.disabled = !backendAllowsPause || pauseCommandInFlight || state.configUpdateInFlight || state.deferredConfigChange !== null;
   }
 }
 async function displayImageRecord(record, listIdx = null) {
@@ -10244,6 +10305,10 @@ function abort() {
   }).finally(handleAborted);
 }
 function togglePause() {
+  if (state.deferredConfigChange) return;
+  requestPauseToggle();
+}
+function requestPauseToggle() {
   const backendStateValue = state.backendState?.state ?? null;
   const backendAllowsPause = backendStateValue === "idle" || backendStateValue === "generating" || backendStateValue === "paused";
   if (!backendAllowsPause || pauseCommandInFlight) {

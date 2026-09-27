@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Changed
+- **Model, reference, and output-size changes no longer require a
+  manual pause.** The desktop app takes them while the worker is
+  running: it pauses the worker, applies the change once the in-flight
+  generation has returned, and resumes if generation was running when
+  the user asked. Previously the model selector and the reference picker
+  were disabled until the user paused and the worker settled, which
+  read as the controls not working at all.
 - **Reference images are optional for every model that supports them at
   all.** `flux2-klein-4b` now declares `min_references=0`: it generates
   from a prompt alone as readily as it edits one to four references.

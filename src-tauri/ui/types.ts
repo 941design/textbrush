@@ -272,6 +272,18 @@ export interface AppState {
   settled: boolean;
   compatibility: { compatible: boolean; reason: string | null; requiredModel: string | null } | null;
   configUpdateInFlight: boolean;
+  // A model/reference/canvas change requested while the worker was still
+  // running. The UI pauses the worker for it and sends it once the worker
+  // has settled; `resumeAfter` records whether generation was running when
+  // the user asked, so it can be resumed once the change is acknowledged.
+  deferredConfigChange: DeferredConfigChange | null;
+}
+
+export interface DeferredConfigChange {
+  modelId: string;
+  references: string[];
+  size?: { aspectRatio: string; width: number; height: number };
+  resumeAfter: boolean;
 }
 
 // DOM element cache

@@ -210,17 +210,25 @@ at the selected model's maximum. Removing and replacing a reference is
 available per item.
 
 Model and reference changes are **never** applied while the worker is
-generating. The selector and picker controls are disabled until the
-generation loop comes to rest. To change the model or reference set:
+generating, but you do not have to stop it yourself. Choose a model,
+add, replace or remove reference files, or pick a different output
+size at any point of a running session — for FLUX.2 [klein] 4B the
+references are optional. The app then:
 
-1. Press **Space** (or click Pause) to pause the worker.
-2. Wait for the settled indicator (the controls re-enable only once the
-   in-flight generation has actually returned, not when the pause
-   request is acknowledged — T7 in the implementation plan).
-3. Choose a model, and pick reference files if you want any — for
-   FLUX.2 [klein] 4B they are optional. Optionally pick a different
-   output size.
-4. Resume; the new configuration takes effect on the next generation.
+1. Pauses the worker and waits for the in-flight generation to actually
+   return (the viewer reads "finishing the current image before
+   applying changes"; the pause button is held during this).
+2. Applies the change once the worker has settled. The selection and the
+   reference list follow the backend's acknowledgement, not the click.
+3. Resumes generation with the new configuration if it was running when
+   you asked. A change requested while you had paused the worker
+   yourself leaves it paused; a rejected change (for example a model
+   whose weights are absent) also leaves it paused, with the message in
+   view, and the previous configuration stays active.
+
+The controls are unavailable only while a model is loading, while a
+change is being applied, or while one is still waiting for the worker
+to settle.
 
 If the chosen model and reference count are not compatible, the
 configuration is still acknowledged (the model and the files you picked
