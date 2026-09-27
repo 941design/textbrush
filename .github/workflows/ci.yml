@@ -16,10 +16,10 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Lint Python
-        run: uv run ruff check textbrush tests scripts/package_release.py
+        run: uv run ruff check textbrush tests scripts/package_release.py scripts/check_startup_exit.py
 
       - name: Format check Python
-        run: uv run ruff format --check textbrush tests scripts/package_release.py
+        run: uv run ruff format --check textbrush tests scripts/package_release.py scripts/check_startup_exit.py
 
   test-python:
     runs-on: ubuntu-24.04

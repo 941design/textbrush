@@ -1,0 +1,73 @@
+name: Package validation (no publishing or inference)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            asset: textbrush-macos-arm64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: textbrush-macos-x64
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: textbrush-linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install Linux build and virtual-display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb xauth dbus-x11
+      - name: Record candidate and tools
+        run: |
+          mkdir validation-evidence
+          git rev-parse HEAD > validation-evidence/commit.txt
+          uname -a > validation-evidence/host.txt
+          node --version > validation-evidence/node.txt
+          cargo --version > validation-evidence/cargo.txt
+          uv --version > validation-evidence/uv.txt
+      - name: Build and collect platform artifacts
+        run: |
+          set -o pipefail
+          make package TARGET=${{ matrix.target }} 2>&1 | tee validation-evidence/build.log
+          uv run python scripts/package_release.py --target ${{ matrix.target }} --asset-name ${{ matrix.asset }}
+          uv build --wheel --out-dir release-assets
+      - name: Check packaged fatal-startup exit (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- xvfb-run -a python3 scripts/check_startup_exit.py \
+            --app src-tauri/target/${{ matrix.target }}/release/textbrush \
+            --report validation-evidence/startup-exit.json
+      - name: Check packaged fatal-startup exit (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          python3 scripts/check_startup_exit.py \
+            --app src-tauri/target/${{ matrix.target }}/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush \
+            --report validation-evidence/startup-exit.json
+      - name: Retain artifacts and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-${{ matrix.asset }}
+          if-no-files-found: error
+          path: |
+            release-assets/
+            validation-evidence/
