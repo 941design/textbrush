@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The clicked radio checks immediately and a spinner turns on its line
   (and in the viewer) until the backend acknowledges the load; a
   rejection restores the acknowledged model. Previously a model load
-  showed no progress at all when an image was on screen.
+  showed no progress at all when an image was on screen. While the
+  change is pending, every operational control and keyboard shortcut is
+  disabled.
 - **Reference images are optional for every model that supports them at
   all.** `flux2-klein-4b` now declares `min_references=0`: it generates
   from a prompt alone as readily as it edits one to four references.

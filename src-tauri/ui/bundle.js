@@ -9144,6 +9144,7 @@ var keyboardListenersInitialized = false;
 var pauseCommandInFlight = false;
 var desiredPausedState = null;
 var resumeAfterConfigAck = false;
+var fatalLocked = false;
 var abortExitScheduled = false;
 function isBackendStatePaused(stateValue) {
   if (stateValue === "paused") {
@@ -9301,6 +9302,9 @@ function canRequestEditingChange() {
   if (state.configUpdateInFlight || state.deferredConfigChange) return false;
   return state.settled || isAwaitingModel() || isWorkerRunning() || isWorkerPausing();
 }
+function isChangePending() {
+  return state.configUpdateInFlight || state.deferredConfigChange !== null;
+}
 function renderEditingControls() {
   const editable = canRequestEditingChange();
   const selectable = editable;
@@ -9326,9 +9330,11 @@ function renderEditingControls() {
     }
     label?.classList.toggle("model-unavailable", capability?.available === false);
   });
-  const promptEditable = state.settled && !state.configUpdateInFlight;
-  if (elements.promptInput) elements.promptInput.disabled = !promptEditable && !isAwaitingModel();
-  const sizeLocked = isEditingModel(state.modelId) && !editable;
+  const promptEditable = state.settled && !isChangePending();
+  if (elements.promptInput) {
+    elements.promptInput.disabled = !promptEditable && !(isAwaitingModel() && !isChangePending());
+  }
+  const sizeLocked = isChangePending() || isEditingModel(state.modelId) && !editable;
   elements.aspectRatioRadios?.forEach((radio) => {
     radio.disabled = sizeLocked;
   });
@@ -9346,7 +9352,22 @@ function renderEditingControls() {
   }
   if (elements.pauseButton) updatePauseButton();
   renderReferenceList();
+  renderActionControls();
   updateLoadingOverlayForState();
+}
+function renderActionControls() {
+  if (fatalLocked) return;
+  const held = isChangePending();
+  for (const button of [
+    elements.prevButton,
+    elements.nextButton,
+    elements.deleteButton,
+    elements.abortButton,
+    elements.copyPathBtn
+  ]) {
+    if (button) button.disabled = held;
+  }
+  if (elements.acceptButton) elements.acceptButton.disabled = held || state.acceptInFlight;
 }
 function pendingModelNote() {
   if (state.deferredConfigChange) return "waiting for the current image";
@@ -9635,6 +9656,7 @@ function handleFatalError(message) {
   state.isTransitioning = true;
   state.deferredConfigChange = null;
   resumeAfterConfigAck = false;
+  fatalLocked = true;
   const buttons = [
     elements.prevButton,
     elements.nextButton,
@@ -10125,6 +10147,7 @@ function createNavDot(index, isActive, isSpinner) {
   return dot;
 }
 function navigateToIndex(index, isSpinner = false) {
+  if (isChangePending()) return;
   if (state.isTransitioning) {
     return;
   }
@@ -10372,7 +10395,7 @@ function deleteCurrentImage() {
   });
 }
 function enableAcceptButton() {
-  if (elements.acceptButton && !state.acceptInFlight) {
+  if (elements.acceptButton && !state.acceptInFlight && !isChangePending()) {
     elements.acceptButton.disabled = false;
   }
 }
@@ -10459,6 +10482,9 @@ function setupKeyboardListeners() {
       return;
     }
     if (e.repeat) {
+      return;
+    }
+    if (isChangePending()) {
       return;
     }
     const ctrlOrCmd = e.ctrlKey || e.metaKey;

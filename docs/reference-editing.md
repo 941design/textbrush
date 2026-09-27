@@ -223,7 +223,10 @@ references are optional. The app then:
    the change is under way — first "waiting for the current image", then
    "loading" while the model loads — and the viewer's spinner turns with
    it. The acknowledgement makes the selection final; a rejection puts
-   the previously acknowledged model back.
+   the previously acknowledged model back. Every other control — image
+   navigation, accept, delete, abort, output size, prompt, and their
+   keyboard shortcuts — is held for the duration, since the session is
+   about to change underneath them.
 3. Resumes generation with the new configuration if it was running when
    you asked. A change requested while you had paused the worker
    yourself leaves it paused; a rejected change (for example a model

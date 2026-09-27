@@ -212,6 +212,17 @@ test('a model change while generating pauses the worker, applies once settled, a
     assert.equal(document.getElementById('pause-btn').disabled, true);
     window.textbrushApp.togglePause();
     assert.equal(pauses().length, 1);
+    // Every other control is held too, buttons and their shortcuts alike.
+    const held = ['prev-btn', 'next-btn', 'accept-btn', 'delete-btn', 'abort-btn', 'copy-path-btn',
+      'resolution-decrease', 'resolution-increase', 'prompt-input'];
+    for (const id of held) assert.equal(document.getElementById(id).disabled, true, id);
+    for (const radio of document.querySelectorAll('input[name="aspect-ratio"]')) {
+      assert.equal(radio.disabled, true);
+    }
+    const skipsBefore = calls.filter(call => call.command === 'skip_image').length;
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(calls.filter(call => call.command === 'skip_image').length, skipsBefore);
 
     // Pause acknowledged but the in-flight image has not returned yet.
     emit({ type: 'state_changed', payload: { state: 'paused', settled: false } });
@@ -233,6 +244,9 @@ test('a model change while generating pauses the worker, applies once settled, a
     assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev');
     assert.equal(pauses().length, 2, 'resumed after the acknowledgement');
     assert.ok(!note.classList.contains('pending'), 'the acknowledgement ends the pending mark');
+    for (const id of ['prev-btn', 'next-btn', 'accept-btn', 'delete-btn', 'abort-btn', 'copy-path-btn']) {
+      assert.equal(document.getElementById(id).disabled, false, `${id} released`);
+    }
     emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
     assert.equal(pauses().length, 2, 'a running worker with nothing parked is left alone');
     assert.equal(kontext.disabled, false);

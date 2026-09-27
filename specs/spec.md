@@ -493,7 +493,9 @@ because a model load takes tens of seconds and a click with no visible
 effect reads as a failure. This is the one deliberate exception to the
 no-optimistic-updates rule: the pending mark distinguishes the request
 from acknowledged state, and a rejection restores the acknowledged
-model.
+model. While a change is pending, every operational control and its
+keyboard shortcut is disabled; only the theme and font-size preferences
+remain available.
 
 #### 6.2 Model Discovery
 

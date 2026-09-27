@@ -126,6 +126,8 @@ let desiredPausedState: boolean | null = null;
 // Set when a deferred configuration change paused a running worker; the
 // acknowledging config_ack resumes generation and clears it.
 let resumeAfterConfigAck = false;
+// Set by handleFatalError; nothing re-enables a control after it.
+let fatalLocked = false;
 let abortExitScheduled = false;
 
 function isBackendStatePaused(stateValue: string): boolean | null {
@@ -334,6 +336,16 @@ function canRequestEditingChange(): boolean {
   return state.settled || isAwaitingModel() || isWorkerRunning() || isWorkerPausing();
 }
 
+/**
+ * True from the moment a model/reference/canvas change is taken until
+ * the backend acknowledges or rejects it. Every control is held for the
+ * duration: the session is about to change under the user, so nothing
+ * they could do meanwhile has a well-defined result.
+ */
+function isChangePending(): boolean {
+  return state.configUpdateInFlight || state.deferredConfigChange !== null;
+}
+
 function renderEditingControls(): void {
   const editable = canRequestEditingChange();
   const selectable = editable;
@@ -373,8 +385,10 @@ function renderEditingControls(): void {
 
   // The output-size group is the same group for every model, so it is
   // never hidden -- only the prompt waits for a settled worker.
-  const promptEditable = state.settled && !state.configUpdateInFlight;
-  if (elements.promptInput) elements.promptInput.disabled = !promptEditable && !isAwaitingModel();
+  const promptEditable = state.settled && !isChangePending();
+  if (elements.promptInput) {
+    elements.promptInput.disabled = !promptEditable && !(isAwaitingModel() && !isChangePending());
+  }
 
   // A model that takes references sizes its output through the
   // acknowledged-configuration seam (its references must be re-decoded
@@ -382,7 +396,7 @@ function renderEditingControls(): void {
   // deferred like a model change; the group is shut only while a change
   // is in flight or waiting, so a click cannot move the controls while
   // the backend keeps generating at the old canvas.
-  const sizeLocked = isEditingModel(state.modelId) && !editable;
+  const sizeLocked = isChangePending() || (isEditingModel(state.modelId) && !editable);
   elements.aspectRatioRadios?.forEach(radio => {
     radio.disabled = sizeLocked;
   });
@@ -413,8 +427,29 @@ function renderEditingControls(): void {
   }
   if (elements.pauseButton) updatePauseButton();
   renderReferenceList();
+  renderActionControls();
   // The viewer's spinner and caption follow the same pending state.
   updateLoadingOverlayForState();
+}
+
+/**
+ * Hold the image actions (navigate, accept, delete, abort, copy path)
+ * while a change is pending; release them afterwards. Accept keeps its
+ * own in-flight lock on top.
+ */
+function renderActionControls(): void {
+  if (fatalLocked) return;
+  const held = isChangePending();
+  for (const button of [
+    elements.prevButton,
+    elements.nextButton,
+    elements.deleteButton,
+    elements.abortButton,
+    elements.copyPathBtn,
+  ]) {
+    if (button) button.disabled = held;
+  }
+  if (elements.acceptButton) elements.acceptButton.disabled = held || state.acceptInFlight;
 }
 
 /** What the pending model's line says while the change is under way. */
@@ -845,6 +880,7 @@ function handleFatalError(message: string): void {
   state.isTransitioning = true;
   state.deferredConfigChange = null;
   resumeAfterConfigAck = false;
+  fatalLocked = true;
 
   // Immediately disable all interactive buttons
   const buttons = [
@@ -1522,6 +1558,8 @@ function createNavDot(index: number, isActive: boolean, isSpinner: boolean): HTM
 }
 
 function navigateToIndex(index: number, isSpinner = false): void {
+  // The dots are navigation controls too, held with the rest.
+  if (isChangePending()) return;
   if (state.isTransitioning) {
     return;
   }
@@ -1853,7 +1891,7 @@ function deleteCurrentImage(): void {
 }
 
 function enableAcceptButton(): void {
-  if (elements.acceptButton && !state.acceptInFlight) {
+  if (elements.acceptButton && !state.acceptInFlight && !isChangePending()) {
     elements.acceptButton.disabled = false;
   }
 }
@@ -1970,6 +2008,11 @@ function setupKeyboardListeners(): void {
     }
 
     if (e.repeat) {
+      return;
+    }
+
+    // Shortcuts are the buttons' keyboard faces: held while the buttons are.
+    if (isChangePending()) {
       return;
     }
 
