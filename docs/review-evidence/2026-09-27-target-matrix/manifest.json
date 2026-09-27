@@ -165,14 +165,21 @@
     "artifact_and_source_report": "artifact-recheck.json",
     "macos_arm64_fatal_startup": "macos-arm64-fatal-startup.json",
     "macos_x64_fatal_startup": "macos-x64-fatal-startup.json",
+    "diagnostic_verified_startup_checks": [
+      "macos-arm64-unsupported-python.json",
+      "macos-x64-unsupported-python.json",
+      "macos-arm64-missing-package-diagnostic.json",
+      "macos-x64-missing-package-diagnostic.json"
+    ],
     "macos_fatal_probe_python_architecture": "ARM64 host interpreter with packages disabled; not Intel model-runtime evidence",
     "macos_arm64_explicit": "macos-arm64-explicit.json",
     "macos_arm64_default": "macos-arm64-default.json",
     "native_close_attempts": "Both reached awaiting_model, but UI automation stalled and the probe timed out. These are failed close checks, not passes.",
     "early_probe_log_limitation": "The first probe shared a file offset with its child. Default-mode stderr was partially overwritten. Fixed and regression-tested in the final observer; initialization was observed live and visually.",
     "child_followup": "ps -o pid,ppid,state,command -p 75480,80538 returned no processes after both timed-out probes",
-    "focused_tests": "10 passed in 2.86 s; runtime observer plus release artifact collector",
-    "lint_format": "Ruff check and format --check passed across Python production, tests and three validation scripts (82 files)",
+    "focused_tests": "13 passed in 3.37 s; startup diagnostic probe, runtime observer and release artifact collector",
+    "lint_format": "Ruff check and format --check passed across Python production, tests and three validation scripts (83 files)",
+    "workflow_syntax": "Package validation YAML parsed and all run blocks passed bash -n; uv interpreter lookup confirmed for 3.13 and 3.10",
     "github_access": "gh auth status still reports invalid GH_TOKEN inside and outside sandbox"
   },
   "limitations": [

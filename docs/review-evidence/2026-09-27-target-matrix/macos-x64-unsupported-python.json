@@ -1,0 +1,28 @@
+{
+  "app": "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "python": "/usr/bin/python3",
+  "scenario": "unsupported-python",
+  "python_version": [
+    3,
+    9,
+    6
+  ],
+  "bootstrap_messages": [
+    {
+      "type": "error",
+      "payload": {
+        "message": "Textbrush requires Python 3.11 or newer. Set TEXTBRUSH_PYTHON to a supported interpreter.",
+        "fatal": true,
+        "operation": "startup"
+      }
+    }
+  ],
+  "expected_diagnostic_seen": true,
+  "passed": true,
+  "timed_out": false,
+  "exit_code": 1,
+  "seconds": 4.937,
+  "stdout": "",
+  "stderr": "",
+  "remaining_preview_directories": []
+}

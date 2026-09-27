@@ -1,0 +1,28 @@
+{
+  "app": "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "python": "/Users/mrother/Projects/rotheric/caricature-builder/.venv/bin/python3",
+  "scenario": "missing-package",
+  "python_version": [
+    3,
+    13,
+    11
+  ],
+  "bootstrap_messages": [
+    {
+      "type": "error",
+      "payload": {
+        "message": "The selected Python runtime cannot import a required module. Install textbrush[model] in that environment, or set TEXTBRUSH_PYTHON to its Python executable.",
+        "fatal": true,
+        "operation": "startup"
+      }
+    }
+  ],
+  "expected_diagnostic_seen": true,
+  "passed": true,
+  "timed_out": false,
+  "exit_code": 1,
+  "seconds": 3.788,
+  "stdout": "",
+  "stderr": "",
+  "remaining_preview_directories": []
+}

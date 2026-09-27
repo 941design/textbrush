@@ -50,18 +50,36 @@ jobs:
           make package TARGET=${{ matrix.target }} 2>&1 | tee validation-evidence/build.log
           uv run python scripts/package_release.py --target ${{ matrix.target }} --asset-name ${{ matrix.asset }}
           uv build --wheel --out-dir release-assets
+      - name: Prepare supported and unsupported startup interpreters
+        run: uv python install 3.13 3.10
       - name: Check packaged fatal-startup exit (Linux)
         if: runner.os == 'Linux'
         run: |
-          dbus-run-session -- xvfb-run -a python3 scripts/check_startup_exit.py \
-            --app src-tauri/target/${{ matrix.target }}/release/textbrush \
-            --report validation-evidence/startup-exit.json
+          probe_status=0
+          for scenario in missing-package unsupported-python; do
+            probe_version=3.13
+            if [ "$scenario" = unsupported-python ]; then probe_version=3.10; fi
+            probe_python="$(uv python find --managed-python "$probe_version")"
+            dbus-run-session -- xvfb-run -a python3 scripts/check_startup_exit.py \
+              --app src-tauri/target/${{ matrix.target }}/release/textbrush \
+              --python "$probe_python" --scenario "$scenario" \
+              --report "validation-evidence/startup-$scenario.json" || probe_status=1
+          done
+          exit "$probe_status"
       - name: Check packaged fatal-startup exit (macOS)
         if: runner.os == 'macOS'
         run: |
-          python3 scripts/check_startup_exit.py \
-            --app src-tauri/target/${{ matrix.target }}/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush \
-            --report validation-evidence/startup-exit.json
+          probe_status=0
+          for scenario in missing-package unsupported-python; do
+            probe_version=3.13
+            if [ "$scenario" = unsupported-python ]; then probe_version=3.10; fi
+            probe_python="$(uv python find --managed-python "$probe_version")"
+            python3 scripts/check_startup_exit.py \
+              --app src-tauri/target/${{ matrix.target }}/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush \
+              --python "$probe_python" --scenario "$scenario" \
+              --report "validation-evidence/startup-$scenario.json" || probe_status=1
+          done
+          exit "$probe_status"
       - name: Retain artifacts and evidence
         if: always()
         uses: actions/upload-artifact@v4
