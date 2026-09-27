@@ -487,6 +487,14 @@ the request was made. The controls are unavailable only while a model
 loads, while a change is being applied, or while one is waiting for the
 worker to settle.
 
+A requested model is displayed as selected immediately and marked
+pending with a spinner until the backend acknowledges or rejects it,
+because a model load takes tens of seconds and a click with no visible
+effect reads as a failure. This is the one deliberate exception to the
+no-optimistic-updates rule: the pending mark distinguishes the request
+from acknowledged state, and a rejection restores the acknowledged
+model.
+
 #### 6.2 Model Discovery
 
 On startup, for every registered model:

@@ -150,9 +150,17 @@ test('rendered picker waits for settled, then keeps acknowledgements authoritati
     assert.match(document.querySelectorAll('#reference-list li')[2].textContent, /replacement\.png/);
 
     document.querySelector('input[value="flux1-kontext-dev"]').click();
-    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    // The click shows at once, marked pending with a spinner on its line...
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev');
+    const kontextNote = document.querySelector('.model-note[data-model="flux1-kontext-dev"]');
+    assert.equal(kontextNote.textContent, 'loading');
+    assert.ok(kontextNote.classList.contains('pending'));
+    assert.ok(!document.querySelector('.spinner').classList.contains('hidden'));
+    // ...and a rejection puts the acknowledged model back.
     emit({ type: 'error', payload: { message: 'model unavailable', fatal: false } });
     assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b');
+    assert.equal(kontextNote.textContent, '');
+    assert.ok(!kontextNote.classList.contains('pending'));
     emit(ack('flux1-kontext-dev', ['/tmp/one.png'], 'portrait-medium'));
     app.setPicked(['/tmp/two.jpg']);
     add.click();
@@ -194,8 +202,11 @@ test('a model change while generating pauses the worker, applies once settled, a
     assert.equal(pauses().length, 1);
     assert.equal(window.textbrushApp.state.deferredConfigChange?.modelId, 'flux1-kontext-dev');
     assert.equal(window.textbrushApp.state.deferredConfigChange?.resumeAfter, true);
-    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux2-klein-4b',
-      'selection remains backend truth until the acknowledgement');
+    assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev',
+      'the requested model shows as selected, marked pending');
+    const note = document.querySelector('.model-note[data-model="flux1-kontext-dev"]');
+    assert.ok(note.classList.contains('pending'));
+    assert.equal(note.textContent, 'waiting for the current image');
     assert.match(document.querySelector('.loading-label').textContent, /before applying changes/);
     // The pause belongs to the change now; Space must not resume under it.
     assert.equal(document.getElementById('pause-btn').disabled, true);
@@ -214,11 +225,14 @@ test('a model change while generating pauses the worker, applies once settled, a
     assert.deepEqual([...update.args.references], ['/tmp/one.png']);
     assert.equal(window.textbrushApp.state.deferredConfigChange, null);
     assert.equal(kontext.disabled, true, 'nothing else may be requested while the change is in flight');
+    assert.equal(note.textContent, 'loading', 'the line now reports the load itself');
+    assert.match(document.querySelector('.loading-label').textContent, /loading FLUX.1 Kontext/);
 
     // The acknowledgement hands generation back, because it was running.
     emit(ack('flux1-kontext-dev', ['/tmp/one.png'], 'landscape-medium'));
     assert.equal(document.querySelector('input[name="model"]:checked').value, 'flux1-kontext-dev');
     assert.equal(pauses().length, 2, 'resumed after the acknowledgement');
+    assert.ok(!note.classList.contains('pending'), 'the acknowledgement ends the pending mark');
     emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
     assert.equal(pauses().length, 2, 'a running worker with nothing parked is left alone');
     assert.equal(kontext.disabled, false);

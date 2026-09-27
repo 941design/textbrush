@@ -457,6 +457,21 @@ body {
     color: var(--text-muted);
 }
 
+/* The pending model's line: a small spinner turns beside the note for
+   as long as the requested change is under way. */
+.model-option .model-note.pending::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: var(--spacing-xs);
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    vertical-align: middle;
+    animation: spin 1s linear infinite;
+}
+
 .model-option.model-unavailable .model-name,
 .model-option.model-unavailable .model-note {
     opacity: 0.55;

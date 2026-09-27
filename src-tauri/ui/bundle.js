@@ -9304,8 +9304,10 @@ function canRequestEditingChange() {
 function renderEditingControls() {
   const editable = canRequestEditingChange();
   const selectable = editable;
+  const shownModel = state.pendingModelId ?? state.modelId;
+  const modelPending = state.pendingModelId !== null && (state.configUpdateInFlight || state.deferredConfigChange !== null);
   elements.modelRadios?.forEach((radio) => {
-    radio.checked = radio.value === state.modelId;
+    radio.checked = radio.value === shownModel;
     radio.disabled = !selectable;
     const label = radio.closest("label");
     label?.querySelector(".recommended-badge")?.remove();
@@ -9317,8 +9319,10 @@ function renderEditingControls() {
     }
     const capability = modelCapability(radio.value);
     const note = label?.querySelector(".model-note");
+    const pendingHere = modelPending && radio.value === state.pendingModelId;
     if (note) {
-      note.textContent = capability?.available === false ? "not installed" : "";
+      note.textContent = pendingHere ? pendingModelNote() : capability?.available === false ? "not installed" : "";
+      note.classList.toggle("pending", pendingHere);
     }
     label?.classList.toggle("model-unavailable", capability?.available === false);
   });
@@ -9342,6 +9346,19 @@ function renderEditingControls() {
   }
   if (elements.pauseButton) updatePauseButton();
   renderReferenceList();
+  updateLoadingOverlayForState();
+}
+function pendingModelNote() {
+  if (state.deferredConfigChange) return "waiting for the current image";
+  return state.pendingModelId !== state.modelId ? "loading" : "applying";
+}
+function inFlightChangeLabel() {
+  if (!state.configUpdateInFlight) return null;
+  if (state.pendingModelId !== null && state.pendingModelId !== state.modelId) {
+    const pending = modelCapability(state.pendingModelId);
+    return pending ? `loading ${pending.displayName}` : "loading model";
+  }
+  return "applying changes";
 }
 function renderReferenceList() {
   const list = elements.referenceList;
@@ -9429,7 +9446,6 @@ function requestEditingUpdate(modelId, references, size) {
   state.pendingModelId = modelId;
   state.pendingReferences = references;
   renderEditingControls();
-  updateLoadingOverlayForState();
   pumpDeferredConfigChange();
   return true;
 }
@@ -9826,7 +9842,7 @@ function updateLoadingOverlayForState() {
     return;
   }
   const backendStateValue = state.backendState.state;
-  const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating";
+  const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating" || state.configUpdateInFlight || state.deferredConfigChange !== null;
   if (elements.loadingSpinner) {
     if (spinnerVisible) {
       elements.loadingSpinner.classList.remove("hidden");
@@ -9838,7 +9854,7 @@ function updateLoadingOverlayForState() {
     let labelText;
     switch (state.backendState.state) {
       case "awaiting_model":
-        labelText = "select a model to begin";
+        labelText = inFlightChangeLabel() ?? "select a model to begin";
         break;
       case "loading": {
         const pending = modelCapability(state.pendingModelId);
@@ -9852,7 +9868,7 @@ function updateLoadingOverlayForState() {
         labelText = state.deferredConfigChange ? "finishing the current image before applying changes" : "generating";
         break;
       case "paused":
-        labelText = state.deferredConfigChange ? "finishing the current image before applying changes" : "generation paused";
+        labelText = state.deferredConfigChange ? "finishing the current image before applying changes" : inFlightChangeLabel() ?? "generation paused";
         break;
       case "error":
         labelText = state.backendState.message || "error";

@@ -262,9 +262,10 @@ export interface AppState {
   currentIndex: number;
   modelId: string | null;
   // The model the user just clicked, until the backend acknowledges or
-  // rejects it. It never checks a radio -- selection stays backend truth
-  // (FR9) -- it only lets the viewer name the model being loaded, which
-  // is the one action slow enough that silence reads as a hang.
+  // rejects it. Its radio shows as selected at once, marked pending by a
+  // spinner on its line, and the viewer names the model being loaded --
+  // the one action slow enough that silence reads as a hang. A rejection
+  // clears it and the radio falls back to the acknowledged `modelId`.
   pendingModelId: string | null;
   references: string[];
   pendingReferences: string[] | null;

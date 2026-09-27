@@ -337,11 +337,15 @@ function canRequestEditingChange(): boolean {
 function renderEditingControls(): void {
   const editable = canRequestEditingChange();
   const selectable = editable;
+  // A requested model shows as selected the moment it is taken, marked
+  // pending by a spinner on its line, so the click and the wait read as
+  // one event. The acknowledgement makes it truth; a rejection clears
+  // the pending id and the radio falls back to the acknowledged model.
+  const shownModel = state.pendingModelId ?? state.modelId;
+  const modelPending =
+    state.pendingModelId !== null && (state.configUpdateInFlight || state.deferredConfigChange !== null);
   elements.modelRadios?.forEach(radio => {
-    // Backend truth only: a click does not check the radio, the
-    // acknowledgement does (FR9, no optimistic updates). While a
-    // selection is in flight the viewer names the model being loaded.
-    radio.checked = radio.value === state.modelId;
+    radio.checked = radio.value === shownModel;
     radio.disabled = !selectable;
     const label = radio.closest('label');
     label?.querySelector('.recommended-badge')?.remove();
@@ -357,8 +361,12 @@ function renderEditingControls(): void {
     // carries.
     const capability = modelCapability(radio.value);
     const note = label?.querySelector('.model-note');
+    const pendingHere = modelPending && radio.value === state.pendingModelId;
     if (note) {
-      note.textContent = capability?.available === false ? 'not installed' : '';
+      note.textContent = pendingHere
+        ? pendingModelNote()
+        : capability?.available === false ? 'not installed' : '';
+      note.classList.toggle('pending', pendingHere);
     }
     label?.classList.toggle('model-unavailable', capability?.available === false);
   });
@@ -405,6 +413,27 @@ function renderEditingControls(): void {
   }
   if (elements.pauseButton) updatePauseButton();
   renderReferenceList();
+  // The viewer's spinner and caption follow the same pending state.
+  updateLoadingOverlayForState();
+}
+
+/** What the pending model's line says while the change is under way. */
+function pendingModelNote(): string {
+  if (state.deferredConfigChange) return 'waiting for the current image';
+  return state.pendingModelId !== state.modelId ? 'loading' : 'applying';
+}
+
+/**
+ * The viewer caption for a change in flight: a model load names the
+ * model, anything else (references, canvas) is a short apply.
+ */
+function inFlightChangeLabel(): string | null {
+  if (!state.configUpdateInFlight) return null;
+  if (state.pendingModelId !== null && state.pendingModelId !== state.modelId) {
+    const pending = modelCapability(state.pendingModelId);
+    return pending ? `loading ${pending.displayName}` : 'loading model';
+  }
+  return 'applying changes';
 }
 
 function renderReferenceList(): void {
@@ -533,7 +562,6 @@ function requestEditingUpdate(
   state.pendingModelId = modelId;
   state.pendingReferences = references;
   renderEditingControls();
-  updateLoadingOverlayForState();
   pumpDeferredConfigChange();
   return true;
 }
@@ -1091,8 +1119,14 @@ function updateLoadingOverlayForState(): void {
   }
   const backendStateValue = state.backendState.state;
 
-  // Determine if spinner should be visible
-  const spinnerVisible = backendStateValue === "loading" || backendStateValue === "generating";
+  // The spinner turns while the backend works: loading, generating, a
+  // configuration change in flight (a model load is the long one), or a
+  // change waiting for the current image to finish.
+  const spinnerVisible =
+    backendStateValue === "loading" ||
+    backendStateValue === "generating" ||
+    state.configUpdateInFlight ||
+    state.deferredConfigChange !== null;
   if (elements.loadingSpinner) {
     if (spinnerVisible) {
       elements.loadingSpinner.classList.remove('hidden');
@@ -1106,7 +1140,7 @@ function updateLoadingOverlayForState(): void {
     let labelText: string;
     switch (state.backendState.state) {
       case "awaiting_model":
-        labelText = "select a model to begin";
+        labelText = inFlightChangeLabel() ?? "select a model to begin";
         break;
       case "loading": {
         const pending = modelCapability(state.pendingModelId);
@@ -1124,7 +1158,7 @@ function updateLoadingOverlayForState(): void {
       case "paused":
         labelText = state.deferredConfigChange
           ? "finishing the current image before applying changes"
-          : "generation paused";
+          : inFlightChangeLabel() ?? "generation paused";
         break;
       case "error":
         labelText = state.backendState.message || "error";

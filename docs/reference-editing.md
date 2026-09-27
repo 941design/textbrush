@@ -218,8 +218,12 @@ references are optional. The app then:
 1. Pauses the worker and waits for the in-flight generation to actually
    return (the viewer reads "finishing the current image before
    applying changes"; the pause button is held during this).
-2. Applies the change once the worker has settled. The selection and the
-   reference list follow the backend's acknowledgement, not the click.
+2. Applies the change once the worker has settled. The clicked model
+   shows as selected at once, with a spinner on its line for as long as
+   the change is under way — first "waiting for the current image", then
+   "loading" while the model loads — and the viewer's spinner turns with
+   it. The acknowledgement makes the selection final; a rejection puts
+   the previously acknowledged model back.
 3. Resumes generation with the new configuration if it was running when
    you asked. A change requested while you had paused the worker
    yourself leaves it paused; a rejected change (for example a model
