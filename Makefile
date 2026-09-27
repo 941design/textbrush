@@ -175,7 +175,9 @@ build-python:  ## Build Python package wheel
 	uv build
 
 package: build-ui  ## Package native desktop app (external Python runtime required)
-	cd src-tauri && ./ui/node_modules/.bin/tauri build --ci $(if $(TARGET),--target $(TARGET))
+	# The DMG bundler reads CI separately from the CLI's --ci flag. Avoid Finder
+	# automation during packaging, including local builds without a CI environment.
+	cd src-tauri && CI=true ./ui/node_modules/.bin/tauri build --ci $(if $(TARGET),--target $(TARGET))
 
 release:  ## Clean and package native desktop assets
 	$(MAKE) clean

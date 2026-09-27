@@ -99,7 +99,13 @@ pub async fn init_generation(
             Err(std::env::VarError::NotPresent) => None,
             Err(_) => return Err("TEXTBRUSH_PYTHON must be valid UTF-8".into()),
         };
-        crate::python_runtime::spawn(configured.as_deref())?
+        let settings = window
+            .app_handle()
+            .path()
+            .home_dir()
+            .map_err(|error| format!("Cannot locate Python runtime settings: {error}"))?
+            .join(".config/textbrush/python-path");
+        crate::python_runtime::spawn(configured.as_deref(), &settings)?
     };
 
     crate::asset_access::allow_previews(

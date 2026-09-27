@@ -1,5 +1,6 @@
 //! Packaged apps require an external Python installation; never search the checkout.
 use crate::sidecar::Sidecar;
+use std::path::Path;
 
 const BOOTSTRAP: &str = r#"
 import json, runpy, sys
@@ -20,18 +21,34 @@ except ImportError as error:
          '. Install textbrush[model] in that environment, or set TEXTBRUSH_PYTHON to its Python executable.')
 "#;
 
-fn program(configured: Option<&str>) -> Result<&str, String> {
-    match configured {
-        Some("") => Err("TEXTBRUSH_PYTHON must name a Python executable".into()),
-        Some(value) => Ok(value),
-        None => Ok("python3"),
+fn program(configured: Option<&str>, settings: &Path) -> Result<String, String> {
+    if let Some(value) = configured {
+        return if value.is_empty() {
+            Err("TEXTBRUSH_PYTHON must name a Python executable".into())
+        } else {
+            Ok(value.into())
+        };
+    }
+    match std::fs::read_to_string(settings) {
+        Ok(value) => {
+            let value = value.trim_end_matches(['\r', '\n']);
+            if !Path::new(value).is_absolute() || value.contains(['\r', '\n']) {
+                return Err(format!(
+                    "{} must contain one absolute Python executable path (without quotes)",
+                    settings.display()
+                ));
+            }
+            Ok(value.into())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok("python3".into()),
+        Err(error) => Err(format!("Cannot read {}: {error}", settings.display())),
     }
 }
 
-pub fn spawn(configured: Option<&str>) -> Result<Sidecar, String> {
+pub fn spawn(configured: Option<&str>, settings: &Path) -> Result<Sidecar, String> {
     // -I excludes cwd/PYTHONPATH/user-site imports, preserving the selected
     // environment even when the desktop is launched from a source checkout.
-    Sidecar::spawn(program(configured)?, &["-I", "-c", BOOTSTRAP]).map_err(|error| {
+    Sidecar::spawn(&program(configured, settings)?, &["-I", "-c", BOOTSTRAP]).map_err(|error| {
         format!("Cannot start the selected Python runtime. Install Python 3.11+ with textbrush[model], or set TEXTBRUSH_PYTHON to that environment's executable. {error}")
     })
 }
@@ -44,17 +61,52 @@ mod tests {
 
     #[test]
     fn selection_preserves_paths_with_spaces_and_does_not_fallback() {
-        assert_eq!(program(None).unwrap(), "python3");
+        let directory = tempfile::tempdir().unwrap();
+        let settings = directory.path().join("python-path");
+        assert_eq!(program(None, &settings).unwrap(), "python3");
         assert_eq!(
-            program(Some("/runtime with spaces/bin/python")).unwrap(),
+            program(Some("/runtime with spaces/bin/python"), &settings).unwrap(),
             "/runtime with spaces/bin/python"
         );
-        assert!(program(Some("")).is_err());
-        let directory = tempfile::tempdir().unwrap();
+        assert!(program(Some(""), &settings).is_err());
         let missing = directory.path().join("missing python");
-        let error = spawn(Some(missing.to_str().unwrap())).unwrap_err();
+        let error = spawn(Some(missing.to_str().unwrap()), &settings).unwrap_err();
         assert!(error.contains("TEXTBRUSH_PYTHON"));
         assert!(error.contains("textbrush[model]"));
+    }
+
+    #[test]
+    fn desktop_settings_preserve_spaces_and_environment_precedence() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = directory.path().join("python-path");
+        let missing = directory.path().join("runtime with spaces/bin/python");
+        std::fs::write(&settings, format!("{}\n", missing.display())).unwrap();
+        assert_eq!(program(None, &settings).unwrap(), missing.to_str().unwrap());
+        assert!(spawn(None, &settings).unwrap_err().contains("Cannot start"));
+        assert_eq!(program(Some("override"), &settings).unwrap(), "override");
+        assert!(program(Some(""), &settings).is_err());
+    }
+
+    #[test]
+    fn invalid_desktop_settings_fail_without_silent_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings = directory.path().join("python-path");
+        for value in [
+            "",
+            "python3",
+            "~/venv/bin/python",
+            "\"/python\"",
+            "/one\n/two",
+        ] {
+            std::fs::write(&settings, value).unwrap();
+            assert!(program(None, &settings).unwrap_err().contains("absolute"));
+        }
+        std::fs::write(&settings, [0xff]).unwrap();
+        assert!(program(None, &settings)
+            .unwrap_err()
+            .contains("Cannot read"));
+        // An explicit environment setting does not read a stale settings file.
+        assert_eq!(program(Some("override"), &settings).unwrap(), "override");
     }
 
     #[test]

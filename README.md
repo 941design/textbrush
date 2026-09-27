@@ -117,6 +117,20 @@ executable before launching the app. Paths containing spaces are supported:
 export TEXTBRUSH_PYTHON="$HOME/.venvs/textbrush/bin/python"
 ```
 
+For Finder or other desktop-menu launches, save the interpreter's absolute path
+in `~/.config/textbrush/python-path`. Desktop launchers do not inherit exports
+from your terminal:
+
+```bash
+mkdir -p "$HOME/.config/textbrush"
+printf '%s\n' "$HOME/.venvs/textbrush/bin/python" > "$HOME/.config/textbrush/python-path"
+```
+
+Install `textbrush[model]` in that environment first. The file contains one path
+without quotes; spaces are supported. Selection order is `TEXTBRUSH_PYTHON`,
+the path file, then `python3` on `PATH`. Invalid settings produce an error rather
+than silently using another environment.
+
 An explicit interpreter is never silently replaced with a different one.
 Release builds isolate Python imports from the current directory, `PYTHONPATH`,
 and user-site packages; install the backend into the selected environment.

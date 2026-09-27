@@ -71,7 +71,7 @@ jobs:
             pip install "textbrush[model]"
             ```
 
-            `uv` is **not** required on the target system. Install the backend into a Python environment and set `TEXTBRUSH_PYTHON` to its executable, or activate it so `python3` is on `PATH`. Release imports exclude the current directory, PYTHONPATH and user-site packages.
+            `uv` is **not** required on the target system. Install the backend into a Python environment and set `TEXTBRUSH_PYTHON` to its executable, or activate it so `python3` is on `PATH`. For Finder and desktop-menu launches, write that executable's absolute path (one line, without quotes) to `~/.config/textbrush/python-path`; these launchers do not inherit terminal exports. An explicit `TEXTBRUSH_PYTHON` overrides the path file. Release imports exclude the current directory, PYTHONPATH and user-site packages.
 
             ## Installation
 
