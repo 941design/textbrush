@@ -1,0 +1,185 @@
+{
+  "candidate": "edf2636f7a1fa99a3b88675df04033812228afb8",
+  "targets": {
+    "aarch64-apple-darwin": {
+      "host": "macOS 26.3.1 ARM64",
+      "cross_compiled": false,
+      "fresh_checkout": true,
+      "artifacts": {
+        "Textbrush_0.1.0_aarch64.dmg": {
+          "sha256": "a2ef5273d4fb53d2fed5903b5382087b2eae9d61e732d1869b3baf58700a3130",
+          "bytes": 2308201,
+          "sidecar_verified": true
+        },
+        "textbrush-macos-arm64.tar.gz": {
+          "sha256": "64b9026aaeb0ae8a62c8a4e56c94a1d542d53f0eb4f262643c27c005c854f88a",
+          "bytes": 2294176,
+          "sidecar_verified": true
+        }
+      },
+      "binary_sha256": "bec5f849e67fd757257b5ef78f00264e89f003f4a1279695d401cc586b60e9a3",
+      "archive_matches_dmg_installed_binary": true,
+      "checks": [
+        {
+          "command": [
+            "file",
+            "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush"
+          ],
+          "exit_code": 0,
+          "stdout": "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush: Mach-O 64-bit executable arm64\n",
+          "stderr": ""
+        },
+        {
+          "command": [
+            "otool",
+            "-L",
+            "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush"
+          ],
+          "exit_code": 0,
+          "stdout": "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush:\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit (compatibility version 1.0.0, current version 623.1.14)\n\t/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices (compatibility version 1.0.0, current version 66.0.0)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 726.2.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n\t/System/Library/Frameworks/ColorSync.framework/Versions/A/ColorSync (compatibility version 1.0.0, current version 3813.2.2)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n",
+          "stderr": ""
+        },
+        {
+          "command": [
+            "codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ],
+      "app_files": [
+        "Contents/Info.plist",
+        "Contents/MacOS/textbrush",
+        "Contents/_CodeSignature/CodeResources"
+      ],
+      "staged_frontend_sha256": {
+        "bundle.js": "27c396edb52f515c4118d02142ea4ff87823eb123a9d8d980295e99a69ac7694",
+        "index.html": "57e15d5597407826360af2ff873a0e6edea919048327a2841c49d66b1809e137",
+        "styles/animations.css": "5090443d55a700cffa87e2e5856ef983aaf053d948b2c2527f2d7f4b0f6ce011",
+        "styles/main.css": "e9fb577c32a11c057c834ea01a0251f6f1a201b3281f50d8e3b15b3d4b44bc9b",
+        "styles/variables.css": "06b379a63ce9d179c58bd6320c39c74a4b61820380ffd9619603959188be0b10"
+      }
+    },
+    "x86_64-apple-darwin": {
+      "host": "macOS 26.3.1 ARM64",
+      "cross_compiled": true,
+      "fresh_checkout": true,
+      "artifacts": {
+        "Textbrush_0.1.0_x64.dmg": {
+          "sha256": "561c384383ee592291a0697b9ad2bfd13302aa0d5ad04ddb40bbb44f86c46ff1",
+          "bytes": 2543718,
+          "sidecar_verified": true
+        },
+        "textbrush-macos-x64.tar.gz": {
+          "sha256": "e0802df3fbcb414d431f2bcb26755d68f0dbee1e579bed2b67a917d72dcbef08",
+          "bytes": 2528547,
+          "sidecar_verified": true
+        }
+      },
+      "binary_sha256": "4c940971c5448da7c3dfc3bf3c920e7d57c44728f54fd46246070fc783c25318",
+      "archive_matches_dmg_installed_binary": true,
+      "checks": [
+        {
+          "command": [
+            "file",
+            "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush"
+          ],
+          "exit_code": 0,
+          "stdout": "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush: Mach-O 64-bit executable x86_64\n",
+          "stderr": ""
+        },
+        {
+          "command": [
+            "otool",
+            "-L",
+            "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush"
+          ],
+          "exit_code": 0,
+          "stdout": "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush:\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit (compatibility version 1.0.0, current version 623.1.14)\n\t/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices (compatibility version 1.0.0, current version 66.0.0)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 726.2.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n\t/System/Library/Frameworks/ColorSync.framework/Versions/A/ColorSync (compatibility version 1.0.0, current version 3813.2.2)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n",
+          "stderr": ""
+        },
+        {
+          "command": [
+            "codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ],
+      "app_files": [
+        "Contents/Info.plist",
+        "Contents/MacOS/textbrush",
+        "Contents/_CodeSignature/CodeResources"
+      ],
+      "staged_frontend_sha256": {
+        "bundle.js": "27c396edb52f515c4118d02142ea4ff87823eb123a9d8d980295e99a69ac7694",
+        "index.html": "57e15d5597407826360af2ff873a0e6edea919048327a2841c49d66b1809e137",
+        "styles/animations.css": "5090443d55a700cffa87e2e5856ef983aaf053d948b2c2527f2d7f4b0f6ce011",
+        "styles/main.css": "e9fb577c32a11c057c834ea01a0251f6f1a201b3281f50d8e3b15b3d4b44bc9b",
+        "styles/variables.css": "06b379a63ce9d179c58bd6320c39c74a4b61820380ffd9619603959188be0b10"
+      }
+    },
+    "x86_64-unknown-linux-gnu": {
+      "host": "Ubuntu 24.04 x86_64 container, emulated on ARM64 macOS",
+      "fresh_checkout": true,
+      "artifacts": {
+        "Textbrush_0.1.0_amd64.deb": {
+          "sha256": "98eda96f6dd2060b988d580af6d6cb0b7c47983a5c6cf9871096785298f226d0",
+          "bytes": 2478112,
+          "sidecar_verified": true
+        },
+        "textbrush-linux-x64.tar.gz": {
+          "sha256": "33ae19a25cc3e70755379b361d04ff3ed5c16dfae593c35646aabe7b472bd2af",
+          "bytes": 2399385,
+          "sidecar_verified": true
+        }
+      },
+      "archive_binary_sha256": "d82d71164468b1460a9e4d98334f574e316be35513caffcf407b04020cd8c614",
+      "installed_binary_sha256": "336a135b0329b013d5ca81813c531fe040857819e51f60c3e24656f0e4350ed7",
+      "deb_payload_binary_sha256": "336a135b0329b013d5ca81813c531fe040857819e51f60c3e24656f0e4350ed7",
+      "installed_matches_deb_payload": true,
+      "note": "Tar and Debian executable bytes differ. Each artifact is checked separately; byte equality between these formats is not assumed.",
+      "source_archive_sha256": "2d6c7314ed254a06480d5480c678e5af3db0a6498aa8132fa62ad70b9d322cee"
+    }
+  },
+  "runner_reference": {
+    "url": "https://docs.github.com/en/actions/reference/runners/github-hosted-runners",
+    "checked": "2026-09-27",
+    "supported_labels": [
+      "macos-15",
+      "macos-15-intel",
+      "ubuntu-24.04"
+    ]
+  },
+  "latest_recheck": {
+    "artifact_and_source_report": "artifact-recheck.json",
+    "macos_arm64_fatal_startup": "macos-arm64-fatal-startup.json",
+    "macos_x64_fatal_startup": "macos-x64-fatal-startup.json",
+    "macos_fatal_probe_python_architecture": "ARM64 host interpreter with packages disabled; not Intel model-runtime evidence",
+    "macos_arm64_explicit": "macos-arm64-explicit.json",
+    "macos_arm64_default": "macos-arm64-default.json",
+    "native_close_attempts": "Both reached awaiting_model, but UI automation stalled and the probe timed out. These are failed close checks, not passes.",
+    "early_probe_log_limitation": "The first probe shared a file offset with its child. Default-mode stderr was partially overwritten. Fixed and regression-tested in the final observer; initialization was observed live and visually.",
+    "child_followup": "ps -o pid,ppid,state,command -p 75480,80538 returned no processes after both timed-out probes",
+    "focused_tests": "10 passed in 2.86 s; runtime observer plus release artifact collector",
+    "lint_format": "Ruff check and format --check passed across Python production, tests and three validation scripts (82 files)",
+    "github_access": "gh auth status still reports invalid GH_TOKEN inside and outside sandbox"
+  },
+  "limitations": [
+    "No remote CI run",
+    "Intel app cross-compiled, not run on physical Intel Mac",
+    "Clean Linux full-model-extra initialization tested 83fbf61; final edf2636 adds only the window-close permission to production behavior, verified through a separate installed-package regression check",
+    "Finder and interactive rendering/acceptance remain pending",
+    "Intel model runtime is incompatible with available standard PyTorch wheels; see retained installation and import logs"
+  ]
+}

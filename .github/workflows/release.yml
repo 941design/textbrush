@@ -65,6 +65,8 @@ jobs:
           body: |
             ## Prerequisites
 
+            **Intel macOS validation is blocked:** the desktop package builds, but the standard PyTorch installation cannot run the required Diffusers pipelines. Do not treat the x64 artifact as a verified generation setup. Apple Silicon and Linux runtime checks are tracked separately in the review handover.
+
             The Textbrush backend requires **Python 3.11+** with the `textbrush[model]` package installed:
 
             ```bash

@@ -1,0 +1,12 @@
+{
+  "app": "/private/tmp/textbrush-x64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "python": "/Users/mrother/Projects/rotheric/caricature-builder/.venv/bin/python3",
+  "scenario": "fatal missing-package error closes through frontend timer",
+  "passed": true,
+  "timed_out": false,
+  "exit_code": 1,
+  "seconds": 7.366,
+  "stdout": "",
+  "stderr": "",
+  "remaining_preview_directories": []
+}

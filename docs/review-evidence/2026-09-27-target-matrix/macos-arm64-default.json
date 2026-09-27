@@ -1,0 +1,25 @@
+{
+  "app": "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "python": "/private/tmp/textbrush-validation-4baE03/runtime with spaces/bin/python",
+  "mode": "default",
+  "passed": false,
+  "initialized_through_frontend": true,
+  "timed_out": true,
+  "exit_code": -15,
+  "seconds": 180.045,
+  "stdout": "",
+  "stderr": "2026-09-27 11:55:59,604 [INFO] textbrush.ipc.server: Stdin closed, shutting down\n2026-09-27 11:55:59,604 [INFO] textbrush.ipc.server: IPC server shutdown\n2026-09-27 11:55:59,604 [INFO] __main__: Backend shutdown complete\n2026-09-27 11:55:59,604 [INFO] __main__: IPC server stopped\n26-09-27 11:53:00,006 [INFO] textbrush.ipc.handler: No model selected; parking in awaiting_model (deferred loading)\n2026-09-27 11:53:00,006 [INFO] textbrush.ipc.handler: State changed: awaiting_model\n",
+  "observed_child_pids": [
+    80538
+  ],
+  "remaining_child_pids": [
+    80538
+  ],
+  "observed_preview_directories": [
+    "/var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/textbrush installed check l10okl5v/tmp/textbrush-preview-9ZWTSQ"
+  ],
+  "remaining_preview_directories": [
+    "/var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/textbrush installed check l10okl5v/tmp/textbrush-preview-9ZWTSQ"
+  ],
+  "limitations": "Fresh profile on this host; operator supplies native close/abort. No inference."
+}

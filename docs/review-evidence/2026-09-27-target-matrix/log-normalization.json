@@ -1,0 +1,29 @@
+{
+  "transformation": "Convert terminal CR/CRLF line endings to LF; trim trailing whitespace and excess blank lines at EOF. No diagnostic text removed.",
+  "files": {
+    "linux-build-83fbf61.log": {
+      "original_sha256": "8ff7fbf12fcc593baaae8f8be1e2af3518eb36c089f7220a0419e3c20b9eaefe",
+      "normalized_sha256": "12c3a8bc93a6da22e29ec47909d8c86700b5ef0f141089a486e6dfd9d5f660e9"
+    },
+    "intel-python-3.13-install.log": {
+      "original_sha256": "cd31f89614fe29c5474fa9ecde47911728da818b5f8dc262414db5c4c56ea1ca",
+      "normalized_sha256": "bbbc9a779edf88d8730fbf7f5e54534b7641040de3d2866abc249c0ca97a96e9"
+    },
+    "linux-install-83fbf61.log": {
+      "original_sha256": "79cf26f3d8ee65cf167773f790f60a53a19e35028b79394f3c4d118553098e90",
+      "normalized_sha256": "b45b151947a134009dccb1dbc5a2d4b291d15aeec51209578157bc30af007a27"
+    },
+    "macos-x64-build.log": {
+      "original_sha256": "ab543e694fc99dc1c7549bb5c7c6fd0681ea40849066f4335853b419e4c38b4e",
+      "normalized_sha256": "55a12893d67d29007aa911ff8200d603dccf6280555d842972bcdbc3fc9d34b6"
+    },
+    "macos-arm64-build.log": {
+      "original_sha256": "09dac298dc3d83464120ca387a9bb2f89cb6218102c2e76afeb007792474a200",
+      "normalized_sha256": "5c6f1d921949e5c64cf259a6a16d9ae4ee576f2b3386d19d6566cfe801f1237b"
+    },
+    "linux-build-edf2636.log": {
+      "original_sha256": "a1a1587643b668b5c6fe4c64c1b35f7d740e7559cfd1d5cee12fecce8723ebe8",
+      "normalized_sha256": "38163ecb868888e73097f586b8c6bae596dcdbd39bc4685abf379c23fd5863da"
+    }
+  }
+}

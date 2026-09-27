@@ -1,0 +1,41 @@
+{
+  "candidate": "edf2636f7a1fa99a3b88675df04033812228afb8",
+  "artifacts_verified": [
+    {
+      "target": "aarch64-apple-darwin",
+      "artifact": "Textbrush_0.1.0_aarch64.dmg",
+      "sha256": "a2ef5273d4fb53d2fed5903b5382087b2eae9d61e732d1869b3baf58700a3130"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "artifact": "textbrush-macos-arm64.tar.gz",
+      "sha256": "64b9026aaeb0ae8a62c8a4e56c94a1d542d53f0eb4f262643c27c005c854f88a"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "artifact": "Textbrush_0.1.0_x64.dmg",
+      "sha256": "561c384383ee592291a0697b9ad2bfd13302aa0d5ad04ddb40bbb44f86c46ff1"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "artifact": "textbrush-macos-x64.tar.gz",
+      "sha256": "e0802df3fbcb414d431f2bcb26755d68f0dbee1e579bed2b67a917d72dcbef08"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "artifact": "Textbrush_0.1.0_amd64.deb",
+      "sha256": "98eda96f6dd2060b988d580af6d6cb0b7c47983a5c6cf9871096785298f226d0"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "artifact": "textbrush-linux-x64.tar.gz",
+      "sha256": "33ae19a25cc3e70755379b361d04ff3ed5c16dfae593c35646aabe7b472bd2af"
+    }
+  ],
+  "installed_macos_hashes_and_signatures_verified": true,
+  "macos_candidate_source_files_compared": {
+    "textbrush-arm64-edf2636": 62,
+    "textbrush-x64-edf2636": 62
+  },
+  "linux_source_archive_matches_git_archive": true
+}

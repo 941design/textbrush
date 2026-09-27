@@ -1,0 +1,13 @@
+Using Python 3.12.13 environment at: /private/tmp/textbrush-intel-python/runtime312 with spaces
+Resolved 24 packages in 224ms
+Downloading numpy (19.4MiB)
+Downloading diffusers (4.8MiB)
+ Downloaded diffusers
+ Downloaded numpy
+Prepared 2 packages in 3.41s
+Uninstalled 2 packages in 119ms
+Installed 2 packages in 10ms
+ - diffusers==0.39.0
+ + diffusers==0.37.0
+ - numpy==2.5.3
+ + numpy==1.26.4

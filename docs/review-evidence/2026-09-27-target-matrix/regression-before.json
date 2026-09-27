@@ -1,0 +1,12 @@
+{
+  "app": "/usr/bin/textbrush",
+  "python": "/usr/bin/python3",
+  "scenario": "fatal missing-package error closes through frontend timer",
+  "passed": false,
+  "timed_out": true,
+  "exit_code": -15,
+  "seconds": 30.048,
+  "stdout": "",
+  "stderr": "\n(textbrush:3113): dbind-WARNING **: 07:40:00.639: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files\nlibEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n",
+  "remaining_preview_directories": []
+}

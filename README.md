@@ -92,9 +92,15 @@ the desktop enforces the process deadline. Headless Python keeps its existing
 - **uv** - Package and virtual environment manager (development only)
 - **System dependencies** - For GPU acceleration and UI rendering (see [GPU Setup Guide](docs/gpu-setup.md))
 
-**Supported Platforms:**
+**Release targets:**
 - macOS (Apple Silicon ARM64, Intel x64)
 - Linux (x64)
+
+Intel macOS runtime validation is currently blocked. The desktop package builds,
+but the standard model dependency installation is not usable: Python 3.13 has no
+compatible PyTorch wheel, and Python 3.12 selects PyTorch 2.2.2, which cannot
+import the required Diffusers pipelines. The x64 package is not a verified
+generation setup. See the [remaining release checks](docs/review-handover-2026-09-26.md).
 
 ## Installation
 

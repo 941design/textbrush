@@ -1,0 +1,25 @@
+{
+  "app": "/private/tmp/textbrush-arm64-edf2636/installed with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "python": "/private/tmp/textbrush-validation-4baE03/runtime with spaces/bin/python",
+  "mode": "explicit",
+  "passed": false,
+  "initialized_through_frontend": true,
+  "timed_out": true,
+  "exit_code": -15,
+  "seconds": 180.051,
+  "stdout": "",
+  "stderr": "2026-09-27 11:38:08,237 [INFO] __main__: Starting IPC server\n2026-09-27 11:38:08,240 [INFO] textbrush.ipc.server: IPC server started\n2026-09-27 11:38:08,240 [INFO] textbrush.ipc.handler: INIT received: prompt='A watercolor painting of a cat...', seed=None, width=256, height=256\n2026-09-27 11:38:08,240 [INFO] textbrush.ipc.handler: No model selected; parking in awaiting_model (deferred loading)\n2026-09-27 11:38:08,240 [INFO] textbrush.ipc.handler: State changed: awaiting_model\n",
+  "observed_child_pids": [
+    75480
+  ],
+  "remaining_child_pids": [
+    75480
+  ],
+  "observed_preview_directories": [
+    "/var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/textbrush installed check 9w150218/tmp/textbrush-preview-F5zKBF"
+  ],
+  "remaining_preview_directories": [
+    "/var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/textbrush installed check 9w150218/tmp/textbrush-preview-F5zKBF"
+  ],
+  "limitations": "Fresh profile on this host; operator supplies native close/abort. No inference."
+}
