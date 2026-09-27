@@ -9617,7 +9617,11 @@ function handleMessage(msg) {
 }
 function handleStateChanged(payload) {
   state.backendState = payload;
-  state.settled = payload.state === "paused" && payload.settled === true;
+  if (payload.state !== "paused") {
+    state.settled = false;
+  } else if (typeof payload.settled === "boolean") {
+    state.settled = payload.settled;
+  }
   renderEditingControls();
   const backendPaused = isBackendStatePaused(payload.state);
   if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {

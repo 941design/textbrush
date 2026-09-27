@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **A configuration change could wait forever after the worker had
+  parked.** The delivery loop re-announces `paused` after each image
+  without a `settled` value; the UI read that silence as "not settled"
+  and, if it arrived after the worker's own `settled=true`, kept a
+  parked model or reference change waiting for a signal that had already
+  come, with every control held. A `paused` event without the field now
+  leaves the gate as the last statement set it.
 - **Opening the reference file dialog froze the desktop app.** The
   dialog command was synchronous, so Tauri ran its blocking file picker
   on the main thread, stalling the event loop the picker itself waits

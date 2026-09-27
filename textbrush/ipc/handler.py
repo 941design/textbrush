@@ -1066,6 +1066,11 @@ class MessageHandler:
                                 ),
                             )
                         )
+                        # Deliberately silent on `settled`: this thread cannot
+                        # know whether the worker has parked yet, and a stale
+                        # `False` arriving after the worker's own `True` would
+                        # strand the UI. The UI keeps its last settled value
+                        # for a `paused` event that omits the field.
                         self._emit_state_changed(
                             server, "paused" if self.backend.is_paused() else "idle"
                         )

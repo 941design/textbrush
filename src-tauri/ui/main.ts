@@ -816,7 +816,17 @@ function handleMessage(msg: SidecarMessage): void {
 // Message Handlers
 function handleStateChanged(payload: StateChangedPayload): void {
   state.backendState = payload;
-  state.settled = payload.state === 'paused' && payload.settled === true;
+  // `settled` is a statement only when the backend makes one. The
+  // delivery loop re-announces `paused` after each image it hands over
+  // and says nothing about quiescence; if that lands after the worker's
+  // own `settled=true`, reading its silence as `false` would shut the
+  // gate on a worker that is parked -- and a parked change would then
+  // wait for a signal that has already come and gone.
+  if (payload.state !== 'paused') {
+    state.settled = false;
+  } else if (typeof payload.settled === 'boolean') {
+    state.settled = payload.settled;
+  }
   renderEditingControls();
   const backendPaused = isBackendStatePaused(payload.state);
   if (desiredPausedState !== null && backendPaused !== null && backendPaused === desiredPausedState) {

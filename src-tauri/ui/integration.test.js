@@ -255,6 +255,52 @@ test('a model change while generating pauses the worker, applies once settled, a
   }
 });
 
+test('a paused re-announcement without a settled value does not close the gate', async () => {
+  const app = await renderedApp();
+  try {
+    const { window, calls, emit } = app;
+    const document = window.document;
+    const updates = () => calls.filter(call => call.command === 'update_generation_config');
+
+    // Session: one reference acknowledged, then generating.
+    emit(ack('flux2-klein-4b', ['/tmp/one.png'], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+
+    // Second reference while generating: parked, worker asked to pause.
+    app.setPicked(['/tmp/two.png']);
+    document.getElementById('reference-add').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: false } });
+    assert.equal(updates().length, 0);
+
+    // The worker parks and says so; the delivery loop then hands over the
+    // image it had finished and re-announces `paused` with no settled
+    // field. That silence must not undo the worker's statement.
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(updates().length, 1, 'the parked change went out on settled=true');
+    emit({ type: 'state_changed', payload: { state: 'paused' } });
+    assert.equal(window.textbrushApp.state.settled, true);
+
+    // The reverse order stalls nothing either: silence, then the statement.
+    emit(ack('flux2-klein-4b', ['/tmp/one.png', '/tmp/two.png'], 'landscape-medium'));
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    document.querySelector('input[value="flux1-schnell"]').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: false } });
+    emit({ type: 'state_changed', payload: { state: 'paused' } });
+    assert.equal(updates().length, 1, 'silence is not quiescence');
+    emit({ type: 'state_changed', payload: { state: 'paused', settled: true } });
+    assert.equal(updates().length, 2);
+    assert.equal(updates().at(-1).args.modelId, 'flux1-schnell');
+
+    // Leaving paused always closes the gate.
+    emit({ type: 'state_changed', payload: { state: 'generating', prompt: 'test prompt' } });
+    assert.equal(window.textbrushApp.state.settled, false);
+  } finally {
+    app.close();
+  }
+});
+
 test('adding a reference while generating opens the picker first and pauses for the change', async () => {
   const app = await renderedApp();
   try {
