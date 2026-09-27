@@ -1,0 +1,23 @@
+2026-09-27 08:26:03,101 [INFO] __main__: Starting IPC server
+2026-09-27 08:26:03,104 [INFO] textbrush.ipc.server: IPC server started
+2026-09-27 08:26:03,104 [INFO] textbrush.ipc.handler: INIT received: prompt='A watercolor painting of a cat...', seed=None, width=256, height=256
+2026-09-27 08:26:03,104 [INFO] textbrush.ipc.handler: No model selected; parking in awaiting_model (deferred loading)
+2026-09-27 08:26:03,104 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:26:50,839 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux1-schnell
+2026-09-27 08:26:50,840 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:26:55,628 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux1-kontext-dev
+2026-09-27 08:26:55,629 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:26:58,612 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux2-klein-4b
+2026-09-27 08:26:58,612 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:27:01,019 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux2-klein-4b
+2026-09-27 08:27:01,019 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:27:02,345 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux2-klein-4b
+2026-09-27 08:27:02,345 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:27:04,720 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux2-klein-4b
+2026-09-27 08:27:04,721 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:27:05,938 [INFO] textbrush.ipc.handler: Deferred model selection: starting flux2-klein-4b
+2026-09-27 08:27:05,938 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:29:02,811 [INFO] textbrush.ipc.server: Stdin closed, shutting down
+2026-09-27 08:29:02,812 [INFO] textbrush.ipc.server: IPC server shutdown
+2026-09-27 08:29:02,812 [INFO] __main__: Backend shutdown complete
+2026-09-27 08:29:02,812 [INFO] __main__: IPC server stopped

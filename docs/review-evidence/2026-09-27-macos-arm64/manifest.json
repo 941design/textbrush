@@ -1,0 +1,115 @@
+{
+  "candidate_commit": "83fbf61307e0c28ae267540616d788af423f1974",
+  "initial_archive_commit": "7d53d762378b83fb93cb32a223828b69dcea8fc9",
+  "build_method": "git archive into fresh temporary directory; fresh npm ci; subsequent Makefile and Rust source fixes copied from candidate and rebuilt with make package TARGET=aarch64-apple-darwin",
+  "limitations": [
+    "Not a separate macOS user or clean OS installation",
+    "Final candidate runtime setting built and unit-tested but not yet exercised through Finder",
+    "Native explicit-path probe used the pre-runtime-setting app; default-path probe initialized but timed out while desktop access was unavailable",
+    "Native Intel and Linux x64 target checks remain pending"
+  ],
+  "tools": [
+    {
+      "command": [
+        "sw_vers"
+      ],
+      "exit_code": 0,
+      "stdout": "ProductName:\t\tmacOS\nProductVersion:\t\t26.3.1\nProductVersionExtra:\t(a)\nBuildVersion:\t\t25D771280a\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "uname",
+        "-sm"
+      ],
+      "exit_code": 0,
+      "stdout": "Darwin arm64\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "node",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "v22.23.1\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "cargo",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "cargo 1.92.0 (344c4567c 2025-10-21)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "uv",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "uv 0.11.19 (Homebrew 2026-06-03 aarch64-apple-darwin)\n",
+      "stderr": ""
+    }
+  ],
+  "artifact_checks": [
+    {
+      "command": [
+        "file",
+        "/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush"
+      ],
+      "exit_code": 0,
+      "stdout": "/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush: Mach-O 64-bit executable arm64\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "otool",
+        "-L",
+        "/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush"
+      ],
+      "exit_code": 0,
+      "stdout": "/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush:\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.30.107)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit (compatibility version 1.0.0, current version 623.1.14)\n\t/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices (compatibility version 1.0.0, current version 66.0.0)\n\t/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics (compatibility version 64.0.0, current version 1965.2.3)\n\t/System/Library/Frameworks/Carbon.framework/Versions/A/Carbon (compatibility version 2.0.0, current version 170.0.0)\n\t/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo (compatibility version 1.2.0, current version 726.2.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 4201.0.0)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 4201.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n\t/System/Library/Frameworks/ColorSync.framework/Versions/A/ColorSync (compatibility version 1.0.0, current version 3813.2.2)\n\t/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices (compatibility version 1.0.0, current version 1226.0.0)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "final_artifact_sha256": {
+    "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush": "54ed9aef368567a18a6923e1dccd9b55ba1bfe6d36c0a899e73ce63d868e2978",
+    "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Textbrush_0.1.0_aarch64.dmg": "07f8e8f5684e6f96ffcb03767b452114eb441bbebab5f782b47cf3aefae977e4"
+  },
+  "initial_collected_artifact_sha256": {
+    "Textbrush_0.1.0_aarch64.dmg": "88b2781f825a19842fdedc9889aa28464f8e7a531db874ef044732f6af7ab3ef",
+    "textbrush-macos-arm64.tar.gz": "d9bbcfbe32cc77717c921b6ecfa84c07da03b61a7ab43e68fbaa751e03a3464d"
+  },
+  "staged_frontend_sha256": {
+    "bundle.js": "27c396edb52f515c4118d02142ea4ff87823eb123a9d8d980295e99a69ac7694",
+    "index.html": "57e15d5597407826360af2ff873a0e6edea919048327a2841c49d66b1809e137",
+    "styles/animations.css": "5090443d55a700cffa87e2e5856ef983aaf053d948b2c2527f2d7f4b0f6ce011",
+    "styles/main.css": "e9fb577c32a11c057c834ea01a0251f6f1a201b3281f50d8e3b15b3d4b44bc9b",
+    "styles/variables.css": "06b379a63ce9d179c58bd6320c39c74a4b61820380ffd9619603959188be0b10"
+  },
+  "app_files": [
+    "Contents/Info.plist",
+    "Contents/MacOS/textbrush",
+    "Contents/_CodeSignature/CodeResources"
+  ],
+  "explicit_probe_preview_note": {
+    "previous_timed_out_probe_directory_exists": true,
+    "successful_native_close_directory_exists": false,
+    "explanation": "native-explicit.json includes an earlier timeout directory; the successful native-close session removed its own directory"
+  }
+}

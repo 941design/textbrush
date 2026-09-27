@@ -1,0 +1,40 @@
+cd src-tauri/ui && npm run build
+
+> textbrush-ui@0.1.0 build
+> esbuild main.ts --bundle --outfile=bundle.js --format=esm --target=es2022 && node stage-dist.mjs
+
+
+  bundle.js  327.5kb
+
+⚡ Done in 6ms
+# The DMG bundler reads CI separately from the CLI's --ci flag. Avoid Finder
+# automation during packaging, including local builds without a CI environment.
+cd src-tauri && CI=true ./ui/node_modules/.bin/tauri build --ci --target aarch64-apple-darwin
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> textbrush-ui@0.1.0 build
+> esbuild main.ts --bundle --outfile=bundle.js --format=esm --target=es2022 && node stage-dist.mjs
+
+
+  bundle.js  327.5kb
+
+⚡ Done in 6ms
+   Compiling textbrush v0.1.0 (/private/tmp/textbrush-validation-4baE03/src-tauri)
+    Finished `release` profile [optimized] target(s) in 44.01s
+       Built application at: /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/textbrush
+    Bundling Textbrush.app (/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app)
+     Signing with identity "-"
+Signing with identity "-"
+Signing /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush
+/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush: replacing existing signature
+Signing with identity "-"
+Signing /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app
+/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app: replacing existing signature
+        Warn skipping app notarization, no APPLE_ID & APPLE_PASSWORD & APPLE_TEAM_ID or APPLE_API_KEY & APPLE_API_ISSUER & APPLE_API_KEY_PATH environment variables found
+    Bundling Textbrush_0.1.0_aarch64.dmg (/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Textbrush_0.1.0_aarch64.dmg)
+     Running bundle_dmg.sh
+    Finished 2 bundles at:
+        /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app
+        /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Textbrush_0.1.0_aarch64.dmg
+

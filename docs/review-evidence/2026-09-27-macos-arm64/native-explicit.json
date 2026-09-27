@@ -1,0 +1,27 @@
+{
+  "mode": "explicit",
+  "environment": {
+    "HOME": "/private/tmp/textbrush-validation-4baE03/profile explicit",
+    "TMPDIR": "/private/tmp/textbrush-validation-4baE03/profile explicit/tmp",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "TEXTBRUSH_CONFIG_PATH": "/private/tmp/textbrush-validation-4baE03/profile explicit/config.toml",
+    "TEXTBRUSH_LOGGING_VERBOSITY": "debug",
+    "HF_HUB_OFFLINE": "1",
+    "TEXTBRUSH_PYTHON": "/private/tmp/textbrush-validation-4baE03/runtime with spaces/bin/python"
+  },
+  "executable": "/private/tmp/textbrush-validation-4baE03/installed app with spaces/Textbrush.app/Contents/MacOS/textbrush",
+  "pid": 19748,
+  "sidecar_processes": [
+    "19755 19748 /private/tmp/textbrush-validation-4baE03/runtime with spaces/bin/python -I -c \\012import json, runpy, sys\\012\\012def fail(message):\\012    print(json.dumps({'type': 'error', 'payload': {\\012        'message': message, 'fatal': True, 'operation': 'startup'\\012    }}), flush=True)\\012    raise SystemExit(1)\\012\\012if sys.version_info < (3, 11):\\012    fail('Textbrush requires Python 3.11 or newer. Set TEXTBRUSH_PYTHON to a supported interpreter.')\\012try:\\012    runpy.run_module('textbrush.ipc', run_name='__main__')\\012except ImportError as error:\\012    name = error.name or 'a required module'\\012    fail('The selected Python runtime cannot import ' + name +\\012         '. Install textbrush[model] in that environment, or set TEXTBRUSH_PYTHON to its Python executable.')\\012"
+  ],
+  "preview_directories": [
+    "/private/tmp/textbrush-validation-4baE03/profile explicit/tmp/textbrush-preview-AgdIhE",
+    "/private/tmp/textbrush-validation-4baE03/profile explicit/tmp/textbrush-preview-rDdRsh"
+  ],
+  "timed_out": false,
+  "exit_code": 1,
+  "stdout": "",
+  "awaiting_model": true,
+  "previews_removed": false,
+  "child_pids_remaining": []
+}

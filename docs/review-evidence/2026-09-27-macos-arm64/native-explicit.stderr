@@ -1,0 +1,8 @@
+2026-09-27 08:24:39,604 [INFO] __main__: Starting IPC server
+2026-09-27 08:24:39,605 [INFO] textbrush.ipc.server: IPC server started
+2026-09-27 08:24:39,605 [INFO] textbrush.ipc.handler: INIT received: prompt='A watercolor painting of a cat...', seed=None, width=256, height=256
+2026-09-27 08:24:39,605 [INFO] textbrush.ipc.handler: No model selected; parking in awaiting_model (deferred loading)
+2026-09-27 08:24:39,606 [INFO] textbrush.ipc.handler: State changed: awaiting_model
+2026-09-27 08:25:41,596 [INFO] textbrush.ipc.server: IPC server shutdown
+2026-09-27 08:25:41,596 [INFO] __main__: Backend shutdown complete
+2026-09-27 08:25:41,596 [INFO] __main__: IPC server stopped

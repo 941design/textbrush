@@ -1,0 +1,44 @@
+       Debug [tauri_cli::helpers::app_paths] Found Tauri project inside /private/tmp/textbrush-validation-4baE03/src-tauri on early lookup
+       Debug [tauri_cli::helpers::app_paths] resolving frontend directory from /private/tmp/textbrush-validation-4baE03/src-tauri
+       Debug [ignore::gitignore] opened gitignore file: /var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/.gitignore
+       Debug [globset] built glob set; 0 literals, 3 basenames, 0 extensions, 0 prefixes, 0 suffixes, 0 required extensions, 0 regexes
+       Debug [ignore::gitignore] opened gitignore file: /private/tmp/textbrush-validation-4baE03/.gitignore
+       Debug [globset] glob converted to regex: Glob { glob: "**/*.py[cod]", re: "(?-u)^(?:/?|.*/)[^/]*\\.py[cod]$", opts: GlobOptions { case_insensitive: false, literal_separator: true, backslash_escape: true, empty_alternates: false }, tokens: Tokens([RecursivePrefix, ZeroOrMore, Literal('.'), Literal('p'), Literal('y'), Class { negated: false, ranges: [('c', 'c'), ('o', 'o'), ('d', 'd')] }]) }
+       Debug [globset] glob converted to regex: Glob { glob: "**/*~", re: "(?-u)^(?:/?|.*/)[^/]*\\~$", opts: GlobOptions { case_insensitive: false, literal_separator: true, backslash_escape: true, empty_alternates: false }, tokens: Tokens([RecursivePrefix, ZeroOrMore, Literal('~')]) }
+       Debug [globset] built glob set; 15 literals, 36 basenames, 5 extensions, 0 prefixes, 0 suffixes, 1 required extensions, 2 regexes
+    Bundling [tauri_bundler::bundle::macos::app] Textbrush.app (/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app)
+     Running [tauri_bundler::utils] Command `xattr  -crs /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app`
+     Signing [tauri_bundler::bundle::macos::sign] with identity "-"
+Signing with identity "-"
+Signing /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush
+     Running [tauri_macos_sign] Command `codesign  --force -s - --options runtime /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush`
+/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app/Contents/MacOS/textbrush: replacing existing signature
+Signing with identity "-"
+Signing /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app
+     Running [tauri_macos_sign] Command `codesign  --force -s - --options runtime /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app`
+/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Textbrush.app: replacing existing signature
+        Warn [tauri_bundler::bundle::macos::app] skipping app notarization, no APPLE_ID & APPLE_PASSWORD & APPLE_TEAM_ID or APPLE_API_KEY & APPLE_API_ISSUER & APPLE_API_KEY_PATH environment variables found
+    Bundling [tauri_bundler::bundle::macos::dmg] Textbrush_0.1.0_aarch64.dmg (/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Textbrush_0.1.0_aarch64.dmg)
+     Running [tauri_bundler::bundle::macos::dmg] bundle_dmg.sh
+     Running [tauri_bundler::utils] Command `/private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/bundle_dmg.sh  --volname Textbrush --icon Textbrush.app 180 170 --app-drop-link 480 170 --window-size 660 400 --hide-extension Textbrush.app Textbrush_0.1.0_aarch64.dmg Textbrush.app`
+Creating disk image...
+created: /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/rw.7121.Textbrush_0.1.0_aarch64.dmg
+Mounting disk image...
+Device name:     /dev/disk5
+Searching for mounted interstitial disk image using /dev/disk5s...
+Mount dir:       /Volumes/dmg.qcYUHl
+Making link to Applications dir...
+/Volumes/dmg.qcYUHl
+Will sleep for 2 seconds to workaround occasions "Can't get disk (-1728)" issues...
+Running AppleScript to make Finder stuff pretty: /usr/bin/osascript "/var/folders/mq/mvbm2v096dn4vt12tylp85l80000gn/T/createdmg.tmp.XXXXXXXXXX.vvywCt7ZDD" "dmg.qcYUHl"
+waited 1 seconds for .DS_STORE to be created.
+Done running the AppleScript...
+Fixing permissions...
+Done fixing permissions
+Skipping blessing on sandbox
+Deleting .fseventsd
+Unmounting disk image...
+hdiutil: couldn't unmount "disk5" - Resource busy
+The volume can’t be ejected because it’s currently in use.
+failed to bundle project: error running bundle_dmg.sh: `failed to run /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/bundle_dmg.sh`
+       Error [tauri_cli_node] failed to bundle project: error running bundle_dmg.sh: `failed to run /private/tmp/textbrush-validation-4baE03/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/bundle_dmg.sh`
